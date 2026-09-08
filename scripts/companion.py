@@ -66,6 +66,68 @@ AGENTS_MD_INSTR = (
 RUNS: dict[str, dict] = {}
 RUNS_LOCK = threading.Lock()
 
+# ── Persistencia de sesiones (conversaciones de automejora) ──────────────
+# Las sesiones viven en disco (no solo en memoria): sobreviven a reinicios del
+# companion y alimentan el sider de conversaciones de la UI (nueva/pin/memoria).
+import json as _json
+
+RUNS_FILE = os.path.join(os.path.expanduser("~/.local/share/vocero-companion"),
+                         "runs.json")
+MAX_RUNS_KEPT = 60
+MAX_LOG_CHARS = 20000
+
+
+def _ensure_store():
+    d = os.path.dirname(RUNS_FILE)
+    if d and not os.path.isdir(d):
+        os.makedirs(d, exist_ok=True)
+
+
+def load_runs():
+    try:
+        with open(RUNS_FILE) as f:
+            data = _json.load(f)
+            return data.get("runs", {})
+    except Exception:
+        return {}
+
+
+def save_runs():
+    _ensure_store()
+    with RUNS_LOCK:
+        keep = dict(sorted(RUNS.items(), key=lambda kv: kv[1].get("started", 0),
+                           reverse=True)[:MAX_RUNS_KEPT])
+        for r in keep.values():
+            if r.get("log"):
+                joined = "\n".join(r["log"])
+                if len(joined) > MAX_LOG_CHARS:
+                    r["log"] = (joined[:MAX_LOG_CHARS] + "\n…(log truncado)").split("\n")
+    tmp = RUNS_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        _json.dump({"runs": keep}, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, RUNS_FILE)
+
+
+def est_tokens(text: str) -> int:
+    """Estimación gruesa ~4 chars/token (multilingüe)."""
+    return max(1, len(text) // 4)
+
+
+def est_cost_usd(agent: str, in_tok: int, out_tok: int) -> float | None:
+    """Costo estimado por agente (USD por 1M tokens). None = sin tarifa conocida.
+    Precios aproximados de referencia; el CLI no reporta el consumo real."""
+    pricing = {
+        "hermes":   {"in": 0.28, "out": 0.42},    # deepseek-v4-flash (referencia)
+        "codex":    {"in": 1.25, "out": 10.00},    # gpt-5-class (referencia)
+        "claude":   {"in": 3.00, "out": 15.00},    # claude-sonnet-class
+        "opencode": {"in": 1.25, "out": 10.00},    # depende del modelo elegido
+    }
+    p = pricing.get(agent)
+    if not p:
+        return None
+    return round(in_tok / 1e6 * p["in"] + out_tok / 1e6 * p["out"], 5)
+
+
 # Cache de detección: los --version de 5 CLIs tardan ~6s; con TTL de 15s la
 # UI (heartbeat/reintentos) obtiene respuesta instantánea.
 _AGENTS_CACHE_TS = 0.0
@@ -221,6 +283,14 @@ def run_turn(run: dict, prompt: str) -> None:
             log.append(f"⛔ {agent} salió con código {r.returncode}")
             run["status"] = "failed"
             return
+        # 020 — uso estimado del turno (prompt enviado + salida recibida).
+        out_text = out if isinstance(out, str) else ""
+        run["usage"].append({
+            "turn": run["turn"],
+            "in_tokens": est_tokens(prompt),
+            "out_tokens": est_tokens(out_text),
+            "cost_usd": est_cost_usd(agent, est_tokens(prompt), est_tokens(out_text)),
+        })
         # Gates — obligatorios en cada turno.
         if not run_gates(repo, log):
             log.append("⛔ gates en rojo — los cambios quedaron en el repo. "
@@ -247,6 +317,8 @@ def run_turn(run: dict, prompt: str) -> None:
     except Exception as e:  # noqa: BLE001
         log.append(f"⛔ error: {e}")
         run["status"] = "failed"
+    run["ended"] = time.time()
+    save_runs()
 
 
 def start_run(agent: str, objetivo: str, follow_up: str | None = None,
@@ -273,6 +345,10 @@ def start_run(agent: str, objetivo: str, follow_up: str | None = None,
                 "objetivo": objetivo, "turn": 1, "auto_push": auto_push,
                 "messages": [{"role": "user", "content": objetivo}],
                 "log": [], "commit": None, "started": time.time(),
+                # 020 — metadata de conversación (estilo Ornith): título, pin,
+                # memoria del dueño, uso estimado por turno.
+                "title": objetivo[:70], "pinned": False, "memory": "",
+                "usage": [], "ended": None,
             }
             RUNS[rid] = run
 
@@ -305,7 +381,27 @@ class Handler(BaseHTTPRequestHandler):
         self._cors()
         self.end_headers()
 
+    def _session_summary(self, r: dict) -> dict:
+        return {
+            "id": r["id"], "agent": r["agent"], "title": r.get("title", r["objetivo"][:70]),
+            "pinned": bool(r.get("pinned")), "memory": r.get("memory", ""),
+            "status": r["status"], "turn": r["turn"], "commit": r.get("commit"),
+            "started": r.get("started"), "ended": r.get("ended"),
+            "messages": len(r.get("messages", [])),
+            "usage": r.get("usage", []),
+        }
+
     def do_GET(self):  # noqa: N802
+        if self.path == "/api/sessions":
+            with RUNS_LOCK:
+                runs = list(RUNS.values())
+            pinned = [r for r in runs if r.get("pinned")]
+            rest = [r for r in runs if not r.get("pinned")]
+            pinned.sort(key=lambda r: r.get("started", 0), reverse=True)
+            rest.sort(key=lambda r: r.get("started", 0), reverse=True)
+            return self._json(200, {"ok": True,
+                                    "sessions": [self._session_summary(r)
+                                                 for r in pinned + rest]})
         if self.path == "/api/agents":
             return self._json(200, {"ok": True, "agents": detect_agents()})
         if self.path == "/api/repo":
@@ -355,6 +451,38 @@ class Handler(BaseHTTPRequestHandler):
             r = start_run(agent, objetivo, follow_up, run_id, auto_push)
             code = 200 if r.get("ok") else 400
             return self._json(code, r)
+        if self.path == "/api/sessions/toggle-pin":
+            body = self._read_body()
+            rid = (body or {}).get("run_id", "")
+            with RUNS_LOCK:
+                run = RUNS.get(rid)
+                if run:
+                    run["pinned"] = not bool(run.get("pinned"))
+            if not run:
+                return self._json(404, {"ok": False, "error": "sesión no encontrada"})
+            save_runs()
+            return self._json(200, {"ok": True, "pinned": bool(run["pinned"])})
+        if self.path == "/api/sessions/memory":
+            body = self._read_body()
+            rid = (body or {}).get("run_id", "")
+            memo = ((body or {}).get("memory") or "").strip()
+            with RUNS_LOCK:
+                run = RUNS.get(rid)
+                if run:
+                    run["memory"] = memo
+            if not run:
+                return self._json(404, {"ok": False, "error": "sesión no encontrada"})
+            save_runs()
+            return self._json(200, {"ok": True})
+        if self.path == "/api/sessions/delete":
+            body = self._read_body()
+            rid = (body or {}).get("run_id", "")
+            with RUNS_LOCK:
+                run = RUNS.pop(rid, None)
+            if not run:
+                return self._json(404, {"ok": False, "error": "sesión no encontrada"})
+            save_runs()
+            return self._json(200, {"ok": True})
         if self.path == "/api/automejora/push":
             body = self._read_body()
             if body is None:
@@ -395,8 +523,10 @@ def main():
     ap.add_argument("--repo", default=REPO_DEFAULT)
     args = ap.parse_args()
     PORT, REPO = args.port, args.repo
+    RUNS.update(load_runs())
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"Vocero Companion en http://127.0.0.1:{PORT}  (repo: {REPO})")
+    print(f"Sesiones persistidas cargadas: {len(RUNS)}")
     print("Agentes detectados:", [a["id"] for a in detect_agents()])
     srv.serve_forever()
 

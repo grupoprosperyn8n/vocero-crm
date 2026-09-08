@@ -5,9 +5,13 @@ import {
   Bot,
   CheckCircle2,
   Loader2,
+  Pin,
+  PinOff,
   Plug,
   PlugZap,
+  Plus,
   Terminal,
+  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,6 +65,25 @@ type RunInfo = {
   log: string[];
   commit: string | null;
   messages: { role: string; content: string }[];
+  title: string;
+  pinned: boolean;
+  memory: string;
+  usage: { turn: number; in_tokens: number; out_tokens: number; cost_usd: number | null }[];
+};
+
+type SessionSummary = {
+  id: string;
+  agent: string;
+  title: string;
+  pinned: boolean;
+  memory: string;
+  status: string;
+  turn: number;
+  commit: string | null;
+  started: number;
+  ended: number | null;
+  messages: number;
+  usage: { turn: number; in_tokens: number; out_tokens: number; cost_usd: number | null }[];
 };
 
 /** Separa el log en turnos: resumen del agente + línea de resultado. */
@@ -135,6 +158,8 @@ export function AgentsPanel() {
   const [agentSel, setAgentSel] = useState("");
   const [draft, setDraft] = useState("");
   const [run, setRun] = useState<RunInfo | null>(null);
+  const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
+  const [memoryDraft, setMemoryDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -214,6 +239,86 @@ export function AgentsPanel() {
     }
   }, [run?.log]);
 
+  const loadSessions = useCallback(async () => {
+    const base = companionUrl.replace(/\/+$/, "");
+    try {
+      const r = await fetchWithTimeout(`${base}/api/sessions`, 4000);
+      if (!r.ok) return;
+      const data = (await r.json()) as { sessions: SessionSummary[] };
+      setSessions(data.sessions);
+    } catch {
+      // sider no crítico
+    }
+  }, [companionUrl]);
+
+  // Carga el sider al conectar el companion (y cuando vuelve a online).
+  useEffect(() => {
+    if (companion === "online") void loadSessions();
+  }, [companion, loadSessions]);
+
+  const selectSession = useCallback(async (id: string) => {
+    const base = companionUrl.replace(/\/+$/, "");
+    try {
+      const r = await fetchWithTimeout(`${base}/api/run/${id}`, 6000);
+      if (!r.ok) return;
+      const data = (await r.json()) as { run: RunInfo };
+      setRun(data.run);
+      setDraft("");
+      setMemoryDraft(data.run.memory || "");
+    } catch {
+      setError("No se pudo cargar la sesión");
+    }
+  }, [companionUrl]);
+
+  const togglePin = useCallback(async (id: string) => {
+    const base = companionUrl.replace(/\/+$/, "");
+    await fetchWithTimeout(`${base}/api/sessions/toggle-pin`, 4000, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: id }),
+    }).catch(() => null);
+    void loadSessions();
+  }, [companionUrl, loadSessions]);
+
+  const deleteSession = useCallback(async (id: string) => {
+    const base = companionUrl.replace(/\/+$/, "");
+    await fetchWithTimeout(`${base}/api/sessions/delete`, 4000, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: id }),
+    }).catch(() => null);
+    if (run?.id === id) {
+      setRun(null);
+      setDraft("");
+    }
+    void loadSessions();
+  }, [companionUrl, loadSessions, run]);
+
+  const saveMemory = useCallback(async (text: string) => {
+    if (!run) return;
+    const base = companionUrl.replace(/\/+$/, "");
+    const r = await fetchWithTimeout(`${base}/api/sessions/memory`, 4000, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: run.id, memory: text }),
+    }).catch(() => null);
+    if (r?.ok) {
+      setRun({ ...run, memory: text });
+      void loadSessions();
+    }
+  }, [companionUrl, run, loadSessions]);
+
+  // Refresca el sider cuando el run cambia de estado (terminó/empezó turno).
+  useEffect(() => {
+    if (run?.status === "running") return;
+    if (run) void loadSessions();
+  }, [run?.status, run?.turn, loadSessions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sincroniza el borrador de memoria cuando llega un run del polling/sider.
+  useEffect(() => {
+    if (run && !memoryDraft && run.memory) setMemoryDraft(run.memory);
+  }, [run?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /** Polling del run hasta que deje de estar running. */
   const startPolling = useCallback((id: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -261,6 +366,7 @@ export function AgentsPanel() {
   async function startRun(text: string) {
     if (!text.trim() || !agentSel) return;
     setRun(null);
+    setMemoryDraft("");
     // Modo sesión: el primer turno NO pushea solo — Diego revisa e itera,
     // y el push es manual (botón "Pushear cambios") con gates en verde.
     await postAction("/api/automejora", {
@@ -298,6 +404,12 @@ export function AgentsPanel() {
   }
 
   const status = run ? STATUS_LABEL[run.status] : null;
+  const totalTokens = run
+    ? run.usage.reduce((a, u) => a + (u.in_tokens || 0) + (u.out_tokens || 0), 0)
+    : 0;
+  const totalCost = run
+    ? run.usage.reduce((a, u) => a + (u.cost_usd ?? 0), 0)
+    : 0;
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -524,8 +636,103 @@ export function AgentsPanel() {
             desde el chat cuando digas.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex min-h-[520px] flex-col space-y-3">
-          {/* ===== BANDEJA DE CHAT ===== */}
+        <CardContent>
+          <div className="grid gap-3 lg:grid-cols-[200px_minmax(0,1fr)]">
+            {/* ===== SIDER DE CONVERSACIONES (estilo Ornith) ===== */}
+            <aside className="flex max-h-[560px] min-h-[200px] flex-col overflow-hidden rounded-xl border bg-background/50 lg:max-h-[640px]">
+              <div className="flex items-center justify-between gap-2 border-b p-2">
+                <p className="text-xs font-semibold text-muted-foreground">
+                  Conversaciones
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => {
+                    setRun(null);
+                    setDraft("");
+                    setMemoryDraft("");
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Nueva
+                </Button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+                {sessions === null ? (
+                  <p className="p-2 text-xs text-muted-foreground">Cargando…</p>
+                ) : sessions.length === 0 ? (
+                  <p className="p-2 text-xs leading-relaxed text-muted-foreground">
+                    Todavía no hay sesiones. Escribí el primer objetivo en el chat →
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {sessions.map((s) => {
+                      const active = run?.id === s.id;
+                      return (
+                        <li
+                          key={s.id}
+                          className={
+                            "group flex items-start gap-1 rounded-lg border p-1.5 transition-colors " +
+                            (active
+                              ? "border-brand-soft bg-brand-tint/60"
+                              : "border-transparent hover:bg-accent/60")
+                          }
+                        >
+                          <button
+                            type="button"
+                            onClick={() => void selectSession(s.id)}
+                            className="min-w-0 flex-1 text-left"
+                            title={s.title}
+                          >
+                            <p className="truncate text-[13px] font-medium leading-tight">
+                              {s.title}
+                            </p>
+                            <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                              {s.agent} · turno {s.turn}
+                              <span
+                                className={
+                                  s.status === "running"
+                                    ? "text-brand-text"
+                                    : s.status === "done" || s.status === "ready_to_push"
+                                      ? "text-success-text"
+                                      : "text-destructive"
+                                }
+                              >
+                                ●
+                              </span>
+                            </p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void togglePin(s.id)}
+                            className="mt-0.5 rounded p-1 text-muted-foreground opacity-60 hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                            title={s.pinned ? "Despinear" : "Pinear"}
+                          >
+                            {s.pinned ? (
+                              <Pin className="h-3.5 w-3.5 text-brand-text" />
+                            ) : (
+                              <PinOff className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteSession(s.id)}
+                            className="mt-0.5 rounded p-1 text-muted-foreground opacity-60 hover:bg-danger-tint hover:text-destructive group-hover:opacity-100"
+                            title="Borrar sesión"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </aside>
+
+            {/* ===== CHAT ===== */}
+            <div className="flex min-h-[520px] flex-col space-y-3">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background/50">
             {/* Mensajes */}
             <div className="min-h-[280px] flex-1 space-y-4 overflow-y-auto p-4">
@@ -678,12 +885,19 @@ export function AgentsPanel() {
                     onClick={() => {
                       setRun(null);
                       setDraft("");
+                      setMemoryDraft("");
                     }}
                   >
                     Nueva mejora
                   </Button>
                 )}
-                <span className="ml-auto text-[11px] text-muted-foreground">
+                {run && run.usage.length > 0 && (
+                  <span className="ml-auto rounded-full border bg-background/60 px-2 py-0.5 text-[11px] text-muted-foreground">
+                    ≈ {totalTokens.toLocaleString("es-AR")} tok · $
+                    {totalCost.toFixed(4)} estimado
+                  </span>
+                )}
+                <span className="text-[11px] text-muted-foreground">
                   Enter envía · Shift+Enter salto
                 </span>
               </div>
@@ -736,18 +950,48 @@ export function AgentsPanel() {
           )}
 
           {run && (
-            <details className="rounded-md border bg-background/40 px-3 py-2 text-xs">
-              <summary className="cursor-pointer text-muted-foreground">
-                Ver log técnico completo
-              </summary>
-              <pre
-                ref={logRef}
-                className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed"
+            <>
+              <details className="rounded-md border bg-background/40 px-3 py-2 text-xs">
+                <summary className="cursor-pointer text-muted-foreground">
+                  Ver log técnico completo
+                </summary>
+                <pre
+                  ref={logRef}
+                  className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed"
+                >
+                  {run.log.join("\n")}
+                </pre>
+              </details>
+              {/* Memoria de la sesión (persistente por conversación) */}
+              <details
+                className="rounded-md border bg-background/40 px-3 py-2 text-xs"
+                open={Boolean(run.memory)}
               >
-                {run.log.join("\n")}
-              </pre>
-            </details>
+                <summary className="cursor-pointer text-muted-foreground">
+                  Memoria de la sesión
+                </summary>
+                <div className="mt-2 flex items-end gap-2">
+                  <textarea
+                    value={memoryDraft}
+                    onChange={(e) => setMemoryDraft(e.target.value)}
+                    placeholder="Notas para retomar esta mejora después (se guardan con la sesión)…"
+                    className="min-h-[60px] flex-1 resize-y rounded-md border bg-background px-2 py-1.5 text-xs"
+                    rows={2}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void saveMemory(memoryDraft)}
+                  >
+                    Guardar memoria
+                  </Button>
+                </div>
+              </details>
+            </>
           )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
