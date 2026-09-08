@@ -50,6 +50,13 @@ HEADLESS = {
                            "--dangerously-skip-permissions"],
     "opencode": lambda obj: ["opencode", "run",
                              f"{obj}\n\nSeguí AGENTS.md del repo: gates typecheck+lint+test en verde y self-test cuando aplique."],
+    # Hermes Agent: -z ejecuta un prompt en modo no interactivo (verificado).
+    "hermes": lambda obj: ["hermes", "-z",
+                           f"{obj}\n\nSeguí AGENTS.md del repo: gates typecheck+lint+test en verde y self-test cuando aplique. No preguntes pasos reversibles; bloqueate solo ante acciones irreversibles."],
+    # gemini CLI tiene -p headless pero requiere auth (~/.gemini/settings.json
+    # o GEMINI_API_KEY) Y carpeta "trusted" (si no, yolo se degrada a prompts
+    # y el run queda esperando). Habilitar cuando haya auth configurada:
+    # "gemini": lambda obj: ["gemini", "-p", f"{obj}\n\nSeguí AGENTS.md…", "--approval-mode", "yolo"],
 }
 
 RUNS: dict[str, dict] = {}
