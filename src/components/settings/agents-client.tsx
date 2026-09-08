@@ -229,9 +229,24 @@ export function AgentsPanel() {
             )}
           </CardTitle>
           <CardDescription>
-            La web toma los agentes instalados <b>donde se abrió esta URL</b>{" "}
-            (tu máquina), no los del servidor. Se conecta al companion local en{" "}
-            <code className="rounded border bg-background px-1">127.0.0.1:8790</code>.
+            <b>Automejora del sistema</b> — estos agentes modifican el código del
+            CRM (no atienden conversaciones). El agente que contesta tus
+            WhatsApp se configura en{" "}
+            <a
+              href="/agent"
+              className="font-semibold text-brand-text underline-offset-2 hover:underline"
+            >
+              Agente
+            </a>{" "}
+            (menú principal, junto a Bandeja y Pipeline), con su prompt de
+            sistema, tono y knowledge base; su proveedor de IA se elige en{" "}
+            <a
+              href="/settings/ai"
+              className="font-semibold text-brand-text underline-offset-2 hover:underline"
+            >
+              IA
+            </a>
+            .
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
