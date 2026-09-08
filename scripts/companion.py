@@ -55,8 +55,21 @@ HEADLESS = {
 RUNS: dict[str, dict] = {}
 RUNS_LOCK = threading.Lock()
 
+# Cache de detección: los --version de 5 CLIs tardan ~6s; con TTL de 15s la
+# UI (heartbeat/reintentos) obtiene respuesta instantánea.
+_AGENTS_CACHE_TS = 0.0
+_AGENTS_CACHE_DATA: list[dict] = []
+_AGENTS_LOCK = threading.Lock()
+AGENTS_TTL_S = 15
 
-def detect_agents() -> list[dict]:
+
+def detect_agents(use_cache: bool = True) -> list[dict]:
+    global _AGENTS_CACHE_TS, _AGENTS_CACHE_DATA
+    now = time.time()
+    if use_cache:
+        with _AGENTS_LOCK:
+            if now - _AGENTS_CACHE_TS < AGENTS_TTL_S:
+                return list(_AGENTS_CACHE_DATA)
     out = []
     for aid, (bin_name, ver_flags) in AGENT_DEFS.items():
         path = shutil.which(bin_name)
@@ -77,6 +90,9 @@ def detect_agents() -> list[dict]:
             "version": version,
             "headless": aid in HEADLESS,
         })
+    with _AGENTS_LOCK:
+        _AGENTS_CACHE_TS = time.time()
+        _AGENTS_CACHE_DATA = out
     return out
 
 

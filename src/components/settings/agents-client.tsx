@@ -85,6 +85,8 @@ export function AgentsPanel() {
   const [editingUrl, setEditingUrl] = useState(false);
   const [companion, setCompanion] = useState<"checking" | "online" | "offline">("checking");
   const [agents, setAgents] = useState<AgentInfo[] | null>(null);
+  const [agentsError, setAgentsError] = useState(false);
+  const [agentsLoaded, setAgentsLoaded] = useState(false);
   const [repo, setRepo] = useState<RepoInfo | null>(null);
   const [agentSel, setAgentSel] = useState("");
   const [objetivo, setObjetivo] = useState("");
@@ -93,27 +95,39 @@ export function AgentsPanel() {
   const logRef = useRef<HTMLPreElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  /** Carga agentes (la 1ra detección tarda ~5s; con cache del companion, ~1ms). */
+  const loadAgents = useCallback(async (base: string) => {
+    try {
+      const ra = await fetchWithTimeout(`${base}/api/agents`, 12000);
+      const data = (await ra.json()) as { agents: AgentInfo[] };
+      setAgents(data.agents);
+      setAgentsError(false);
+      setAgentsLoaded(true);
+      const first = data.agents.find((a) => a.headless);
+      if (first) setAgentSel((prev) => prev || first.id);
+    } catch {
+      setAgentsError(true);
+      setAgentsLoaded(true);
+    }
+  }, []);
+
   const detect = useCallback(
     async (url?: string) => {
       const base = (url ?? companionUrl).replace(/\/+$/, "");
       setCompanion("checking");
       try {
-        const res = await fetchWithTimeout(`${base}/api/repo`, 2500);
+        const res = await fetchWithTimeout(`${base}/api/repo`, 5000);
         if (!res.ok) throw new Error("no");
         setRepo((await res.json()) as RepoInfo);
         setCompanion("online");
-        const ra = await fetchWithTimeout(`${base}/api/agents`, 4000);
-        const data = (await ra.json()) as { agents: AgentInfo[] };
-        setAgents(data.agents);
-        const first = data.agents.find((a) => a.headless);
-        if (first) setAgentSel(first.id);
+        void loadAgents(base);
       } catch {
         setCompanion("offline");
         setAgents(null);
         setRepo(null);
       }
     },
-    [companionUrl]
+    [companionUrl, loadAgents]
   );
 
   function applyUrl(next: string) {
@@ -122,6 +136,26 @@ export function AgentsPanel() {
     setEditingUrl(false);
     void detect(next);
   }
+
+  // Heartbeat: re-chequea el companion cada 15s (sin recargar la lista de
+  // agentes). Mantiene el estado online estable y detecta si se cae.
+  useEffect(() => {
+    if (companion !== "online") return;
+    const hb = setInterval(() => {
+      const base = companionUrl.replace(/\/+$/, "");
+      fetchWithTimeout(`${base}/api/repo`, 3000)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (d) {
+            setRepo(d as RepoInfo);
+          } else {
+            setCompanion("offline");
+          }
+        })
+        .catch(() => setCompanion("offline"));
+    }, 15000);
+    return () => clearInterval(hb);
+  }, [companion, companionUrl]);
 
   useEffect(() => {
     void detect();
@@ -316,6 +350,23 @@ export function AgentsPanel() {
             </div>
           )}
 
+          {companion === "online" && agentsError && (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning-soft bg-warning-tint p-3 text-sm">
+              <span className="text-warning-text">
+                El companion conecta, pero no se pudieron listar los agentes (la
+                primera detección tarda unos segundos).
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => void loadAgents(companionUrl)}
+              >
+                Reintentar
+              </Button>
+            </div>
+          )}
+
           {agents && agents.length > 0 && (
             <div className="grid gap-2 sm:grid-cols-2">
               {agents.map((a) => (
@@ -341,9 +392,14 @@ export function AgentsPanel() {
               ))}
             </div>
           )}
-          {companion === "online" && agents?.length === 0 && (
+          {companion === "online" && !agentsError && agentsLoaded && agents?.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No se detectaron agentes CLI conocidos en esta máquina.
+            </p>
+          )}
+          {companion === "online" && !agentsError && !agentsLoaded && (
+            <p className="text-sm text-muted-foreground">
+              Buscando agentes CLI…
             </p>
           )}
         </CardContent>
