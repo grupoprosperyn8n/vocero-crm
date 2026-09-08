@@ -256,7 +256,16 @@ export function AgentsPanel() {
     if (companion === "online") void loadSessions();
   }, [companion, loadSessions]);
 
+  /** Corta el polling activo (al cambiar de sesión o crear una nueva). */
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
   const selectSession = useCallback(async (id: string) => {
+    stopPolling();
     const base = companionUrl.replace(/\/+$/, "");
     try {
       const r = await fetchWithTimeout(`${base}/api/run/${id}`, 6000);
@@ -268,7 +277,7 @@ export function AgentsPanel() {
     } catch {
       setError("No se pudo cargar la sesión");
     }
-  }, [companionUrl]);
+  }, [companionUrl, stopPolling]);
 
   const togglePin = useCallback(async (id: string) => {
     const base = companionUrl.replace(/\/+$/, "");
@@ -280,6 +289,14 @@ export function AgentsPanel() {
     void loadSessions();
   }, [companionUrl, loadSessions]);
 
+  /** Limpia el chat para una conversación nueva (corta polling y run). */
+  const resetChat = useCallback(() => {
+    stopPolling();
+    setRun(null);
+    setDraft("");
+    setMemoryDraft("");
+  }, [stopPolling]);
+
   const deleteSession = useCallback(async (id: string) => {
     const base = companionUrl.replace(/\/+$/, "");
     await fetchWithTimeout(`${base}/api/sessions/delete`, 4000, {
@@ -288,11 +305,13 @@ export function AgentsPanel() {
       body: JSON.stringify({ run_id: id }),
     }).catch(() => null);
     if (run?.id === id) {
+      stopPolling();
       setRun(null);
       setDraft("");
+      setMemoryDraft("");
     }
     void loadSessions();
-  }, [companionUrl, loadSessions, run]);
+  }, [companionUrl, loadSessions, run, stopPolling]);
 
   const saveMemory = useCallback(async (text: string) => {
     if (!run) return;
@@ -365,6 +384,7 @@ export function AgentsPanel() {
   /** Primer mensaje sin sesión: crea la automejora (sin push automático). */
   async function startRun(text: string) {
     if (!text.trim() || !agentSel) return;
+    stopPolling();
     setRun(null);
     setMemoryDraft("");
     // Modo sesión: el primer turno NO pushea solo — Diego revisa e itera,
@@ -412,9 +432,9 @@ export function AgentsPanel() {
     : 0;
 
   return (
-    <div className="max-w-3xl space-y-6">
-      {/* Estado del companion */}
-      <Card>
+    <div className="space-y-4 xl:grid xl:grid-cols-[300px_minmax(0,1fr)] xl:items-start xl:gap-4 xl:space-y-0">
+      {/* Columna izquierda: estado del companion + agentes CLI */}
+      <Card className="xl:sticky xl:top-2">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-[15px]">
             Agentes CLI de esta máquina
@@ -459,7 +479,7 @@ export function AgentsPanel() {
 
           {companion === "offline" && (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 No se encontró el companion en{" "}
                 <code className="rounded border bg-background px-1">{companionUrl}</code>.
                 Para detectar tus agentes y usar la automejora, levantalo en la
@@ -516,24 +536,28 @@ export function AgentsPanel() {
           )}
 
           {companion === "online" && repo && (
-            <div className="grid gap-2 text-sm">
-              <p className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-success-text" />
-                <span className="text-muted-foreground">Companion:</span>
-                <code className="rounded border bg-background px-1">{companionUrl}</code>
+            <div className="space-y-1 text-xs">
+              <p className="flex min-w-0 items-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success-text" />
+                <span className="shrink-0 text-muted-foreground">Companion:</span>
+                <code className="min-w-0 flex-1 truncate rounded border bg-background px-1">
+                  {companionUrl}
+                </code>
                 <button
                   type="button"
                   onClick={() => setEditingUrl(true)}
-                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  className="shrink-0 text-[11px] text-muted-foreground underline-offset-2 hover:underline"
                 >
                   cambiar
                 </button>
               </p>
-              <p className="flex items-center gap-2">
-                Repo: <code className="rounded border bg-background px-1">{repo.repo}</code>
+              <p className="flex min-w-0 items-center gap-1.5 pl-5">
+                <code className="max-w-[120px] truncate rounded border bg-background px-1">
+                  {repo.repo}
+                </code>
                 <Badge variant="secondary">{repo.branch}</Badge>
                 <Badge variant="secondary">{repo.commit}</Badge>
-                {repo.dirty && <Badge variant="warning">cambios sin commitear</Badge>}
+                {repo.dirty && <Badge variant="warning">sucio</Badge>}
               </p>
               {editingUrl && (
                 <div className="flex flex-wrap items-center gap-2">
@@ -585,18 +609,20 @@ export function AgentsPanel() {
           )}
 
           {agents && agents.length > 0 && (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <ul className="space-y-1">
               {agents.map((a) => (
-                <div
+                <li
                   key={a.id}
-                  className="flex items-center justify-between gap-2 rounded-md border bg-background px-3 py-2"
+                  className="flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5"
                 >
                   <div className="flex min-w-0 items-center gap-2">
-                    <Bot className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <Bot className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{a.bin}</p>
+                      <p className="truncate text-xs font-semibold leading-tight">{a.bin}</p>
                       {a.version && (
-                        <p className="truncate text-xs text-muted-foreground">{a.version}</p>
+                        <p className="truncate text-[11px] leading-tight text-muted-foreground">
+                          {a.version}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -605,12 +631,12 @@ export function AgentsPanel() {
                   ) : (
                     <Badge variant="secondary">sin headless</Badge>
                   )}
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
           {companion === "online" && !agentsError && agentsLoaded && agents?.length === 0 && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               No se detectaron agentes CLI conocidos en esta máquina.
             </p>
           )}
@@ -619,6 +645,17 @@ export function AgentsPanel() {
               Buscando agentes CLI…
             </p>
           )}
+      <p className="flex items-start gap-2 text-xs text-muted-foreground">
+        <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>
+          ¿Falta un agente? Se detecta solo con que esté instalado en esta máquina. El
+          companion ({" "}
+          <code className="rounded border bg-background px-1">scripts/companion.py</code>{" "}
+          ) es parte del repo: cualquier agente puede extenderlo. La automejora corre
+          sobre el checkout local y pushea a{" "}
+          <code className="rounded border bg-background px-1">grupoprosperyn8n/vocero-crm</code>.
+        </span>
+      </p>
         </CardContent>
       </Card>
 
@@ -649,11 +686,7 @@ export function AgentsPanel() {
                   variant="ghost"
                   size="sm"
                   className="h-7 gap-1 px-2 text-xs"
-                  onClick={() => {
-                    setRun(null);
-                    setDraft("");
-                    setMemoryDraft("");
-                  }}
+                  onClick={resetChat}
                 >
                   <Plus className="h-3.5 w-3.5" /> Nueva
                 </Button>
@@ -754,10 +787,7 @@ export function AgentsPanel() {
                       <button
                         key={s}
                         type="button"
-                        onClick={() => {
-                          setDraft(s);
-                          void sendMessage();
-                        }}
+                        onClick={() => void startRun(s)}
                         className="rounded-full border bg-background px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-brand-soft hover:text-foreground"
                       >
                         {s}
@@ -882,11 +912,7 @@ export function AgentsPanel() {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      setRun(null);
-                      setDraft("");
-                      setMemoryDraft("");
-                    }}
+                    onClick={resetChat}
                   >
                     Nueva mejora
                   </Button>
@@ -995,17 +1021,7 @@ export function AgentsPanel() {
         </CardContent>
       </Card>
 
-      <p className="flex items-start gap-2 text-xs text-muted-foreground">
-        <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        <span>
-          ¿Falta un agente? Se detecta solo con que esté instalado en esta máquina. El
-          companion ({" "}
-          <code className="rounded border bg-background px-1">scripts/companion.py</code>{" "}
-          ) es parte del repo: cualquier agente puede extenderlo. La automejora corre
-          sobre el checkout local y pushea a{" "}
-          <code className="rounded border bg-background px-1">grupoprosperyn8n/vocero-crm</code>.
-        </span>
-      </p>
+
     </div>
   );
 }
