@@ -4,6 +4,7 @@ import { newId } from "@/lib/db/ids";
 import { publish } from "@/server/events/bus";
 import { runAgentTurn } from "@/server/ai/pipeline";
 import { renderKb } from "@/server/ai/prompts";
+import { getOrgAiConfig } from "@/server/ai/config";
 import { computeScore, judgeCase } from "@/server/lab/judge";
 import { PERSONAS, type Persona } from "@/server/lab/personas";
 
@@ -109,6 +110,10 @@ async function runAllCases(
         .join("\n")
     : "";
 
+  // 019 — Config de IA de la org (Ajustes → IA). Una sola resolución por
+  // corrida; si no hay config de org, el adaptador usa env vars (legacy).
+  const aiConfig = await getOrgAiConfig(organizationId);
+
   let done = 0;
   const total = cases.length;
   publishProgress(organizationId, runId, "running", done, total);
@@ -132,6 +137,7 @@ async function runAllCases(
       transcript,
       kbText,
       behaviorText,
+      aiConfig,
     });
 
     await db

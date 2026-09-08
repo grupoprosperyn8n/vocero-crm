@@ -96,6 +96,7 @@ describe("sandbox del Laboratorio en el pipeline del agente", () => {
     };
     selectQueue.push(
       [testConversation], // conversación
+      [], // ai_settings (019: sin config de org → el agente usa env vars legacy)
       [{ id: "agp_1", organizationId: "org_1", enabled: false, name: "Asistente", tone: null, instructions: null, escalationRules: null, greeting: null }], // perfil (apagado: el Lab evalúa igual)
       [
         {

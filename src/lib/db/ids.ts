@@ -29,6 +29,8 @@ const prefixes = {
   adAttribution: "att",
   conversionEvent: "cve",
   capiSettings: "capi",
+  // 019 — instalador de IA
+  aiSettings: "ais",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { chatJson } from "@/lib/ai";
 import { buildJudgePrompt } from "@/server/ai/prompts";
+import type { OrgAiConfig } from "@/server/ai/config";
 
 /** Veredicto estructurado del juez (FR-032, contrato ai.md). */
 export const Verdict = z.object({
@@ -32,6 +33,12 @@ export async function judgeCase(input: {
   transcript: { role: "cliente" | "agente"; text: string }[];
   kbText: string;
   behaviorText: string;
+  /**
+   * 019 — Config de IA de la org que corre el Laboratorio. Sin ella, el juez
+   * usa las env vars OPENROUTER_* (legacy). La resuelve el runner (que sí
+   * conoce la organización) y la pasa para no duplicar queries por caso.
+   */
+  aiConfig?: OrgAiConfig | null;
 }): Promise<JudgeOutcome> {
   const { system, user } = buildJudgePrompt({
     persona: input.personaKey,
@@ -45,7 +52,13 @@ export async function judgeCase(input: {
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    { judge: true }
+    {
+      judge: true,
+      config: input.aiConfig ?? null,
+      model: input.aiConfig
+        ? (input.aiConfig.judgeModel ?? input.aiConfig.model)
+        : undefined,
+    }
   );
   if (!result.ok) {
     // Diagnóstico operativo: el caso queda visible como judge_failed y aquí

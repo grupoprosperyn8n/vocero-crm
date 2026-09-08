@@ -1034,3 +1034,36 @@ export const capiSettings = pgTable(
   },
   (t) => [uniqueIndex("capi_settings_org_uq").on(t.organizationId)]
 );
+
+/**
+ * 019 — Configuración de IA por organización ("instalador" de Ajustes → IA).
+ *
+ * Sin fila → la instancia usa las env vars OPENROUTER_* (legacy, agent-first:
+ * un agente puede configurar el proveedor desde el entorno o el código).
+ * Con fila → esta configuración manda para el agente y el Laboratorio.
+ * La API key se cifra con AES-256-GCM (mismos helpers que WhatsApp).
+ * `provider` + `baseUrl` definen el dialecto (openai-compatible o anthropic);
+ * ver `src/lib/ai/providers.ts` (única frontera de resolución).
+ */
+export const aiSettings = pgTable(
+  "ai_settings",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    provider: text("provider", {
+      enum: ["openai", "openrouter", "gemini", "deepseek", "anthropic", "custom"],
+    })
+      .notNull()
+      .default("openrouter"),
+    apiKeyCipher: text("api_key_cipher"),
+    apiKeyIv: text("api_key_iv"),
+    apiKeyTag: text("api_key_tag"),
+    baseUrl: text("base_url"),
+    model: text("model").notNull(),
+    judgeModel: text("judge_model"),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("ai_settings_org_uq").on(t.organizationId)]
+);
