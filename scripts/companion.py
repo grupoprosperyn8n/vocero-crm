@@ -13,7 +13,10 @@ Endpoints (127.0.0.1:8790, CORS abierto para localhost):
                            primer turno pushea automático; los follow-ups NO
                            (el push es manual desde la UI con gates en verde).
   POST /api/automejora/push → {run_id}: gates + push de lo pendiente
-  GET  /api/run/<id>     → estado/resultado de una corrida (polling)
+  POST /api/run/<id>/stop → mata el agente en curso (árbol completo) y
+                           marca la sesión como stopped
+  GET  /api/run/<id>     → estado/resultado de una corrida (polling; el log
+                           crece EN VIVO mientras el agente trabaja)
 
 Uso:  python3 scripts/companion.py [--port 8790] [--repo ~/Documentos/vocero-crm]
 Sin dependencias (stdlib). Python 3.10+.
@@ -23,6 +26,7 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -106,6 +110,47 @@ def save_runs():
     with open(tmp, "w") as f:
         _json.dump({"runs": keep}, f, ensure_ascii=False, indent=1)
     os.replace(tmp, RUNS_FILE)
+
+
+# Procesos activos por run (para STOP). El dict en disco NO los serializa.
+PROCS: dict[str, subprocess.Popen] = {}
+RUNS_DIRTY = False
+_LOG_BUDGET = 60000  # chars maximos del log de un run (se recorta del medio)
+
+
+def log_live(run: dict, line: str) -> None:
+    """Append en vivo (thread del agente) con recorte de presupuesto.
+
+    O(1) por línea: mantiene un contador acumulado de chars en run["_chars"]
+    (el sum() sobre todo el log por línea era O(n^2) y trababa el lock).
+    """
+    global RUNS_DIRTY
+    with RUNS_LOCK:
+        log = run["log"]
+        line = str(line).rstrip()
+        log.append(line)
+        chars = run.get("_chars", 0) + len(line) + 1
+        if chars > _LOG_BUDGET:
+            cut = len(log) // 2
+            removed = sum(len(x) + 1 for x in log[:cut])
+            log[:cut] = ["... (log recortado del medio) ..."]
+            run["_chars"] = chars - removed + 1
+        else:
+            run["_chars"] = chars
+    RUNS_DIRTY = True
+
+
+def _autosave_loop() -> None:
+    """Persiste los runs cada 3s si hubo actividad (el log en vivo sobrevive)."""
+    global RUNS_DIRTY
+    while True:
+        time.sleep(3)
+        if RUNS_DIRTY:
+            RUNS_DIRTY = False
+            try:
+                save_runs()  # save_runs ya toma RUNS_LOCK por dentro
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def est_tokens(text: str) -> int:
@@ -197,10 +242,16 @@ def git_ahead(repo: str) -> int:
         return 0
 
 
-def run_gates(repo: str, log: list[str]) -> bool:
+def run_gates(repo: str, log: list[str],
+               check_stop=None) -> bool:
+    # check_stop: callable opcional — si devuelve True entre gates, aborta
+    # (STOP del dueño desde la UI).
     pnpm = shutil.which("pnpm") or os.path.expanduser(
         "~/.nvm/versions/node/v22.23.2/bin/pnpm")
     for cmd in ("typecheck", "lint", "test"):
+        if check_stop and check_stop():
+            log.append("⛔ detenido por el dueño — gates abortados.")
+            return False
         log.append(f"$ pnpm {cmd}")
         try:
             r = subprocess.run([pnpm, cmd], cwd=repo, capture_output=True,
@@ -258,44 +309,92 @@ def build_prompt(objetivo: str, run: dict | None, follow_up: str | None) -> str:
     )
 
 
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """Termina el arbol del agente (TERM y, si no muere en 5s, KILL)."""
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return
+
+    def _hard():
+        try:
+            if proc.poll() is None:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    threading.Timer(5.0, _hard).start()
+
+
 def run_turn(run: dict, prompt: str) -> None:
-    """Ejecuta UN turno del agente sobre el repo (worker thread)."""
+    # Ejecuta UN turno del agente sobre el repo (worker thread).
+    # Popen + lectura en vivo: cada linea del agente se appendea al log al
+    # instante (la UI la muestra mientras piensa/trabaja). El run se puede
+    # detener con POST /api/run/<id>/stop (mata el arbol del agente).
     repo = REPO
     agent = run["agent"]
     log = run["log"]
-    log.append(f"\n——— turno {run['turn']} ———")
+    log_live(run, "")
+    log_live(run, f"——— turno {run['turn']} ———")
     try:
         if agent not in HEADLESS:
-            log.append(f"⛔ agente '{agent}' no soporta headless todavía")
+            log_live(run, f"⛔ agente '{agent}' no soporta headless todavía")
             run["status"] = "failed"
             return
         if not Path(repo, ".git").is_dir():
-            log.append(f"⛔ repo no encontrado en {repo}")
+            log_live(run, f"⛔ repo no encontrado en {repo}")
             run["status"] = "failed"
             return
-        log.append(f"repo: {repo} @ {repo_state(repo)['branch']}")
-        log.append(f"$ {agent} (headless)…")
-        r = subprocess.run(HEADLESS[agent](prompt), cwd=repo,
-                           capture_output=True, text=True, timeout=1800)
-        out = (r.stdout or "")[-3000:] + (r.stderr or "")[-1000:]
-        log.append(out or "(sin salida)")
-        if r.returncode != 0:
-            log.append(f"⛔ {agent} salió con código {r.returncode}")
+        log_live(run, f"repo: {repo} @ {repo_state(repo)['branch']}")
+        log_live(run, f"$ {agent} (headless)…")
+        # Sesion nueva: el arbol completo muere junto (STOP desde la UI).
+        p = subprocess.Popen(
+            HEADLESS[agent](prompt), cwd=repo,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            bufsize=1, start_new_session=True,
+        )
+        with RUNS_LOCK:
+            PROCS[run["id"]] = p
+        buf: list[str] = []
+        for line in p.stdout or []:
+            buf.append(line)
+            log_live(run, line)
+        rc = p.wait(timeout=1800)
+        with RUNS_LOCK:
+            PROCS.pop(run["id"], None)
+        # Si el dueno lo detuvo: el proceso murio por STOP, no por error.
+        if run["status"] == "stopped" or run.get("stop_requested"):
+            run["status"] = "stopped"
+            run["ended"] = time.time()
+            save_runs()
+            return
+        if rc != 0:
+            log_live(run, f"⛔ {agent} salió con código {rc} — salida arriba.")
             run["status"] = "failed"
             return
         # 020 — uso estimado del turno (prompt enviado + salida recibida).
-        out_text = out if isinstance(out, str) else ""
+        out_text = "".join(buf)[-4000:]
         run["usage"].append({
             "turn": run["turn"],
             "in_tokens": est_tokens(prompt),
             "out_tokens": est_tokens(out_text),
             "cost_usd": est_cost_usd(agent, est_tokens(prompt), est_tokens(out_text)),
         })
-        # Gates — obligatorios en cada turno.
-        if not run_gates(repo, log):
-            log.append("⛔ gates en rojo — los cambios quedaron en el repo. "
-                       "Iterá (corregí el rumbo) o revertí.")
-            run["status"] = "gates_failed"
+        # Gates — obligatorios en cada turno (abortables con STOP).
+        if run.get("stop_requested"):
+            run["status"] = "stopped"
+            run["ended"] = time.time()
+            save_runs()
+            return
+        if not run_gates(repo, log, check_stop=lambda: run.get("stop_requested")):
+            if run.get("stop_requested"):
+                run["status"] = "stopped"
+            else:
+                log_live(run, "⛔ gates en rojo — los cambios quedaron en el repo. "
+                              "Iterá (corregí el rumbo) o revertí.")
+                run["status"] = "gates_failed"
             return
         if run["auto_push"]:
             ok, commit = push_pending(repo, agent, run["objetivo"], log)
@@ -306,16 +405,16 @@ def run_turn(run: dict, prompt: str) -> None:
             dirty = st["dirty"] or git_ahead(repo) > 0
             if dirty:
                 run["status"] = "ready_to_push"
-                log.append("ℹ️ cambios listos — pushealos desde la UI cuando quieras "
-                           "(botón 'Pushear cambios', re-corre gates).")
+                log_live(run, "ℹ️ cambios listos — pushealos desde la UI cuando quieras "
+                              "(botón 'Pushear cambios', re-corre gates).")
             else:
                 run["status"] = "done"
-                log.append("ℹ️ sin cambios nuevos en este turno.")
+                log_live(run, "ℹ️ sin cambios nuevos en este turno.")
     except subprocess.TimeoutExpired:
-        log.append("⛔ timeout del agente (30 min)")
+        log_live(run, "⛔ timeout del agente (30 min)")
         run["status"] = "failed"
     except Exception as e:  # noqa: BLE001
-        log.append(f"⛔ error: {e}")
+        log_live(run, f"⛔ error: {e}")
         run["status"] = "failed"
     run["ended"] = time.time()
     save_runs()
@@ -483,6 +582,32 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(404, {"ok": False, "error": "sesión no encontrada"})
             save_runs()
             return self._json(200, {"ok": True})
+        if self.path.startswith("/api/run/") and self.path.endswith("/stop"):
+            rid = self.path.split("/")[-2]
+            with RUNS_LOCK:
+                run = RUNS.get(rid)
+                proc = PROCS.get(rid)
+            if not run:
+                return self._json(404, {"ok": False, "error": "run no encontrado"})
+            if run["status"] != "running":
+                return self._json(400, {"ok": False,
+                                        "error": "la sesión no está corriendo"})
+            # Mata al agente CLI si sigue vivo; el worker corta en la próxima
+            # fase (o el turno ya está en gates: aborta al terminar el gate).
+            if proc:
+                _kill_tree(proc)
+            run["stop_requested"] = True
+            log_live(run, "⛔ detenido por el dueño desde la UI — se corta el "
+                          "turno en curso.")
+            if not proc:
+                # El agente ya había terminado (gates/push): el worker verá el
+                # flag al volver; si no hay worker, cerramos acá mismo.
+                if run.get("_no_worker"):
+                    run["status"] = "stopped"
+                    run["ended"] = time.time()
+            save_runs()
+            return self._json(200, {"ok": True, "id": rid,
+                                    "status": "stopped"})
         if self.path == "/api/automejora/push":
             body = self._read_body()
             if body is None:
@@ -499,7 +624,8 @@ class Handler(BaseHTTPRequestHandler):
             def do_push():
                 log = run["log"]
                 log.append("\n——— push manual ———")
-                if not run_gates(REPO, log):
+                if not run_gates(REPO, log,
+                                 check_stop=lambda: run.get("stop_requested")):
                     log.append("⛔ gates en rojo — NO se pushea")
                     run["status"] = "gates_failed"
                     return
@@ -524,6 +650,15 @@ def main():
     args = ap.parse_args()
     PORT, REPO = args.port, args.repo
     RUNS.update(load_runs())
+    # Defensa: si el companion murió con runs en "running", quedaron huerfanos.
+    for _rid, r in RUNS.items():
+        if r.get("status") == "running":
+            r["status"] = "failed"
+            r["log"].append("⛔ el companion se reinició con este run en curso — "
+                            "el agente quedó detenido. Reiniciá el turno si querés.")
+    if any(r.get("status") == "failed" for r in RUNS.values()):
+        save_runs()
+    threading.Thread(target=_autosave_loop, daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"Vocero Companion en http://127.0.0.1:{PORT}  (repo: {REPO})")
     print(f"Sesiones persistidas cargadas: {len(RUNS)}")

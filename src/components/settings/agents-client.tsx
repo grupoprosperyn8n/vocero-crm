@@ -61,7 +61,7 @@ type RunInfo = {
   agent: string;
   objetivo: string;
   turn: number;
-  status: "running" | "done" | "ready_to_push" | "gates_failed" | "failed" | "push_failed";
+  status: "running" | "done" | "ready_to_push" | "gates_failed" | "failed" | "push_failed" | "stopped";
   log: string[];
   commit: string | null;
   messages: { role: string; content: string }[];
@@ -135,6 +135,7 @@ const STATUS_LABEL: Record<string, { text: string; tone: "ok" | "err" | "run" }>
   failed: { text: "Falló la ejecución del agente — podés iterar con una corrección", tone: "err" },
   gates_failed: { text: "Gates en rojo — los cambios quedaron en el repo. Corregí el rumbo abajo", tone: "err" },
   push_failed: { text: "El push al fork falló — reintentá", tone: "err" },
+  stopped: { text: "Detenido por vos — mandá un mensaje para seguir, o Nueva para empezar otra", tone: "err" },
 };
 
 /** Sugerencias del estado vacío del chat (arrancan la automejora directo). */
@@ -162,6 +163,7 @@ export function AgentsPanel() {
   const [memoryDraft, setMemoryDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
+  const liveRef = useRef<HTMLPreElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /** Carga agentes (la 1ra detección tarda ~5s; con cache del companion, ~1ms). */
@@ -422,6 +424,51 @@ export function AgentsPanel() {
     if (!run) return;
     await postAction("/api/automejora/push", { run_id: run.id });
   }
+
+  /** STOP desde la UI: mata al agente en curso (companion) y marca la sesión. */
+  async function stopRun() {
+    if (!run || run.status !== "running") return;
+    stopPolling();
+    setError(null);
+    try {
+      const res = await fetchWithTimeout(
+        `${companionUrl.replace(/\/+$/, "")}/api/run/${run.id}/stop`,
+        15000,
+        { method: "POST" },
+      );
+      const data = (await res.json()) as { ok: boolean };
+      if (data.ok) {
+        setRun({ ...run, status: "stopped" });
+        void loadSessions();
+      } else {
+        setError("No se pudo detener al agente — ¿seguirá corriendo? Revisá el companion.");
+      }
+    } catch {
+      setError("No se pudo detener al agente — revisá si el companion sigue conectado.");
+    }
+  }
+
+  // Tail del log del turno EN CURSO (para el visor "en vivo" mientras corre).
+  const liveTail = run
+    ? (() => {
+        const log = run.log || [];
+        let start = 0;
+        for (let i = log.length - 1; i >= 0; i--) {
+          if (String(log[i]).startsWith("——— turno")) {
+            start = i;
+            break;
+          }
+        }
+        const seg = log.slice(start).join("\n");
+        return seg.length > 3500 ? "…" + seg.slice(-3500) : seg;
+      })()
+    : "";
+
+  useEffect(() => {
+    if (liveRef.current && run?.status === "running") {
+      liveRef.current.scrollTop = liveRef.current.scrollHeight;
+    }
+  }, [liveTail, run?.status]);
 
   const status = run ? STATUS_LABEL[run.status] : null;
   const totalTokens = run
@@ -851,6 +898,23 @@ export function AgentsPanel() {
                       <div className="inline-flex items-center gap-2 rounded-xl border bg-background px-3.5 py-2.5 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin text-brand-text" />
                         {run.agent} está trabajando…
+                        {run.turn > 1 && " (turno " + run.turn + ")"}
+                      </div>
+                      <div className="mt-1.5 max-w-[94%] overflow-hidden rounded-xl border border-brand-soft/40 bg-black/[0.35]">
+                        <div className="flex items-center justify-between border-b border-brand-soft/20 px-2.5 py-1">
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-text/80">
+                            ● en vivo — lo que {run.agent} hace/piensa
+                          </span>
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {run.agent} · turno {run.turn}
+                          </span>
+                        </div>
+                        <pre
+                          ref={liveRef}
+                          className="max-h-44 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[11px] leading-relaxed text-foreground/90"
+                        >
+                          {liveTail || "arrancando…"}
+                        </pre>
                       </div>
                     </div>
                   )}
@@ -950,16 +1014,29 @@ export function AgentsPanel() {
                     }
                   }}
                 />
-                <Button
-                  type="button"
-                  size="icon"
-                  onClick={() => void sendMessage()}
-                  disabled={!draft.trim() || run?.status === "running" || companion !== "online"}
-                  aria-label="Enviar mensaje"
-                  className="h-11 w-11 shrink-0 rounded-xl"
-                >
-                  ➤
-                </Button>
+                {run?.status === "running" ? (
+                  <Button
+                    type="button"
+                    size="icon"
+                    onClick={() => void stopRun()}
+                    aria-label="Detener al agente"
+                    title="Detener al agente (corta el turno en curso)"
+                    className="h-11 w-11 shrink-0 rounded-xl bg-destructive text-white shadow-sm hover:bg-destructive/90"
+                  >
+                    ■
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="icon"
+                    onClick={() => void sendMessage()}
+                    disabled={!draft.trim() || companion !== "online"}
+                    aria-label="Enviar mensaje"
+                    className="h-11 w-11 shrink-0 rounded-xl"
+                  >
+                    ➤
+                  </Button>
+                )}
                 {run && (run.status === "ready_to_push" || run.status === "push_failed") && (
                   <Button type="button" onClick={() => void pushRun()}>
                     Pushear (gates)
