@@ -174,19 +174,31 @@ def run_automejora(agent: str, objetivo: str, repo: str) -> dict:
                 log.append("⛔ gates en rojo — NO se pushea. Iterá vos o corregí.")
                 run["status"] = "gates_failed"
                 return
-            # 4) Commit + push (solo si hay cambios)
-            dirty = repo_state(repo)["dirty"]
-            if not dirty:
-                log.append("ℹ️ sin cambios en el repo — nada que pushear")
+            # 4) Commit + push. El agente puede dejar cambios sin commitear O un
+            # commit local sin pushear (respetando la constitución: main es del
+            # dueño). Pushear si hay cambios O commits locales adelante.
+            st = repo_state(repo)
+            dirty = st["dirty"]
+            ahead = 0
+            try:
+                r = subprocess.run(["git", "-C", repo, "rev-list", "--count",
+                                    "@{u}..HEAD"], capture_output=True, text=True,
+                                   timeout=15)
+                ahead = int((r.stdout or "0").strip() or "0")
+            except Exception:
+                ahead = 0
+            if not dirty and ahead == 0:
+                log.append("ℹ️ sin cambios ni commits locales — nada que pushear")
                 run["status"] = "done"
                 return
-            git_cfg = ["-c", "user.name=grupoprosperyn8n",
-                       "-c", "user.email=grupoprosperyn8n@users.noreply.github.com"]
-            subprocess.run(["git", "-C", repo, *git_cfg, "add", "-A"],
-                           capture_output=True, timeout=30)
-            subprocess.run(["git", "-C", repo, *git_cfg, "commit", "-m",
-                            f"automejora({agent}): {objetivo[:100]}"],
-                           capture_output=True, timeout=30)
+            if dirty:
+                git_cfg = ["-c", "user.name=grupoprosperyn8n",
+                           "-c", "user.email=grupoprosperyn8n@users.noreply.github.com"]
+                subprocess.run(["git", "-C", repo, *git_cfg, "add", "-A"],
+                               capture_output=True, timeout=30)
+                subprocess.run(["git", "-C", repo, *git_cfg, "commit", "-m",
+                                f"automejora({agent}): {objetivo[:100]}"],
+                               capture_output=True, timeout=30)
             p = subprocess.run(["git", "-C", repo, "push", "origin",
                                 repo_state(repo)["branch"]],
                                capture_output=True, text=True, timeout=120)
