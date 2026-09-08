@@ -297,7 +297,6 @@ export function AgentsPanel() {
     await postAction("/api/automejora/push", { run_id: run.id });
   }
 
-  const selectedAgent = agents?.find((a) => a.id === agentSel);
   const status = run ? STATUS_LABEL[run.status] : null;
 
   return (
