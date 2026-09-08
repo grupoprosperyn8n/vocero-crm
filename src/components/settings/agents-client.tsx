@@ -32,7 +32,8 @@ import { Label } from "@/components/ui/label";
  * proyecto (typecheck + lint + test) y push al fork.
  */
 
-const COMPANION = "http://127.0.0.1:8790";
+const DEFAULT_COMPANION = "http://127.0.0.1:8790";
+const COMPANION_KEY = "vocero.companionUrl";
 
 type AgentInfo = {
   id: string;
@@ -77,6 +78,11 @@ const STATUS_LABEL: Record<string, { text: string; tone: "ok" | "err" | "run" }>
 };
 
 export function AgentsPanel() {
+  const [companionUrl, setCompanionUrl] = useState<string>(() => {
+    if (typeof window === "undefined") return DEFAULT_COMPANION;
+    return localStorage.getItem(COMPANION_KEY) || DEFAULT_COMPANION;
+  });
+  const [editingUrl, setEditingUrl] = useState(false);
   const [companion, setCompanion] = useState<"checking" | "online" | "offline">("checking");
   const [agents, setAgents] = useState<AgentInfo[] | null>(null);
   const [repo, setRepo] = useState<RepoInfo | null>(null);
@@ -87,24 +93,35 @@ export function AgentsPanel() {
   const logRef = useRef<HTMLPreElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const detect = useCallback(async () => {
-    setCompanion("checking");
-    try {
-      const res = await fetchWithTimeout(`${COMPANION}/api/repo`, 2500);
-      if (!res.ok) throw new Error("no");
-      setRepo((await res.json()) as RepoInfo);
-      setCompanion("online");
-      const ra = await fetchWithTimeout(`${COMPANION}/api/agents`, 4000);
-      const data = (await ra.json()) as { agents: AgentInfo[] };
-      setAgents(data.agents);
-      const first = data.agents.find((a) => a.headless);
-      if (first) setAgentSel(first.id);
-    } catch {
-      setCompanion("offline");
-      setAgents(null);
-      setRepo(null);
-    }
-  }, []);
+  const detect = useCallback(
+    async (url?: string) => {
+      const base = (url ?? companionUrl).replace(/\/+$/, "");
+      setCompanion("checking");
+      try {
+        const res = await fetchWithTimeout(`${base}/api/repo`, 2500);
+        if (!res.ok) throw new Error("no");
+        setRepo((await res.json()) as RepoInfo);
+        setCompanion("online");
+        const ra = await fetchWithTimeout(`${base}/api/agents`, 4000);
+        const data = (await ra.json()) as { agents: AgentInfo[] };
+        setAgents(data.agents);
+        const first = data.agents.find((a) => a.headless);
+        if (first) setAgentSel(first.id);
+      } catch {
+        setCompanion("offline");
+        setAgents(null);
+        setRepo(null);
+      }
+    },
+    [companionUrl]
+  );
+
+  function applyUrl(next: string) {
+    setCompanionUrl(next);
+    localStorage.setItem(COMPANION_KEY, next);
+    setEditingUrl(false);
+    void detect(next);
+  }
 
   useEffect(() => {
     void detect();
@@ -123,7 +140,8 @@ export function AgentsPanel() {
     setError(null);
     if (!objetivo.trim() || !agentSel) return;
     setRun(null);
-    const res = await fetchWithTimeout(`${COMPANION}/api/automejora`, 5000, {
+    const base = companionUrl.replace(/\/+$/, "");
+    const res = await fetchWithTimeout(`${base}/api/automejora`, 5000, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ agent: agentSel, objetivo: objetivo.trim() }),
@@ -139,7 +157,7 @@ export function AgentsPanel() {
     }
     const id = data.id;
     const poll = async () => {
-      const r = await fetchWithTimeout(`${COMPANION}/api/run/${id}`, 4000).catch(
+      const r = await fetchWithTimeout(`${base}/api/run/${id}`, 4000).catch(
         () => null
       );
       if (!r) return;
@@ -191,15 +209,58 @@ export function AgentsPanel() {
           {companion === "offline" && (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Para detectar tus agentes y usar la automejora, levantá el
-                companion en esta máquina (una terminal):
+                No se encontró el companion en{" "}
+                <code className="rounded border bg-background px-1">{companionUrl}</code>.
+                Para detectar tus agentes y usar la automejora, levantalo en la
+                máquina donde estén los agentes (una terminal):
               </p>
               <pre className="overflow-x-auto rounded-md border bg-background p-3 text-xs">
                 {`cd ~/Documentos/vocero-crm && python3 scripts/companion.py`}
               </pre>
-              <Button type="button" variant="secondary" size="sm" onClick={() => void detect()}>
-                Reintentar detección
-              </Button>
+              {editingUrl ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    defaultValue={companionUrl}
+                    id="companion-url"
+                    placeholder="http://127.0.0.1:8790"
+                    className="max-w-xs"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      const el = document.getElementById("companion-url") as HTMLInputElement | null;
+                      applyUrl(el?.value.trim() || DEFAULT_COMPANION);
+                    }}
+                  >
+                    Conectar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setEditingUrl(false)}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={() => void detect()}>
+                    Reintentar detección
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditingUrl(true)}
+                  >
+                    Usar otra URL de companion
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
@@ -207,11 +268,51 @@ export function AgentsPanel() {
             <div className="grid gap-2 text-sm">
               <p className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-success-text" />
+                <span className="text-muted-foreground">Companion:</span>
+                <code className="rounded border bg-background px-1">{companionUrl}</code>
+                <button
+                  type="button"
+                  onClick={() => setEditingUrl(true)}
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                >
+                  cambiar
+                </button>
+              </p>
+              <p className="flex items-center gap-2">
                 Repo: <code className="rounded border bg-background px-1">{repo.repo}</code>
                 <Badge variant="secondary">{repo.branch}</Badge>
                 <Badge variant="secondary">{repo.commit}</Badge>
                 {repo.dirty && <Badge variant="warning">cambios sin commitear</Badge>}
               </p>
+              {editingUrl && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    defaultValue={companionUrl}
+                    id="companion-url-online"
+                    className="max-w-xs"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      const el = document.getElementById("companion-url-online") as HTMLInputElement | null;
+                      applyUrl(el?.value.trim() || DEFAULT_COMPANION);
+                    }}
+                  >
+                    Conectar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setEditingUrl(false)}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
