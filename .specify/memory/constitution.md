@@ -1,4 +1,35 @@
 <!--
+SYNC IMPACT REPORT — ENMIENDA 1: AGENT-FIRST
+=============================================
+Versión: 1.4.0 → 1.5.0
+
+Cambios:
+  - NUEVO Principio I "Agent-First — Operable y Mejorable por Cualquier
+    Agente" (Enmienda 1, NO NEGOCIABLE): el sistema se opera y se mejora con
+    agentes de IA de CUALQUIER proveedor (Claude Code, Codex, Hermes,
+    OpenCode…). La UI es una puerta más, nunca la única; las instrucciones
+    del repo viven en formato neutral (AGENTS.md) además de los específicos
+    por CLI; la automejora (loop SDD) la ejecuta cualquier agente con los
+    mismos gates verificables.
+  - Principios previos I–IX renumerados a II–X (adición en primera posición).
+    Referencias internas actualizadas. Sin cambios de contenido en ellos.
+  - CLAUDE.md actualizado (regla Agent-First + referencias renumeradas).
+
+Bump: MINOR (1.4.0 → 1.5.0) — adición de principio nuevo; no redefine ningún
+principio existente.
+
+Motivación (orden de Diego López, responsable del proyecto, 2026-09-08):
+  "Agent first es la enmienda 1." El repo nació atado a Claude Code
+  (CLAUDE.md, .claude/, SpecKit) y la automejora solo la corría ese agente.
+  La enmienda garantiza que ningún agente quede afuera por formato y que la
+  calidad de la automejora no dependa de la marca del agente.
+
+Plantillas dependientes:
+  - .specify/templates/* — ✅ compatibles (la puerta constitucional se evalúa
+    contra esta versión).
+-->
+
+<!--
 SYNC IMPACT REPORT
 ==================
 Versión: 1.3.0 → 1.4.0
@@ -61,7 +92,43 @@ esta constitución SE RESUELVE A FAVOR de esta constitución.
 
 ## Core Principles
 
-### I. Seguridad de Datos Primero (NO NEGOCIABLE)
+### I. Agent-First — Operable y Mejorable por Cualquier Agente (ENMIENDA 1, NO NEGOCIABLE)
+
+El sistema está diseñado para ser **operado Y mejorado por agentes de IA de
+cualquier proveedor** — Claude Code, Codex, Hermes, OpenCode u otro CLI — con
+la misma calidad que a mano. La interfaz humana es UNA puerta más, nunca la
+única. Esta es la enmienda 1 de la constitución: el proyecto jamás queda
+cautivo de una herramienta.
+
+- **Paridad de superficie**: toda configuración con UI tiene un equivalente
+  accesible por agentes (env vars, archivos, API autenticada o convención
+  documentada). Ninguna capacidad depende de un clic que un agente no pueda
+  reproducir.
+- **Instrucciones neutrales**: las guías de operación/modificación del repo
+  viven en formato neutral (`AGENTS.md`) además de los específicos por CLI
+  (`CLAUDE.md` y los que cada agente use). Ningún agente queda afuera por
+  formato. Los skills y herramientas de desarrollo se escriben portables o
+  con su equivalente neutral documentado.
+- **Automejora multi-agente**: el loop SDD (Discover → Plan → Execute →
+  Verify → Iterate) lo ejecuta cualquier agente con la misma calidad: los
+  gates (typecheck, lint, tests, self-test E2E — Principios VI y X) son
+  verificables en automático y la evidencia es observable, sin depender de la
+  marca del agente ni de su memoria privada.
+- **Documentos ejecutables por todos**: constitución, specs, planes y tasks
+  viven en el repo, versionados, escritos para que cualquier agente los lea y
+  ejecute. La memoria de trabajo de una feature es el `tasks.md`, no el
+  contexto de un agente en particular.
+- **PROHIBIDO** diseñar una feature, skill o herramienta que solo un agente
+  específico pueda operar o modificar. El costo de la portabilidad se paga en
+  el diseño, no cuando otro agente necesite intervenir.
+
+**Rationale**: El producto se regala para que agencias lo desplieguen y lo
+adapten cliente por cliente; quien adapta no es siempre el mismo agente ni la
+misma persona. Agent-first como enmienda 1 asegura que la calidad del sistema
+(UI, API, automejora) sea propiedad del proyecto y de sus gates, no de una
+herramienta particular.
+
+### II. Seguridad de Datos Primero (NO NEGOCIABLE)
 
 La protección de datos es la primera responsabilidad del sistema, por encima de
 velocidad de entrega o conveniencia de desarrollo.
@@ -77,7 +144,7 @@ velocidad de entrega o conveniencia de desarrollo.
 **Rationale**: Una fuga de credenciales o un cruce de datos entre clientes es un
 fallo catastrófico e irreversible; prevenirlo siempre cuesta menos que remediarlo.
 
-### II. Soberanía / Self-Hosted (ENDURECIDO)
+### III. Soberanía / Self-Hosted (ENDURECIDO)
 
 Vocero CRM opera completo sobre la infraestructura del operador. La lista de
 dependencias externas en runtime es CERRADA:
@@ -100,7 +167,7 @@ dependencias externas en runtime es CERRADA:
         `enlace-fijo` de la agenda), y el fallo del proveedor degrada de forma
         definida — NUNCA bloquea ni pierde la operación core (la cita se crea
         con link pendiente; el mensaje se responde; el dato se guarda).
-     4. **Credenciales del propio negocio, cifradas en reposo** (Principio I):
+     4. **Credenciales del propio negocio, cifradas en reposo** (Principio II):
         cada instancia habla con SU cuenta del proveedor; jamás credenciales de
         una plataforma central.
      5. **Verificables apagados y encendidos**: la CI ejercita ambas
@@ -121,7 +188,7 @@ dependencias externas en runtime es CERRADA:
 clientes; cada dependencia externa adicional es un costo, un punto de fallo y una
 fuga de soberanía que rompe la promesa "gratis y tuyo".
 
-### III. Multi-Tenancy Real
+### IV. Multi-Tenancy Real
 
 El sistema sirve a organizaciones independientes desde una sola instancia lógica.
 En Vocero cada instancia sirve a UN negocio, pero el modelo de datos es
@@ -134,9 +201,9 @@ exigible y no cerrar la puerta a evoluciones.
   posteriori. Toda tabla de dominio lo lleva NOT NULL e indexado org-first.
 
 **Rationale**: Multi-tenancy diseñado desde el inicio evita reescrituras costosas y
-hace cumplible el aislamiento del Principio I.
+hace cumplible el aislamiento del Principio II.
 
-### IV. Idempotencia en Integraciones Externas
+### V. Idempotencia en Integraciones Externas
 
 Todo evento entrante de un sistema externo (webhooks, callbacks, notificaciones de
 terceros) se procesa de forma idempotente.
@@ -149,7 +216,7 @@ terceros) se procesa de forma idempotente.
 **Rationale**: Los proveedores externos reintentan entregas por diseño; sin
 idempotencia, los reintentos corrompen datos y generan acciones duplicadas.
 
-### V. Calidad Verificable Antes de "Hecho" (NO NEGOCIABLE)
+### VI. Calidad Verificable Antes de "Hecho" (NO NEGOCIABLE)
 
 Ninguna tarea se considera terminada sin pasar verificación.
 
@@ -163,7 +230,7 @@ Ninguna tarea se considera terminada sin pasar verificación.
 **Rationale**: La verificación automática es la única definición de "hecho" que no
 depende de optimismo.
 
-### VI. Specs Antes de Código
+### VII. Specs Antes de Código
 
 Ninguna feature se implementa sin una especificación previa. La especificación
 describe el comportamiento observable por el usuario, no la implementación.
@@ -204,7 +271,7 @@ más de lo que rinde no se discute: se erosiona en silencio, hasta que "specs an
 código" significa "sin specs". Nombrar el escalón intermedio es lo que evita que el
 siguiente paso hacia abajo sea ninguno.
 
-### VII. Trazabilidad de Decisiones
+### VIII. Trazabilidad de Decisiones
 
 Las decisiones tomadas sin contexto suficiente se documentan para revisión humana.
 
@@ -217,7 +284,7 @@ Las decisiones tomadas sin contexto suficiente se documentan para revisión huma
 **Rationale**: Las decisiones implícitas bajo incertidumbre son la principal fuente
 de deuda oculta; hacerlas visibles permite corregirlas a tiempo.
 
-### VIII. Foco Vertical — CRM de Conversaciones y Leads de WhatsApp
+### IX. Foco Vertical — CRM de Conversaciones y Leads de WhatsApp
 
 Es un CRM de conversaciones y leads de WhatsApp que las agencias despliegan para
 negocios. No es plataforma de marketing masivo, ni constructor visual de flujos, ni
@@ -237,11 +304,11 @@ conversaciones de WhatsApp de UN negocio* se rechaza.
 **Rationale**: Un foco vertical explícito mantiene el modelo de datos alineado con el
 negocio real y da un criterio claro para aceptar o rechazar alcance.
 
-### IX. Verificación de Comportamiento en Vivo (NO NEGOCIABLE)
+### X. Verificación de Comportamiento en Vivo (NO NEGOCIABLE)
 
-Complementa el Principio V. TODA feature con comportamiento observable —UI web,
+Complementa el Principio VI. TODA feature con comportamiento observable —UI web,
 mensajería, API o integración externa— se verifica ejerciendo ese comportamiento como
-lo haría un usuario real antes de declararse "Hecha". El gate técnico (Principio V) es
+lo haría un usuario real antes de declararse "Hecha". El gate técnico (Principio VI) es
 el piso, no el techo.
 
 - **Self-test + loop por el implementador (self-improvement loop).** Tras implementar,
@@ -264,7 +331,7 @@ el piso, no el techo.
   oficiales vinculadas a un número/cuenta real, MUST respetarse reglas duras: enviar solo a
   destinatarios de una allowlist, NUNCA mensajes en ráfaga (anti-flood obligatorio), y
   minimizar el volumen. La integridad de la cuenta del operador es un activo a proteger, en
-  línea con el Principio I.
+  línea con el Principio II.
 
 **Rationale**: El gate técnico no detecta que un agente "se calló", que una tarjeta no
 llegó como un solo mensaje, o que un botón de UI no disparó nada — eso solo aparece
@@ -275,7 +342,7 @@ herramientas no oficiales podría provocar un baneo irreversible.
 
 ## Restricciones de Plataforma y Seguridad
 
-Estas restricciones derivan de los Principios I y II y son verificables en revisión:
+Estas restricciones derivan de los Principios II y III y son verificables en revisión:
 
 - **Gestión de secretos**: los secretos se inyectan vía configuración de entorno o un
   gestor de secretos; nunca se comprometen a control de versiones.
@@ -293,7 +360,7 @@ Estas restricciones derivan de los Principios I y II y son verificables en revis
 
 ## Flujo de Desarrollo y Puertas de Calidad
 
-- **Orden del flujo**: depende del carril declarado (Principio VI). En el ciclo
+- **Orden del flujo**: depende del carril declarado (Principio VII). En el ciclo
   completo, `specify → plan → tasks → implement`, y cada fase consume el artefacto
   de la anterior. En el carril ligero, `specify → implement`.
 - **Puerta constitucional (Constitution Check)**: se evalúa SIEMPRE, en los dos
@@ -309,11 +376,11 @@ Estas restricciones derivan de los Principios I y II y son verificables en revis
   líneas que en dos mil.
 - **Puerta de calidad (Definición de "Hecho")**: tipos + lint + build en verde, y
   tests donde apliquen; lo no verificable automáticamente se marca como pendiente de
-  verificación humana (Principio V). Para features con comportamiento observable de cara
+  verificación humana (Principio VI). Para features con comportamiento observable de cara
   al usuario, "Hecho" exige además el self-test de comportamiento en vivo ejecutado por el
-  implementador, con sus guardarraíles (Principio IX).
+  implementador, con sus guardarraíles (Principio X).
 - **Trazabilidad**: decisiones bajo incertidumbre y supuestos se documentan de forma
-  visible (Principio VII), no en comentarios enterrados.
+  visible (Principio VIII), no en comentarios enterrados.
 
 ## Governance
 
@@ -334,4 +401,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.4.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-08-26
+**Version**: 1.5.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-08 (Enmienda 1: Agent-First)

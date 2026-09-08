@@ -63,7 +63,14 @@ funciona igual.
 
 Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
 
-- **Soberanía (II, endurecida — 1.4.0)**: el NÚCLEO depende solo de WhatsApp
+- **Agent-First (I — Enmienda 1, 1.5.0)**: el sistema se opera Y mejora con
+  agentes de IA de CUALQUIER proveedor (Claude Code, Codex, Hermes,
+  OpenCode…). Toda configuración con UI tiene equivalente accesible por
+  agentes; las instrucciones del repo viven en formato neutral (`AGENTS.md`)
+  además de este archivo; el loop SDD lo ejecuta cualquier agente con los
+  mismos gates. PROHIBIDO diseñar features/skills que solo un agente pueda
+  operar.
+- **Soberanía (III, endurecida — 1.4.0)**: el NÚCLEO depende solo de WhatsApp
   Cloud API + proveedor LLM OpenRouter-compatible opcional; prohibido meterle
   S3/R2, email, billing u otros terceros. Un servicio de terceros solo entra
   como **conector opcional**: apagado por defecto tras bandera (patrón
@@ -71,11 +78,11 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
   dependencia externa y degradación definida (su fallo jamás bloquea la
   operación core), credenciales del negocio cifradas, y CI que lo prueba
   apagado y encendido. Auth y BD self-hosted.
-- **Seguridad (I)**: secretos cifrados en reposo (AES-256-GCM, `lib/crypto`);
+- **Seguridad (II)**: secretos cifrados en reposo (AES-256-GCM, `lib/crypto`);
   jamás al cliente ni a logs. El token de WhatsApp solo muestra sus últimos 4.
-- **Multi-tenancy (III)**: `organization_id` NOT NULL en toda tabla de dominio;
+- **Multi-tenancy (IV)**: `organization_id` NOT NULL en toda tabla de dominio;
   toda query pasa por `scoped()` de `src/lib/db/tenant.ts`.
-- **Idempotencia (IV)**: webhooks dedup por `wa_message_id` UNIQUE; estados
+- **Idempotencia (V)**: webhooks dedup por `wa_message_id` UNIQUE; estados
   monotónicos; seeds y migraciones re-ejecutables.
 - **Sandbox del Laboratorio**: las conversaciones `is_test` JAMÁS tocan la API
   real — el sender lanza excepción (no lo "arregles": es un guardrail). Lo
