@@ -19,6 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 
 /**
@@ -449,13 +450,20 @@ export function AgentsPanel() {
 
           <div className="grid gap-2">
             <Label htmlFor="agent-goal">Objetivo de la mejora</Label>
-            <Input
+            <Textarea
               id="agent-goal"
               value={objetivo}
               onChange={(e) => setObjetivo(e.target.value)}
-              placeholder="Ej: que el agente salude con el nombre del cliente en el primer mensaje"
+              placeholder={
+                "Ej: que el agente salude con el nombre del cliente en el primer mensaje\n\nDescribí el objetivo con detalle — el agente lee AGENTS.md y lo ejecuta completo (spec → plan → código → gates → push)."
+              }
               disabled={companion !== "online"}
+              className="min-h-[110px] resize-y"
+              rows={6}
             />
+            <p className="text-right text-xs text-muted-foreground">
+              {objetivo.length} caracteres
+            </p>
           </div>
 
           {error && (
