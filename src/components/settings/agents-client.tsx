@@ -60,7 +60,40 @@ type RunInfo = {
   status: "running" | "done" | "ready_to_push" | "gates_failed" | "failed" | "push_failed";
   log: string[];
   commit: string | null;
+  messages: { role: string; content: string }[];
 };
+
+/** Separa el log en turnos: resumen del agente + línea de resultado. */
+function parseTurns(log: string[], turnCount: number): { n: number; summary: string; tail: string }[] {
+  const raw: { n: number; lines: string[] }[] = [];
+  let current: { n: number; lines: string[] } | null = null;
+  for (const line of log) {
+    const m = line.match(/——— turno (\d+) ———/);
+    if (m) {
+      if (current) raw.push(current);
+      current = { n: Number(m[1]), lines: [] };
+      continue;
+    }
+    if (current) current.lines.push(line);
+  }
+  if (current) raw.push(current);
+  return raw.map((t) => {
+    const agentLines: string[] = [];
+    let tail = "";
+    for (const l of t.lines) {
+      if (l.startsWith("$ pnpm")) break;
+      if (l.trim()) agentLines.push(l);
+    }
+    const rev = [...t.lines].reverse();
+    for (const l of rev) {
+      if (l.trim()) {
+        tail = l.trim();
+        break;
+      }
+    }
+    return { n: t.n, summary: agentLines.join("\n").slice(-600), tail };
+  });
+}
 
 async function fetchWithTimeout(url: string, ms: number, init?: RequestInit) {
   const ctl = new AbortController();
@@ -475,33 +508,35 @@ export function AgentsPanel() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-2">
-            <Label htmlFor="agent-sel">Agente que ejecuta la mejora</Label>
-            <select
-              id="agent-sel"
-              value={agentSel}
-              onChange={(e) => setAgentSel(e.target.value)}
-              disabled={companion !== "online" || !agents?.length}
-              className="block w-full rounded-md border bg-background px-3 py-2 text-sm"
-            >
-              {agents?.filter((a) => a.headless).map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.bin}
-                  {a.version ? ` — ${a.version}` : ""}
-                </option>
-              ))}
-              {agents?.filter((a) => !a.headless).map((a) => (
-                <option key={a.id} value={a.id} disabled>
-                  {a.bin} (sin modo headless)
-                </option>
-              ))}
-            </select>
-            {selectedAgent && !selectedAgent.headless && (
-              <p className="text-xs text-warning-text">
-                {selectedAgent.bin} no tiene modo headless configurado todavía — elegí otro.
-              </p>
-            )}
-          </div>
+          {!run && (
+            <div className="grid gap-2">
+              <Label htmlFor="agent-sel">Agente que ejecuta la mejora</Label>
+              <select
+                id="agent-sel"
+                value={agentSel}
+                onChange={(e) => setAgentSel(e.target.value)}
+                disabled={companion !== "online" || !agents?.length}
+                className="block w-full rounded-md border bg-background px-3 py-2 text-sm"
+              >
+                {agents?.filter((a) => a.headless).map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.bin}
+                    {a.version ? ` — ${a.version}` : ""}
+                  </option>
+                ))}
+                {agents?.filter((a) => !a.headless).map((a) => (
+                  <option key={a.id} value={a.id} disabled>
+                    {a.bin} (sin modo headless)
+                  </option>
+                ))}
+              </select>
+              {selectedAgent && !selectedAgent.headless && (
+                <p className="text-xs text-warning-text">
+                  {selectedAgent.bin} no tiene modo headless configurado todavía — elegí otro.
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="grid gap-2">
             <Label htmlFor="agent-goal">Objetivo de la mejora</Label>
@@ -527,97 +562,173 @@ export function AgentsPanel() {
             </p>
           )}
 
-          {status && (
-            <div className="space-y-2">
-              <p
-                className={
-                  status.tone === "ok"
-                    ? "flex items-center gap-2 rounded-md border border-success-soft bg-success-tint p-3 text-sm text-success-text"
-                    : status.tone === "err"
-                      ? "rounded-md border border-danger-soft bg-danger-tint p-3 text-sm text-destructive"
-                      : "flex items-center gap-2 rounded-md border bg-background p-3 text-sm"
-                }
-              >
-                {status.tone === "run" && <Loader2 className="h-4 w-4 animate-spin" />}
-                {status.text}
-                {run?.commit && (
-                  <Badge variant="success">commit {run.commit}</Badge>
-                )}
-              </p>
-              <pre
-                ref={logRef}
-                className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md border bg-background p-3 font-mono text-xs leading-relaxed"
-              >
-                {run?.log.join("\n") ?? "…"}
-              </pre>
-            </div>
-          )}
-
-          {/* Modo sesión: iterar sobre el run terminado */}
-          {run && run.status !== "running" && (
-            <div className="space-y-2 rounded-md border bg-background p-3">
-              <p className="text-xs font-semibold text-muted-foreground">
-                Sesión de mejora — turno {run.turn} con {run.agent}. Iterá sobre
-                el mismo trabajo (los cambios quedan en el repo hasta que
-                pushees).
-              </p>
-              <div className="flex flex-wrap items-start gap-2">
-                <Textarea
-                  value={followUp}
-                  onChange={(e) => setFollowUp(e.target.value)}
-                  placeholder={
-                    "Seguimiento… ej: 'ahora cambiá también X' · 'no, mejor así' · 'los tests fallan, arreglalo'"
-                  }
-                  className="min-h-[60px] flex-1 resize-y"
-                  rows={2}
-                />
+          {run ? (
+            <div className="space-y-3">
+              {/* Encabezado de la sesión */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex flex-wrap items-center gap-2 text-sm">
+                  <Bot className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-semibold">Sesión con {run.agent}</span>
+                  <Badge variant="secondary">turno {run.turn}</Badge>
+                  {status && (
+                    <span
+                      className={
+                        status.tone === "ok"
+                          ? "text-xs font-medium text-success-text"
+                          : status.tone === "err"
+                            ? "text-xs font-medium text-destructive"
+                            : "flex items-center gap-1 text-xs text-muted-foreground"
+                      }
+                    >
+                      {status.tone === "run" && (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      )}
+                      {status.text}
+                    </span>
+                  )}
+                  {run.commit && <Badge variant="success">commit {run.commit}</Badge>}
+                </p>
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => void followTurn()}
-                  disabled={!followUp.trim()}
+                  size="sm"
+                  onClick={() => {
+                    setRun(null);
+                    setObjetivo("");
+                    setFollowUp("");
+                  }}
                 >
-                  Iterar
+                  Nueva mejora
                 </Button>
               </div>
-              {(run.status === "ready_to_push" || run.status === "push_failed") && (
-                <Button type="button" onClick={() => void pushRun()}>
-                  Pushear cambios (gates en verde)
+
+              {/* Burbujas del chat */}
+              <div
+                className="max-h-[26rem] space-y-3 overflow-y-auto rounded-lg border bg-background/60 p-3"
+              >
+                {run.messages.map((m, i) => (
+                  <div key={`u${i}`} className="flex justify-end">
+                    <div className="max-w-[85%] whitespace-pre-wrap rounded-xl rounded-br-sm bg-primary/10 px-3 py-2 text-sm">
+                      {m.content}
+                    </div>
+                  </div>
+                ))}
+                {parseTurns(run.log, run.turn).map((t) => (
+                  <div key={`t${t.n}`} className="flex justify-start">
+                    <div className="max-w-[85%] rounded-xl rounded-bl-sm border bg-background px-3 py-2 text-sm">
+                      <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                        <Bot className="h-3.5 w-3.5" /> {run.agent} · turno {t.n}
+                      </p>
+                      <p className="whitespace-pre-wrap">{t.summary || "…"}</p>
+                      <p
+                        className={
+                          t.tail.startsWith("✅")
+                            ? "mt-1.5 text-xs font-medium text-success-text"
+                            : t.tail.startsWith("⛔")
+                              ? "mt-1.5 text-xs font-medium text-destructive"
+                              : t.tail.startsWith("ℹ️")
+                                ? "mt-1.5 text-xs text-muted-foreground"
+                                : ""
+                        }
+                      >
+                        {t.tail}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {run.status === "running" && (
+                  <div className="flex justify-start">
+                    <div className="flex items-center gap-2 rounded-xl rounded-bl-sm border bg-background px-3 py-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {run.agent} está trabajando…
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Input de seguimiento */}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-end gap-2">
+                  <Textarea
+                    value={followUp}
+                    onChange={(e) => setFollowUp(e.target.value)}
+                    placeholder={
+                      run.status === "running"
+                        ? "El agente está trabajando…"
+                        : "Escribí el seguimiento… ej: 'ahora cambiá también X' · 'no, mejor así' · 'los tests fallan, arreglalo'"
+                    }
+                    className="min-h-[52px] flex-1 resize-y"
+                    rows={2}
+                    disabled={run.status === "running"}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        if (followUp.trim() && run.status !== "running") {
+                          void followTurn();
+                        }
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => void followTurn()}
+                    disabled={!followUp.trim() || run.status === "running"}
+                  >
+                    Enviar
+                  </Button>
+                  {(run.status === "ready_to_push" || run.status === "push_failed") && (
+                    <Button type="button" onClick={() => void pushRun()}>
+                      Pushear cambios (gates)
+                    </Button>
+                  )}
+                </div>
+                <details className="rounded-md border bg-background/40 px-3 py-2 text-xs">
+                  <summary className="cursor-pointer text-muted-foreground">
+                    Ver log técnico completo
+                  </summary>
+                  <pre
+                    ref={logRef}
+                    className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed"
+                  >
+                    {run.log.join("\n")}
+                  </pre>
+                </details>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              <Label htmlFor="agent-goal">Objetivo de la mejora</Label>
+              <Textarea
+                id="agent-goal"
+                value={objetivo}
+                onChange={(e) => setObjetivo(e.target.value)}
+                placeholder={
+                  "Ej: que el agente salude con el nombre del cliente en el primer mensaje\n\nDescribí el objetivo con detalle — el agente lee AGENTS.md y lo ejecuta completo (spec → plan → código → gates). Después podés seguir iterando en el chat."
+                }
+                disabled={companion !== "online"}
+                className="min-h-[110px] resize-y"
+                rows={6}
+              />
+              <p className="text-right text-xs text-muted-foreground">
+                {objetivo.length} caracteres
+              </p>
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <Button
+                  type="button"
+                  onClick={() => void startRun()}
+                  disabled={companion !== "online" || !agentSel || !objetivo.trim()}
+                >
+                  Ejecutar automejora
                 </Button>
-              )}
+                {selectedAgent && (
+                  <span className="text-xs text-muted-foreground">
+                    Con {selectedAgent.bin}
+                    {selectedAgent.version ? ` ${selectedAgent.version}` : ""}
+                  </span>
+                )}
+              </div>
             </div>
           )}
-
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <Button
-              type="button"
-              onClick={() => void startRun()}
-              disabled={
-                companion !== "online" ||
-                !agentSel ||
-                !objetivo.trim() ||
-                run?.status === "running"
-              }
-            >
-              {run?.status === "running" ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Ejecutar automejora
-            </Button>
-            {run && run.status !== "running" && (
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  setRun(null);
-                  setObjetivo("");
-                  setFollowUp("");
-                }}
-              >
-                Nueva mejora
-              </Button>
-            )}
-          </div>
         </CardContent>
       </Card>
 
