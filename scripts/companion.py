@@ -7,8 +7,12 @@ detecta los agentes donde corre el browser, sin instalar nada en el VPS.
 Endpoints (127.0.0.1:8790, CORS abierto para localhost):
   GET  /api/agents       → agentes CLI detectados (which + versión)
   GET  /api/repo         → estado del checkout local del repo
-  POST /api/automejora   → {agent, objetivo}: corre el agente headless sobre
-                           el repo, gates (typecheck/lint/test) y push si verde
+  POST /api/automejora   → {agent, objetivo, follow_up?, run_id?}
+                           Crea un run (objetivo) o un turno de seguimiento
+                           sobre un run existente (modo sesión/chat). El
+                           primer turno pushea automático; los follow-ups NO
+                           (el push es manual desde la UI con gates en verde).
+  POST /api/automejora/push → {run_id}: gates + push de lo pendiente
   GET  /api/run/<id>     → estado/resultado de una corrida (polling)
 
 Uso:  python3 scripts/companion.py [--port 8790] [--repo ~/Documentos/vocero-crm]
@@ -37,27 +41,27 @@ AGENT_DEFS = {
     "hermes": ("hermes", ["--version"]),
     "opencode": ("opencode", ["--version"]),
     "gemini": ("gemini", ["--version"]),
-    "aider": ("aider", ["--version"]),
 }
 
 # Comando headless por agente. El objetivo SIEMPRE aterriza con la misma
 # instrucción: seguir AGENTS.md (Enmienda 1) y los gates del repo.
 HEADLESS = {
-    "codex": lambda obj: ["codex", "exec", "--full-auto",
-                          f"{obj}\n\nSeguí AGENTS.md del repo: gates typecheck+lint+test en verde y self-test cuando aplique. No preguntes pasos reversibles; bloqueate solo ante acciones irreversibles."],
-    "claude": lambda obj: ["claude", "-p",
-                           f"{obj}\n\nSeguí AGENTS.md del repo: gates typecheck+lint+test en verde y self-test cuando aplique. No preguntes pasos reversibles.",
-                           "--dangerously-skip-permissions"],
-    "opencode": lambda obj: ["opencode", "run",
-                             f"{obj}\n\nSeguí AGENTS.md del repo: gates typecheck+lint+test en verde y self-test cuando aplique."],
+    "codex": lambda prompt: ["codex", "exec", "--full-auto", prompt],
+    "claude": lambda prompt: ["claude", "-p", prompt, "--dangerously-skip-permissions"],
+    "opencode": lambda prompt: ["opencode", "run", prompt],
     # Hermes Agent: -z ejecuta un prompt en modo no interactivo (verificado).
-    "hermes": lambda obj: ["hermes", "-z",
-                           f"{obj}\n\nSeguí AGENTS.md del repo: gates typecheck+lint+test en verde y self-test cuando aplique. No preguntes pasos reversibles; bloqueate solo ante acciones irreversibles."],
+    "hermes": lambda prompt: ["hermes", "-z", prompt],
     # gemini CLI tiene -p headless pero requiere auth (~/.gemini/settings.json
     # o GEMINI_API_KEY) Y carpeta "trusted" (si no, yolo se degrada a prompts
     # y el run queda esperando). Habilitar cuando haya auth configurada:
-    # "gemini": lambda obj: ["gemini", "-p", f"{obj}\n\nSeguí AGENTS.md…", "--approval-mode", "yolo"],
+    # "gemini": lambda prompt: ["gemini", "-p", prompt, "--approval-mode", "yolo"],
 }
+
+AGENTS_MD_INSTR = (
+    "Seguí AGENTS.md del repo (y CLAUDE.md si existe): gates typecheck+lint+test "
+    "en verde y self-test cuando aplique. No preguntes pasos reversibles; "
+    "bloqueate solo ante acciones irreversibles (merge a main, borrado, gastar dinero)."
+)
 
 RUNS: dict[str, dict] = {}
 RUNS_LOCK = threading.Lock()
@@ -120,8 +124,20 @@ def repo_state(repo: str) -> dict:
     }
 
 
+def git_ahead(repo: str) -> int:
+    """Commits locales sin pushear (el agente puede commitear y no pushear)."""
+    try:
+        r = subprocess.run(["git", "-C", repo, "rev-list", "--count",
+                            "@{u}..HEAD"], capture_output=True, text=True,
+                           timeout=15)
+        return int((r.stdout or "0").strip() or "0")
+    except Exception:
+        return 0
+
+
 def run_gates(repo: str, log: list[str]) -> bool:
-    pnpm = shutil.which("pnpm") or os.path.expanduser("~/.nvm/versions/node/v22.23.2/bin/pnpm")
+    pnpm = shutil.which("pnpm") or os.path.expanduser(
+        "~/.nvm/versions/node/v22.23.2/bin/pnpm")
     for cmd in ("typecheck", "lint", "test"):
         log.append(f"$ pnpm {cmd}")
         try:
@@ -138,86 +154,131 @@ def run_gates(repo: str, log: list[str]) -> bool:
     return True
 
 
-def run_automejora(agent: str, objetivo: str, repo: str) -> dict:
-    run_id = uuid.uuid4().hex[:10]
-    run = {"id": run_id, "agent": agent, "status": "running",
-           "log": [], "commit": None, "started": time.time()}
-    with RUNS_LOCK:
-        RUNS[run_id] = run
+def push_pending(repo: str, agent: str, objetivo: str, log: list[str]) -> tuple[bool, str | None]:
+    """Commit de lo sucio (si hay) + push. Devuelve (ok, commit)."""
+    st = repo_state(repo)
+    dirty = st["dirty"]
+    ahead = git_ahead(repo)
+    if not dirty and ahead == 0:
+        log.append("ℹ️ sin cambios ni commits locales — nada que pushear")
+        return True, None
+    if dirty:
+        git_cfg = ["-c", "user.name=grupoprosperyn8n",
+                   "-c", "user.email=grupoprosperyn8n@users.noreply.github.com"]
+        subprocess.run(["git", "-C", repo, *git_cfg, "add", "-A"],
+                       capture_output=True, timeout=30)
+        subprocess.run(["git", "-C", repo, *git_cfg, "commit", "-m",
+                        f"automejora({agent}): {objetivo[:100]}"],
+                       capture_output=True, timeout=30)
+    p = subprocess.run(["git", "-C", repo, "push", "origin",
+                        repo_state(repo)["branch"]],
+                       capture_output=True, text=True, timeout=120)
+    if p.returncode != 0:
+        log.append(f"⛔ push falló: {(p.stderr or '')[-400:]}")
+        return False, None
+    commit = repo_state(repo)["commit"]
+    log.append(f"✅ pusheado {commit} — Coolify deploya si el webhook está activo")
+    return True, commit
 
-    def work():
-        log = run["log"]
-        try:
-            if agent not in HEADLESS:
-                log.append(f"⛔ agente '{agent}' no soporta headless todavía")
-                run["status"] = "failed"
-                return
-            if not Path(repo, ".git").is_dir():
-                log.append(f"⛔ repo no encontrado en {repo}")
-                run["status"] = "failed"
-                return
-            # 1) Estado previo
-            log.append(f"repo: {repo} @ {repo_state(repo)['branch']}")
-            # 2) Agente headless
-            log.append(f"$ {agent} (headless)…")
-            cmd = HEADLESS[agent](objetivo)
-            r = subprocess.run(cmd, cwd=repo, capture_output=True,
-                               text=True, timeout=1800)
-            out = (r.stdout or "")[-3000:] + (r.stderr or "")[-1000:]
-            log.append(out or "(sin salida)")
-            if r.returncode != 0:
-                log.append(f"⛔ {agent} salió con código {r.returncode}")
-                run["status"] = "failed"
-                return
-            # 3) Gates
-            if not run_gates(repo, log):
-                log.append("⛔ gates en rojo — NO se pushea. Iterá vos o corregí.")
-                run["status"] = "gates_failed"
-                return
-            # 4) Commit + push. El agente puede dejar cambios sin commitear O un
-            # commit local sin pushear (respetando la constitución: main es del
-            # dueño). Pushear si hay cambios O commits locales adelante.
+
+def build_prompt(objetivo: str, run: dict | None, follow_up: str | None) -> str:
+    """Prompt del turno: con follow_up, incluye el historial de la sesión."""
+    if not follow_up:
+        return f"{objetivo}\n\n{AGENTS_MD_INSTR}"
+    msgs = (run or {}).get("messages", [])
+    history = "\n".join(
+        f"- {m['role']}: {m['content'][:400]}" for m in msgs[-8:]
+    )
+    return (
+        f"CONTEXTO DE LA SESIÓN DE MEJORA (ya aplicado en el repo):\n{history}\n\n"
+        f"NUEVO MENSAJE DEL DUEÑO: {follow_up}\n\n"
+        f"Objetivo original: {objetivo}\n\n{AGENTS_MD_INSTR}"
+    )
+
+
+def run_turn(run: dict, prompt: str) -> None:
+    """Ejecuta UN turno del agente sobre el repo (worker thread)."""
+    repo = REPO
+    agent = run["agent"]
+    log = run["log"]
+    log.append(f"\n——— turno {run['turn']} ———")
+    try:
+        if agent not in HEADLESS:
+            log.append(f"⛔ agente '{agent}' no soporta headless todavía")
+            run["status"] = "failed"
+            return
+        if not Path(repo, ".git").is_dir():
+            log.append(f"⛔ repo no encontrado en {repo}")
+            run["status"] = "failed"
+            return
+        log.append(f"repo: {repo} @ {repo_state(repo)['branch']}")
+        log.append(f"$ {agent} (headless)…")
+        r = subprocess.run(HEADLESS[agent](prompt), cwd=repo,
+                           capture_output=True, text=True, timeout=1800)
+        out = (r.stdout or "")[-3000:] + (r.stderr or "")[-1000:]
+        log.append(out or "(sin salida)")
+        if r.returncode != 0:
+            log.append(f"⛔ {agent} salió con código {r.returncode}")
+            run["status"] = "failed"
+            return
+        # Gates — obligatorios en cada turno.
+        if not run_gates(repo, log):
+            log.append("⛔ gates en rojo — los cambios quedaron en el repo. "
+                       "Iterá (corregí el rumbo) o revertí.")
+            run["status"] = "gates_failed"
+            return
+        if run["auto_push"]:
+            ok, commit = push_pending(repo, agent, run["objetivo"], log)
+            run["commit"] = commit
+            run["status"] = "done" if ok else "push_failed"
+        else:
             st = repo_state(repo)
-            dirty = st["dirty"]
-            ahead = 0
-            try:
-                r = subprocess.run(["git", "-C", repo, "rev-list", "--count",
-                                    "@{u}..HEAD"], capture_output=True, text=True,
-                                   timeout=15)
-                ahead = int((r.stdout or "0").strip() or "0")
-            except Exception:
-                ahead = 0
-            if not dirty and ahead == 0:
-                log.append("ℹ️ sin cambios ni commits locales — nada que pushear")
-                run["status"] = "done"
-                return
+            dirty = st["dirty"] or git_ahead(repo) > 0
             if dirty:
-                git_cfg = ["-c", "user.name=grupoprosperyn8n",
-                           "-c", "user.email=grupoprosperyn8n@users.noreply.github.com"]
-                subprocess.run(["git", "-C", repo, *git_cfg, "add", "-A"],
-                               capture_output=True, timeout=30)
-                subprocess.run(["git", "-C", repo, *git_cfg, "commit", "-m",
-                                f"automejora({agent}): {objetivo[:100]}"],
-                               capture_output=True, timeout=30)
-            p = subprocess.run(["git", "-C", repo, "push", "origin",
-                                repo_state(repo)["branch"]],
-                               capture_output=True, text=True, timeout=120)
-            if p.returncode != 0:
-                log.append(f"⛔ push falló: {(p.stderr or '')[-400:]}")
-                run["status"] = "push_failed"
-                return
-            run["commit"] = repo_state(repo)["commit"]
-            log.append(f"✅ pusheado {run['commit']} — Coolify deploya (si el webhook está activo)")
-            run["status"] = "done"
-        except subprocess.TimeoutExpired:
-            log.append("⛔ timeout del agente")
-            run["status"] = "failed"
-        except Exception as e:  # noqa: BLE001
-            log.append(f"⛔ error: {e}")
-            run["status"] = "failed"
+                run["status"] = "ready_to_push"
+                log.append("ℹ️ cambios listos — pushealos desde la UI cuando quieras "
+                           "(botón 'Pushear cambios', re-corre gates).")
+            else:
+                run["status"] = "done"
+                log.append("ℹ️ sin cambios nuevos en este turno.")
+    except subprocess.TimeoutExpired:
+        log.append("⛔ timeout del agente (30 min)")
+        run["status"] = "failed"
+    except Exception as e:  # noqa: BLE001
+        log.append(f"⛔ error: {e}")
+        run["status"] = "failed"
 
-    threading.Thread(target=work, daemon=True).start()
-    return {"id": run_id, "status": "running"}
+
+def start_run(agent: str, objetivo: str, follow_up: str | None = None,
+              run_id: str | None = None, auto_push: bool = True) -> dict:
+    """Crea un run (objetivo) o un turno sobre un run existente (follow_up)."""
+    with RUNS_LOCK:
+        if run_id:
+            run = RUNS.get(run_id)
+            if not run:
+                return {"ok": False, "error": "run no encontrado"}
+            if run["status"] == "running":
+                return {"ok": False, "error": "el run sigue en ejecución"}
+            if run["agent"] != agent:
+                return {"ok": False, "error": f"el run es del agente {run['agent']}"}
+            run["status"] = "running"
+            run["turn"] += 1
+            run["auto_push"] = auto_push
+            run["messages"].append({"role": "user", "content": follow_up or objetivo})
+            rid = run_id
+        else:
+            rid = uuid.uuid4().hex[:10]
+            run = {
+                "id": rid, "agent": agent, "status": "running",
+                "objetivo": objetivo, "turn": 1, "auto_push": auto_push,
+                "messages": [{"role": "user", "content": objetivo}],
+                "log": [], "commit": None, "started": time.time(),
+            }
+            RUNS[rid] = run
+
+    prompt = build_prompt(objetivo, run, follow_up)
+    threading.Thread(target=run_turn, args=(run, prompt), daemon=True).start()
+    return {"ok": True, "id": rid, "status": "running"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -258,24 +319,69 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"ok": True, "run": run})
         return self._json(404, {"ok": False, "error": "not found"})
 
+    def _read_body(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            return json.loads(self.rfile.read(length) or b"{}")
+        except Exception:
+            return None
+
     def do_POST(self):  # noqa: N802
         if self.path == "/api/automejora":
-            try:
-                length = int(self.headers.get("Content-Length", 0))
-                body = json.loads(self.rfile.read(length) or b"{}")
-            except Exception:
+            body = self._read_body()
+            if body is None:
                 return self._json(400, {"ok": False, "error": "json inválido"})
             agent = (body.get("agent") or "").strip()
             objetivo = (body.get("objetivo") or "").strip()
-            if not agent or not objetivo:
+            follow_up = (body.get("follow_up") or "").strip() or None
+            run_id = (body.get("run_id") or "").strip() or None
+            # auto_push acepta bool o string ("true"/"false" desde la UI).
+            raw_ap = body.get("auto_push")
+            if raw_ap is None:
+                auto_push = not bool(follow_up)
+            elif isinstance(raw_ap, bool):
+                auto_push = raw_ap
+            else:
+                auto_push = str(raw_ap).lower() in ("1", "true", "yes")
+            if follow_up:
+                auto_push = False  # los follow-ups jamás pushean solos
+            if not agent or (not objetivo and not follow_up):
                 return self._json(400, {"ok": False,
                                         "error": "faltan agent/objetivo"})
             detected = {a["id"] for a in detect_agents()}
             if agent not in detected:
                 return self._json(404, {"ok": False,
                                         "error": f"agente '{agent}' no detectado"})
-            r = run_automejora(agent, objetivo, REPO)
-            return self._json(200, {"ok": True, **r})
+            r = start_run(agent, objetivo, follow_up, run_id, auto_push)
+            code = 200 if r.get("ok") else 400
+            return self._json(code, r)
+        if self.path == "/api/automejora/push":
+            body = self._read_body()
+            if body is None:
+                return self._json(400, {"ok": False, "error": "json inválido"})
+            rid = (body.get("run_id") or "").strip()
+            with RUNS_LOCK:
+                run = RUNS.get(rid)
+            if not run:
+                return self._json(404, {"ok": False, "error": "run no encontrado"})
+            if run["status"] == "running":
+                return self._json(400, {"ok": False,
+                                        "error": "el run sigue en ejecución"})
+
+            def do_push():
+                log = run["log"]
+                log.append("\n——— push manual ———")
+                if not run_gates(REPO, log):
+                    log.append("⛔ gates en rojo — NO se pushea")
+                    run["status"] = "gates_failed"
+                    return
+                ok, commit = push_pending(REPO, run["agent"], run["objetivo"], log)
+                run["commit"] = commit
+                run["status"] = "done" if ok else "push_failed"
+
+            run["status"] = "running"
+            threading.Thread(target=do_push, daemon=True).start()
+            return self._json(200, {"ok": True, "id": rid, "status": "running"})
         return self._json(404, {"ok": False, "error": "not found"})
 
     def log_message(self, format: str, *args):  # silenciar

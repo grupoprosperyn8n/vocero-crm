@@ -55,7 +55,9 @@ type RepoInfo = {
 type RunInfo = {
   id: string;
   agent: string;
-  status: "running" | "done" | "failed" | "gates_failed" | "push_failed";
+  objetivo: string;
+  turn: number;
+  status: "running" | "done" | "ready_to_push" | "gates_failed" | "failed" | "push_failed";
   log: string[];
   commit: string | null;
 };
@@ -73,9 +75,10 @@ async function fetchWithTimeout(url: string, ms: number, init?: RequestInit) {
 const STATUS_LABEL: Record<string, { text: string; tone: "ok" | "err" | "run" }> = {
   running: { text: "Ejecutando…", tone: "run" },
   done: { text: "Automejora completa", tone: "ok" },
-  failed: { text: "Falló la ejecución del agente", tone: "err" },
-  gates_failed: { text: "Gates en rojo — no se pusheó", tone: "err" },
-  push_failed: { text: "El push al fork falló", tone: "err" },
+  ready_to_push: { text: "Cambios listos — pushealos cuando quieras", tone: "ok" },
+  failed: { text: "Falló la ejecución del agente — podés iterar con una corrección", tone: "err" },
+  gates_failed: { text: "Gates en rojo — los cambios quedaron en el repo. Corregí el rumbo abajo", tone: "err" },
+  push_failed: { text: "El push al fork falló — reintentá", tone: "err" },
 };
 
 export function AgentsPanel() {
@@ -91,6 +94,7 @@ export function AgentsPanel() {
   const [repo, setRepo] = useState<RepoInfo | null>(null);
   const [agentSel, setAgentSel] = useState("");
   const [objetivo, setObjetivo] = useState("");
+  const [followUp, setFollowUp] = useState("");
   const [run, setRun] = useState<RunInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
@@ -171,26 +175,10 @@ export function AgentsPanel() {
     }
   }, [run?.log]);
 
-  async function startRun() {
-    setError(null);
-    if (!objetivo.trim() || !agentSel) return;
-    setRun(null);
+  /** Polling del run hasta que deje de estar running. */
+  const startPolling = useCallback((id: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
     const base = companionUrl.replace(/\/+$/, "");
-    const res = await fetchWithTimeout(`${base}/api/automejora`, 5000, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agent: agentSel, objetivo: objetivo.trim() }),
-    }).catch(() => null);
-    if (!res) {
-      setError("No se pudo contactar al companion local");
-      return;
-    }
-    const data = (await res.json()) as { ok: boolean; id?: string; error?: string };
-    if (!res.ok || !data.ok || !data.id) {
-      setError(data.error ?? "Error al iniciar la automejora");
-      return;
-    }
-    const id = data.id;
     const poll = async () => {
       const r = await fetchWithTimeout(`${base}/api/run/${id}`, 4000).catch(
         () => null
@@ -205,6 +193,58 @@ export function AgentsPanel() {
     };
     void poll();
     pollRef.current = setInterval(() => void poll(), 2500);
+  }, [companionUrl]);
+
+  async function postAction(path: string, payload: Record<string, string>) {
+    setError(null);
+    const base = companionUrl.replace(/\/+$/, "");
+    const res = await fetchWithTimeout(`${base}${path}`, 5000, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => null);
+    if (!res) {
+      setError("No se pudo contactar al companion local");
+      return false;
+    }
+    const data = (await res.json().catch(() => null)) as {
+      ok?: boolean; id?: string; error?: string;
+    } | null;
+    if (!res.ok || !data?.ok || !data.id) {
+      setError(data?.error ?? "Error al comunicarse con el companion");
+      return false;
+    }
+    startPolling(data.id);
+    return true;
+  }
+
+  async function startRun() {
+    if (!objetivo.trim() || !agentSel) return;
+    setRun(null);
+    setFollowUp("");
+    // Modo sesión: el primer turno NO pushea solo — Diego revisa e itera,
+    // y el push es manual (botón "Pushear cambios") con gates en verde.
+    await postAction("/api/automejora", {
+      agent: agentSel,
+      objetivo: objetivo.trim(),
+      auto_push: "false",
+    });
+  }
+
+  async function followTurn() {
+    if (!run || !followUp.trim()) return;
+    const msg = followUp.trim();
+    setFollowUp("");
+    await postAction("/api/automejora", {
+      agent: run.agent,
+      run_id: run.id,
+      follow_up: msg,
+    });
+  }
+
+  async function pushRun() {
+    if (!run) return;
+    await postAction("/api/automejora/push", { run_id: run.id });
   }
 
   const selectedAgent = agents?.find((a) => a.id === agentSel);
@@ -513,6 +553,41 @@ export function AgentsPanel() {
             </div>
           )}
 
+          {/* Modo sesión: iterar sobre el run terminado */}
+          {run && run.status !== "running" && (
+            <div className="space-y-2 rounded-md border bg-background p-3">
+              <p className="text-xs font-semibold text-muted-foreground">
+                Sesión de mejora — turno {run.turn} con {run.agent}. Iterá sobre
+                el mismo trabajo (los cambios quedan en el repo hasta que
+                pushees).
+              </p>
+              <div className="flex flex-wrap items-start gap-2">
+                <Textarea
+                  value={followUp}
+                  onChange={(e) => setFollowUp(e.target.value)}
+                  placeholder={
+                    "Seguimiento… ej: 'ahora cambiá también X' · 'no, mejor así' · 'los tests fallan, arreglalo'"
+                  }
+                  className="min-h-[60px] flex-1 resize-y"
+                  rows={2}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void followTurn()}
+                  disabled={!followUp.trim()}
+                >
+                  Iterar
+                </Button>
+              </div>
+              {(run.status === "ready_to_push" || run.status === "push_failed") && (
+                <Button type="button" onClick={() => void pushRun()}>
+                  Pushear cambios (gates en verde)
+                </Button>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <Button
               type="button"
@@ -536,6 +611,7 @@ export function AgentsPanel() {
                 onClick={() => {
                   setRun(null);
                   setObjetivo("");
+                  setFollowUp("");
                 }}
               >
                 Nueva mejora
