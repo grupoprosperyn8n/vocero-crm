@@ -64,7 +64,7 @@ type RunInfo = {
 };
 
 /** Separa el log en turnos: resumen del agente + línea de resultado. */
-function parseTurns(log: string[], turnCount: number): { n: number; summary: string; tail: string }[] {
+function parseTurns(log: string[]): { n: number; summary: string; tail: string }[] {
   const raw: { n: number; lines: string[] }[] = [];
   let current: { n: number; lines: string[] } | null = null;
   for (const line of log) {
@@ -565,10 +565,87 @@ export function AgentsPanel() {
           {run ? (
             <div className="space-y-3">
               {/* Encabezado de la sesión */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="flex flex-wrap items-center gap-2 text-sm">
-                  <Bot className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-semibold">Sesión con {run.agent}</span>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold">Chat de automejora</p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setRun(null);
+                    setObjetivo("");
+                    setFollowUp("");
+                  }}
+                >
+                  Nueva mejora
+                </Button>
+              </div>
+
+              {/* Mensajes — estilo chat de Ornith: ambos a la izquierda,
+                  el del dueño se distingue por el tinte de marca */}
+              <div className="max-h-[26rem] space-y-4 overflow-y-auto rounded-lg border bg-background/60 p-4">
+                {run.messages.map((m, i) => (
+                  <div key={`u${i}`} className="text-left">
+                    <div className="inline-block max-w-[88%] whitespace-pre-wrap rounded-xl border border-brand-soft/60 bg-brand-tint/70 px-3.5 py-2.5 text-sm">
+                      {m.content}
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {i === 0 ? "Objetivo" : "Seguimiento"} · vos
+                    </p>
+                  </div>
+                ))}
+                {parseTurns(run.log).map((t) => (
+                  <div key={`t${t.n}`} className="text-left">
+                    <div className="inline-block max-w-[88%] whitespace-pre-wrap rounded-xl border bg-background px-3.5 py-2.5 text-sm shadow-sm">
+                      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                        <Bot className="h-3.5 w-3.5 text-brand-text" /> {run.agent}
+                        <span className="font-normal">· turno {t.n}</span>
+                        {t.tail.startsWith("✅") && (
+                          <span className="font-medium text-success-text">✓</span>
+                        )}
+                        {t.tail.startsWith("⛔") && (
+                          <span className="font-medium text-destructive">✕</span>
+                        )}
+                      </p>
+                      <p className="whitespace-pre-wrap">{t.summary || "…"}</p>
+                      {(t.tail.startsWith("✅") ||
+                        t.tail.startsWith("⛔") ||
+                        t.tail.startsWith("ℹ️")) && (
+                        <p
+                          className={
+                            t.tail.startsWith("✅")
+                              ? "mt-1.5 text-xs font-medium text-success-text"
+                              : t.tail.startsWith("⛔")
+                                ? "mt-1.5 text-xs font-medium text-destructive"
+                                : "mt-1.5 text-xs text-muted-foreground"
+                          }
+                        >
+                          {t.tail}
+                        </p>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {run.agent} · {t.n === run.turn && run.status === "running" ? "trabajando…" : "respuesta"}
+                      {run.commit && t.n === run.turn ? ` · commit ${run.commit}` : ""}
+                    </p>
+                  </div>
+                ))}
+                {run.status === "running" && (
+                  <div className="text-left">
+                    <div className="inline-flex items-center gap-2 rounded-xl border bg-background px-3.5 py-2.5 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin text-brand-text" />
+                      {run.agent} está trabajando…
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Tarjeta de input tipo guía (patrón Ornith) */}
+              <div className="rounded-2xl border bg-background p-3 shadow-md">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary" className="gap-1">
+                    <Bot className="h-3 w-3" /> {run.agent}
+                  </Badge>
                   <Badge variant="secondary">turno {run.turn}</Badge>
                   {status && (
                     <span
@@ -587,78 +664,23 @@ export function AgentsPanel() {
                     </span>
                   )}
                   {run.commit && <Badge variant="success">commit {run.commit}</Badge>}
-                </p>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setRun(null);
-                    setObjetivo("");
-                    setFollowUp("");
-                  }}
-                >
-                  Nueva mejora
-                </Button>
-              </div>
-
-              {/* Burbujas del chat */}
-              <div
-                className="max-h-[26rem] space-y-3 overflow-y-auto rounded-lg border bg-background/60 p-3"
-              >
-                {run.messages.map((m, i) => (
-                  <div key={`u${i}`} className="flex justify-end">
-                    <div className="max-w-[85%] whitespace-pre-wrap rounded-xl rounded-br-sm bg-primary/10 px-3 py-2 text-sm">
-                      {m.content}
-                    </div>
-                  </div>
-                ))}
-                {parseTurns(run.log, run.turn).map((t) => (
-                  <div key={`t${t.n}`} className="flex justify-start">
-                    <div className="max-w-[85%] rounded-xl rounded-bl-sm border bg-background px-3 py-2 text-sm">
-                      <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-                        <Bot className="h-3.5 w-3.5" /> {run.agent} · turno {t.n}
-                      </p>
-                      <p className="whitespace-pre-wrap">{t.summary || "…"}</p>
-                      <p
-                        className={
-                          t.tail.startsWith("✅")
-                            ? "mt-1.5 text-xs font-medium text-success-text"
-                            : t.tail.startsWith("⛔")
-                              ? "mt-1.5 text-xs font-medium text-destructive"
-                              : t.tail.startsWith("ℹ️")
-                                ? "mt-1.5 text-xs text-muted-foreground"
-                                : ""
-                        }
-                      >
-                        {t.tail}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {run.status === "running" && (
-                  <div className="flex justify-start">
-                    <div className="flex items-center gap-2 rounded-xl rounded-bl-sm border bg-background px-3 py-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      {run.agent} está trabajando…
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Input de seguimiento */}
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-end gap-2">
+                  <span className="ml-auto text-[11px] text-muted-foreground">
+                    {run.status === "running"
+                      ? "trabajando…"
+                      : "Enter envía · Shift+Enter salto de línea"}
+                  </span>
+                </div>
+                <div className="flex items-end gap-2">
                   <Textarea
                     value={followUp}
                     onChange={(e) => setFollowUp(e.target.value)}
                     placeholder={
                       run.status === "running"
                         ? "El agente está trabajando…"
-                        : "Escribí el seguimiento… ej: 'ahora cambiá también X' · 'no, mejor así' · 'los tests fallan, arreglalo'"
+                        : "Escribí el seguimiento… ej: 'ahora cambiá también X' · 'no, mejor así'"
                     }
-                    className="min-h-[52px] flex-1 resize-y"
-                    rows={2}
+                    className="min-h-[44px] flex-1 resize-y rounded-xl border bg-background/60 text-sm"
+                    rows={1}
                     disabled={run.status === "running"}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
@@ -671,29 +693,33 @@ export function AgentsPanel() {
                   />
                   <Button
                     type="button"
+                    size="icon"
                     onClick={() => void followTurn()}
                     disabled={!followUp.trim() || run.status === "running"}
+                    aria-label="Enviar seguimiento"
+                    className="h-11 w-11 shrink-0 rounded-xl"
                   >
-                    Enviar
+                    ➤
                   </Button>
                   {(run.status === "ready_to_push" || run.status === "push_failed") && (
                     <Button type="button" onClick={() => void pushRun()}>
-                      Pushear cambios (gates)
+                      Pushear (gates)
                     </Button>
                   )}
                 </div>
-                <details className="rounded-md border bg-background/40 px-3 py-2 text-xs">
-                  <summary className="cursor-pointer text-muted-foreground">
-                    Ver log técnico completo
-                  </summary>
-                  <pre
-                    ref={logRef}
-                    className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed"
-                  >
-                    {run.log.join("\n")}
-                  </pre>
-                </details>
               </div>
+
+              <details className="rounded-md border bg-background/40 px-3 py-2 text-xs">
+                <summary className="cursor-pointer text-muted-foreground">
+                  Ver log técnico completo
+                </summary>
+                <pre
+                  ref={logRef}
+                  className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed"
+                >
+                  {run.log.join("\n")}
+                </pre>
+              </details>
             </div>
           ) : (
             <div className="grid gap-2">
