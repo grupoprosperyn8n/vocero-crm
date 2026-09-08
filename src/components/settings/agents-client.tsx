@@ -114,6 +114,13 @@ const STATUS_LABEL: Record<string, { text: string; tone: "ok" | "err" | "run" }>
   push_failed: { text: "El push al fork falló — reintentá", tone: "err" },
 };
 
+/** Sugerencias del estado vacío del chat (arrancan la automejora directo). */
+const SUGGESTIONS: string[] = [
+  "Que el agente de conversación salude usando el nombre del cliente cuando lo tenga",
+  "Buscar y corregir textos en inglés que deberían estar en español",
+  "Agregar un test de contrato que falle si el formato de /api/health cambia",
+];
+
 export function AgentsPanel() {
   const [companionUrl, setCompanionUrl] = useState<string>(() => {
     if (typeof window === "undefined") return DEFAULT_COMPANION;
@@ -126,8 +133,7 @@ export function AgentsPanel() {
   const [agentsLoaded, setAgentsLoaded] = useState(false);
   const [repo, setRepo] = useState<RepoInfo | null>(null);
   const [agentSel, setAgentSel] = useState("");
-  const [objetivo, setObjetivo] = useState("");
-  const [followUp, setFollowUp] = useState("");
+  const [draft, setDraft] = useState("");
   const [run, setRun] = useState<RunInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
@@ -251,28 +257,39 @@ export function AgentsPanel() {
     return true;
   }
 
-  async function startRun() {
-    if (!objetivo.trim() || !agentSel) return;
+  /** Primer mensaje sin sesión: crea la automejora (sin push automático). */
+  async function startRun(text: string) {
+    if (!text.trim() || !agentSel) return;
     setRun(null);
-    setFollowUp("");
     // Modo sesión: el primer turno NO pushea solo — Diego revisa e itera,
     // y el push es manual (botón "Pushear cambios") con gates en verde.
     await postAction("/api/automejora", {
       agent: agentSel,
-      objetivo: objetivo.trim(),
+      objetivo: text.trim(),
       auto_push: "false",
     });
   }
 
-  async function followTurn() {
-    if (!run || !followUp.trim()) return;
-    const msg = followUp.trim();
-    setFollowUp("");
+  /** Mensaje con sesión activa: turno de seguimiento sobre el mismo run. */
+  async function followTurn(text: string) {
+    if (!run || !text.trim()) return;
     await postAction("/api/automejora", {
       agent: run.agent,
       run_id: run.id,
-      follow_up: msg,
+      follow_up: text.trim(),
     });
+  }
+
+  /** Envía el mensaje del chat: crea la sesión o itera sobre la actual. */
+  async function sendMessage() {
+    const msg = draft.trim();
+    if (!msg) return;
+    setDraft("");
+    if (!run) {
+      await startRun(msg);
+    } else {
+      await followTurn(msg);
+    }
   }
 
   async function pushRun() {
@@ -494,7 +511,7 @@ export function AgentsPanel() {
         </CardContent>
       </Card>
 
-      {/* Automejora */}
+      {/* Automejora — bandeja de chat (patrón Ornith con diseño Vocero) */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-[15px]">
@@ -502,58 +519,215 @@ export function AgentsPanel() {
             <Badge variant="secondary">Enmienda 1</Badge>
           </CardTitle>
           <CardDescription>
-            Misma calidad que el loop SDD de siempre: el agente lee{" "}
-            <code className="rounded border bg-background px-1">AGENTS.md</code>, implementa,
-            corre los gates (typecheck + lint + 422 tests) y pushea al fork si está verde.
+            Escribile al agente qué mejorar: lee{" "}
+            <code className="rounded border bg-background px-1">AGENTS.md</code>, implementa con
+            spec + tests (typecheck + lint + 426), y los cambios quedan listos para pushear
+            desde el chat cuando digas.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {!run && (
-            <div className="grid gap-2">
-              <Label htmlFor="agent-sel">Agente que ejecuta la mejora</Label>
-              <select
-                id="agent-sel"
-                value={agentSel}
-                onChange={(e) => setAgentSel(e.target.value)}
-                disabled={companion !== "online" || !agents?.length}
-                className="block w-full rounded-md border bg-background px-3 py-2 text-sm"
-              >
-                {agents?.filter((a) => a.headless).map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.bin}
-                    {a.version ? ` — ${a.version}` : ""}
-                  </option>
-                ))}
-                {agents?.filter((a) => !a.headless).map((a) => (
-                  <option key={a.id} value={a.id} disabled>
-                    {a.bin} (sin modo headless)
-                  </option>
-                ))}
-              </select>
-              {selectedAgent && !selectedAgent.headless && (
-                <p className="text-xs text-warning-text">
-                  {selectedAgent.bin} no tiene modo headless configurado todavía — elegí otro.
-                </p>
+        <CardContent className="flex min-h-[520px] flex-col space-y-3">
+          {/* ===== BANDEJA DE CHAT ===== */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background/50">
+            {/* Mensajes */}
+            <div className="min-h-[280px] flex-1 space-y-4 overflow-y-auto p-4">
+              {!run ? (
+                <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border bg-background shadow-sm">
+                    <Bot className="h-6 w-6 text-brand-text" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">¿Qué mejora hacemos hoy?</p>
+                    <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
+                      Escribí el objetivo abajo o elegí uno de estos: el agente lo ejecuta
+                      completo (spec → plan → código → gates) y volvés a escribirle para
+                      iterar hasta que quede como querés.
+                    </p>
+                  </div>
+                  <div className="flex max-w-lg flex-wrap justify-center gap-2">
+                    {SUGGESTIONS.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => {
+                          setDraft(s);
+                          void sendMessage();
+                        }}
+                        className="rounded-full border bg-background px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-brand-soft hover:text-foreground"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {run.messages.map((m, i) => (
+                    <div key={`u${i}`} className="text-left">
+                      <div className="inline-block max-w-[88%] whitespace-pre-wrap rounded-xl border border-brand-soft/60 bg-brand-tint/70 px-3.5 py-2.5 text-sm">
+                        {m.content}
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {i === 0 ? "Objetivo" : "Seguimiento"} · vos
+                      </p>
+                    </div>
+                  ))}
+                  {parseTurns(run.log).map((t) => (
+                    <div key={`t${t.n}`} className="text-left">
+                      <div className="inline-block max-w-[88%] whitespace-pre-wrap rounded-xl border bg-background px-3.5 py-2.5 text-sm shadow-sm">
+                        <p className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                          <Bot className="h-3.5 w-3.5 text-brand-text" /> {run.agent}
+                          <span className="font-normal">· turno {t.n}</span>
+                          {t.tail.startsWith("✅") && (
+                            <span className="font-medium text-success-text">✓</span>
+                          )}
+                          {t.tail.startsWith("⛔") && (
+                            <span className="font-medium text-destructive">✕</span>
+                          )}
+                        </p>
+                        <p className="whitespace-pre-wrap">{t.summary || "…"}</p>
+                        {(t.tail.startsWith("✅") ||
+                          t.tail.startsWith("⛔") ||
+                          t.tail.startsWith("ℹ️")) && (
+                          <p
+                            className={
+                              t.tail.startsWith("✅")
+                                ? "mt-1.5 text-xs font-medium text-success-text"
+                                : t.tail.startsWith("⛔")
+                                  ? "mt-1.5 text-xs font-medium text-destructive"
+                                  : "mt-1.5 text-xs text-muted-foreground"
+                            }
+                          >
+                            {t.tail}
+                          </p>
+                        )}
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {run.agent} ·{" "}
+                        {t.n === run.turn && run.status === "running"
+                          ? "trabajando…"
+                          : "respuesta"}
+                        {run.commit && t.n === run.turn ? ` · commit ${run.commit}` : ""}
+                      </p>
+                    </div>
+                  ))}
+                  {run.status === "running" && (
+                    <div className="text-left">
+                      <div className="inline-flex items-center gap-2 rounded-xl border bg-background px-3.5 py-2.5 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin text-brand-text" />
+                        {run.agent} está trabajando…
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
-          )}
 
-          <div className="grid gap-2">
-            <Label htmlFor="agent-goal">Objetivo de la mejora</Label>
-            <Textarea
-              id="agent-goal"
-              value={objetivo}
-              onChange={(e) => setObjetivo(e.target.value)}
-              placeholder={
-                "Ej: que el agente salude con el nombre del cliente en el primer mensaje\n\nDescribí el objetivo con detalle — el agente lee AGENTS.md y lo ejecuta completo (spec → plan → código → gates → push)."
-              }
-              disabled={companion !== "online"}
-              className="min-h-[110px] resize-y"
-              rows={6}
-            />
-            <p className="text-right text-xs text-muted-foreground">
-              {objetivo.length} caracteres
-            </p>
+            {/* Toolbar + input (tarjeta tipo guía) */}
+            <div className="border-t bg-background p-3">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                {!run ? (
+                  <>
+                    <Label htmlFor="agent-sel-chat" className="text-[11px] font-medium text-muted-foreground">
+                      Agente
+                    </Label>
+                    <select
+                      id="agent-sel-chat"
+                      value={agentSel}
+                      onChange={(e) => setAgentSel(e.target.value)}
+                      disabled={companion !== "online" || !agents?.length}
+                      className="max-w-[220px] rounded-md border bg-background px-2 py-1 text-xs"
+                    >
+                      {agents?.filter((a) => a.headless).map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.bin}
+                          {a.version ? ` — ${a.version}` : ""}
+                        </option>
+                      ))}
+                      {agents?.filter((a) => !a.headless).map((a) => (
+                        <option key={a.id} value={a.id} disabled>
+                          {a.bin} (sin headless)
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                ) : (
+                  <Badge variant="secondary" className="gap-1">
+                    <Bot className="h-3 w-3" /> {run.agent}
+                  </Badge>
+                )}
+                {run && <Badge variant="secondary">turno {run.turn}</Badge>}
+                {run && status && (
+                  <span
+                    className={
+                      status.tone === "ok"
+                        ? "text-xs font-medium text-success-text"
+                        : status.tone === "err"
+                          ? "text-xs font-medium text-destructive"
+                          : "flex items-center gap-1 text-xs text-muted-foreground"
+                    }
+                  >
+                    {status.tone === "run" && <Loader2 className="h-3 w-3 animate-spin" />}
+                    {status.text}
+                  </span>
+                )}
+                {run?.commit && <Badge variant="success">commit {run.commit}</Badge>}
+                {run && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setRun(null);
+                      setDraft("");
+                    }}
+                  >
+                    Nueva mejora
+                  </Button>
+                )}
+                <span className="ml-auto text-[11px] text-muted-foreground">
+                  Enter envía · Shift+Enter salto
+                </span>
+              </div>
+              <div className="flex items-end gap-2">
+                <Textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder={
+                    !run
+                      ? "Escribí el objetivo de la mejora… ej: que el agente salude con el nombre del cliente"
+                      : run.status === "running"
+                        ? "El agente está trabajando…"
+                        : "Seguimiento… ej: 'ahora cambiá también X' · 'no, mejor así'"
+                  }
+                  className="min-h-[44px] flex-1 resize-y rounded-xl border bg-background/60 text-sm"
+                  rows={1}
+                  disabled={companion !== "online" || (run?.status === "running")}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (draft.trim() && run?.status !== "running") {
+                        void sendMessage();
+                      }
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={() => void sendMessage()}
+                  disabled={!draft.trim() || run?.status === "running" || companion !== "online"}
+                  aria-label="Enviar mensaje"
+                  className="h-11 w-11 shrink-0 rounded-xl"
+                >
+                  ➤
+                </Button>
+                {run && (run.status === "ready_to_push" || run.status === "push_failed") && (
+                  <Button type="button" onClick={() => void pushRun()}>
+                    Pushear (gates)
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
 
           {error && (
@@ -562,198 +736,18 @@ export function AgentsPanel() {
             </p>
           )}
 
-          {run ? (
-            <div className="space-y-3">
-              {/* Encabezado de la sesión */}
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold">Chat de automejora</p>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setRun(null);
-                    setObjetivo("");
-                    setFollowUp("");
-                  }}
-                >
-                  Nueva mejora
-                </Button>
-              </div>
-
-              {/* Mensajes — estilo chat de Ornith: ambos a la izquierda,
-                  el del dueño se distingue por el tinte de marca */}
-              <div className="max-h-[26rem] space-y-4 overflow-y-auto rounded-lg border bg-background/60 p-4">
-                {run.messages.map((m, i) => (
-                  <div key={`u${i}`} className="text-left">
-                    <div className="inline-block max-w-[88%] whitespace-pre-wrap rounded-xl border border-brand-soft/60 bg-brand-tint/70 px-3.5 py-2.5 text-sm">
-                      {m.content}
-                    </div>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {i === 0 ? "Objetivo" : "Seguimiento"} · vos
-                    </p>
-                  </div>
-                ))}
-                {parseTurns(run.log).map((t) => (
-                  <div key={`t${t.n}`} className="text-left">
-                    <div className="inline-block max-w-[88%] whitespace-pre-wrap rounded-xl border bg-background px-3.5 py-2.5 text-sm shadow-sm">
-                      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
-                        <Bot className="h-3.5 w-3.5 text-brand-text" /> {run.agent}
-                        <span className="font-normal">· turno {t.n}</span>
-                        {t.tail.startsWith("✅") && (
-                          <span className="font-medium text-success-text">✓</span>
-                        )}
-                        {t.tail.startsWith("⛔") && (
-                          <span className="font-medium text-destructive">✕</span>
-                        )}
-                      </p>
-                      <p className="whitespace-pre-wrap">{t.summary || "…"}</p>
-                      {(t.tail.startsWith("✅") ||
-                        t.tail.startsWith("⛔") ||
-                        t.tail.startsWith("ℹ️")) && (
-                        <p
-                          className={
-                            t.tail.startsWith("✅")
-                              ? "mt-1.5 text-xs font-medium text-success-text"
-                              : t.tail.startsWith("⛔")
-                                ? "mt-1.5 text-xs font-medium text-destructive"
-                                : "mt-1.5 text-xs text-muted-foreground"
-                          }
-                        >
-                          {t.tail}
-                        </p>
-                      )}
-                    </div>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {run.agent} · {t.n === run.turn && run.status === "running" ? "trabajando…" : "respuesta"}
-                      {run.commit && t.n === run.turn ? ` · commit ${run.commit}` : ""}
-                    </p>
-                  </div>
-                ))}
-                {run.status === "running" && (
-                  <div className="text-left">
-                    <div className="inline-flex items-center gap-2 rounded-xl border bg-background px-3.5 py-2.5 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin text-brand-text" />
-                      {run.agent} está trabajando…
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Tarjeta de input tipo guía (patrón Ornith) */}
-              <div className="rounded-2xl border bg-background p-3 shadow-md">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary" className="gap-1">
-                    <Bot className="h-3 w-3" /> {run.agent}
-                  </Badge>
-                  <Badge variant="secondary">turno {run.turn}</Badge>
-                  {status && (
-                    <span
-                      className={
-                        status.tone === "ok"
-                          ? "text-xs font-medium text-success-text"
-                          : status.tone === "err"
-                            ? "text-xs font-medium text-destructive"
-                            : "flex items-center gap-1 text-xs text-muted-foreground"
-                      }
-                    >
-                      {status.tone === "run" && (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      )}
-                      {status.text}
-                    </span>
-                  )}
-                  {run.commit && <Badge variant="success">commit {run.commit}</Badge>}
-                  <span className="ml-auto text-[11px] text-muted-foreground">
-                    {run.status === "running"
-                      ? "trabajando…"
-                      : "Enter envía · Shift+Enter salto de línea"}
-                  </span>
-                </div>
-                <div className="flex items-end gap-2">
-                  <Textarea
-                    value={followUp}
-                    onChange={(e) => setFollowUp(e.target.value)}
-                    placeholder={
-                      run.status === "running"
-                        ? "El agente está trabajando…"
-                        : "Escribí el seguimiento… ej: 'ahora cambiá también X' · 'no, mejor así'"
-                    }
-                    className="min-h-[44px] flex-1 resize-y rounded-xl border bg-background/60 text-sm"
-                    rows={1}
-                    disabled={run.status === "running"}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        if (followUp.trim() && run.status !== "running") {
-                          void followTurn();
-                        }
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    size="icon"
-                    onClick={() => void followTurn()}
-                    disabled={!followUp.trim() || run.status === "running"}
-                    aria-label="Enviar seguimiento"
-                    className="h-11 w-11 shrink-0 rounded-xl"
-                  >
-                    ➤
-                  </Button>
-                  {(run.status === "ready_to_push" || run.status === "push_failed") && (
-                    <Button type="button" onClick={() => void pushRun()}>
-                      Pushear (gates)
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <details className="rounded-md border bg-background/40 px-3 py-2 text-xs">
-                <summary className="cursor-pointer text-muted-foreground">
-                  Ver log técnico completo
-                </summary>
-                <pre
-                  ref={logRef}
-                  className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed"
-                >
-                  {run.log.join("\n")}
-                </pre>
-              </details>
-            </div>
-          ) : (
-            <div className="grid gap-2">
-              <Label htmlFor="agent-goal">Objetivo de la mejora</Label>
-              <Textarea
-                id="agent-goal"
-                value={objetivo}
-                onChange={(e) => setObjetivo(e.target.value)}
-                placeholder={
-                  "Ej: que el agente salude con el nombre del cliente en el primer mensaje\n\nDescribí el objetivo con detalle — el agente lee AGENTS.md y lo ejecuta completo (spec → plan → código → gates). Después podés seguir iterando en el chat."
-                }
-                disabled={companion !== "online"}
-                className="min-h-[110px] resize-y"
-                rows={6}
-              />
-              <p className="text-right text-xs text-muted-foreground">
-                {objetivo.length} caracteres
-              </p>
-              <div className="flex flex-wrap items-center gap-3 pt-1">
-                <Button
-                  type="button"
-                  onClick={() => void startRun()}
-                  disabled={companion !== "online" || !agentSel || !objetivo.trim()}
-                >
-                  Ejecutar automejora
-                </Button>
-                {selectedAgent && (
-                  <span className="text-xs text-muted-foreground">
-                    Con {selectedAgent.bin}
-                    {selectedAgent.version ? ` ${selectedAgent.version}` : ""}
-                  </span>
-                )}
-              </div>
-            </div>
+          {run && (
+            <details className="rounded-md border bg-background/40 px-3 py-2 text-xs">
+              <summary className="cursor-pointer text-muted-foreground">
+                Ver log técnico completo
+              </summary>
+              <pre
+                ref={logRef}
+                className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed"
+              >
+                {run.log.join("\n")}
+              </pre>
+            </details>
           )}
         </CardContent>
       </Card>
