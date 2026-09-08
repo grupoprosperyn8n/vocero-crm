@@ -190,6 +190,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        # Chrome/Edge (Private Network Access): una página https NO puede
+        # fetchear a 127.0.0.1 sin este header en el preflight OPTIONS.
+        self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Cache-Control", "no-store")
 
     def _json(self, code: int, payload: dict):
