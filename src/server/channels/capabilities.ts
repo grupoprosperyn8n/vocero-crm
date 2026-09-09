@@ -73,6 +73,17 @@ export const CHANNEL_CAPABILITIES: Record<Channel, ChannelCapabilities> = {
     outboundMedia: false,
     deliveryReceipts: false,
   },
+  // 1A: el chat web no tiene plataforma externa: no hay ventana (el negocio
+  // responde cuando quiere), no hay adjuntos salientes todavía y el mensaje
+  // nace "sent" porque el widget es quien confirma al leerlo.
+  web: {
+    label: CHANNEL_LABEL.web,
+    windowMs: null,
+    outsideWindow: "none",
+    maxTextBytes: 4096,
+    outboundMedia: false,
+    deliveryReceipts: false,
+  },
 };
 
 export function capabilitiesFor(channel: Channel): ChannelCapabilities {

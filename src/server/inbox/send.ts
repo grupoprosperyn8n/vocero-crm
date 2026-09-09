@@ -107,6 +107,24 @@ async function prepareSend(
     );
   }
 
+  // 1A: el canal web no tiene transporte externo ni ventana: su "entrega" es
+  // persistir el mensaje para que el widget lo lea por polling. No exige
+  // credenciales conectadas, solo que el canal esté encendido en la instancia.
+  if (row.conversation.channel === "web") {
+    if (!isChannelEnabled("web")) {
+      throw new SendError(
+        "not_connected",
+        "El canal Web está desactivado en esta instancia"
+      );
+    }
+    return {
+      conversation: row.conversation,
+      credentials: null,
+      destinatario: { to: row.contact.waIdentity },
+      recipient: row.contact.waIdentity,
+    };
+  }
+
   // 014: Instagram tiene su propio transporte, su propia ventana y NO tiene
   // plantillas. Se resuelve antes que las credenciales de WhatsApp para no
   // exigirle a una instancia de solo-Instagram un numero conectado.
@@ -300,11 +318,16 @@ export async function sendText(input: {
   const target = await prepareSend(input.conversationId, input.organizationId);
   const { credentials } = target;
 
-  const waMessageId = target.instagram
-    ? await callInstagramSend(target, input.text)
-    : target.messenger
-      ? await callMessengerSend(target, input.text)
-      : await callGraphSend(credentials!, {
+  // 1A: el canal web no tiene plataforma externa: la "entrega" es persistir
+  // (el widget lee por polling). Nada que llamar, nada que confirmar.
+  const waMessageId =
+    target.conversation.channel === "web"
+      ? null
+      : target.instagram
+        ? await callInstagramSend(target, input.text)
+        : target.messenger
+          ? await callMessengerSend(target, input.text)
+          : await callGraphSend(credentials!, {
           messaging_product: "whatsapp",
           ...target.destinatario,
           type: "text",

@@ -9,7 +9,7 @@
  * mintiendo.
  */
 
-export type Channel = "whatsapp" | "instagram" | "messenger";
+export type Channel = "whatsapp" | "instagram" | "messenger" | "web";
 
 /**
  * Orden en que los canales se presentan al operador. WhatsApp primero: es el
@@ -19,6 +19,7 @@ export const CHANNEL_ORDER: readonly Channel[] = [
   "whatsapp",
   "instagram",
   "messenger",
+  "web",
 ];
 
 /** Nombre visible del canal, para la interfaz y para los errores del operador. */
@@ -28,6 +29,9 @@ export const CHANNEL_LABEL: Record<Channel, string> = {
   // 017: los mensajes de la página de Facebook. "Messenger" y no "Facebook"
   // porque es lo que el cliente ve en su teléfono cuando escribe.
   messenger: "Messenger",
+  // 1A: chat web embebido (widget del sitio del negocio). No hay plataforma
+  // externa: el "envío" es persistir para que el widget lo lea por polling.
+  web: "Web",
 };
 
 export function isChannel(value: string): value is Channel {

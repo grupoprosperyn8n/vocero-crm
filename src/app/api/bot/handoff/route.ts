@@ -15,6 +15,12 @@ const bodySchema = z.object({
    * (ver `server/bot/handoff`). Un motivo raro no puede costar el handoff.
    */
   reason: z.string().optional(),
+  /**
+   * 1A: etiqueta de negocio de la consulta ("cotizacion", "siniestro",
+   * "documentacion", ...). Queda en la conversación para el filtro de la
+   * bandeja y para el curado posterior. Opcional: no deriva mal por faltar.
+   */
+  topic: z.string().trim().min(1).max(120).optional(),
 });
 
 /**
@@ -61,6 +67,7 @@ export async function POST(req: Request) {
         aiEnabled: false,
         handoffAt: new Date(),
         handoffReason: toHandoffReason(body.data.reason),
+        ...(body.data.topic ? { topic: body.data.topic } : {}),
         updatedAt: new Date(),
       })
       .where(eq(schema.conversation.id, conv.id));

@@ -26,6 +26,11 @@ const INSTAGRAM_PATH =
 const MESSENGER_PATH =
   "M12 0C5.24 0 0 4.952 0 11.64c0 3.499 1.434 6.521 3.769 8.61a.96.96 0 0 1 .323.683l.065 2.135a.96.96 0 0 0 1.347.85l2.381-1.053a.96.96 0 0 1 .641-.046A13 13 0 0 0 12 23.28c6.76 0 12-4.952 12-11.64S18.76 0 12 0m6.806 7.44c.522-.03.971.567.63 1.094l-4.178 6.457a.707.707 0 0 1-.977.208l-3.87-2.504a.44.44 0 0 0-.49.007l-4.363 3.01c-.637.438-1.415-.317-.995-.966l4.179-6.457a.706.706 0 0 1 .977-.21l3.87 2.505c.15.097.344.094.491-.007l4.362-3.008a.7.7 0 0 1 .364-.13";
 
+// 1A: el canal web no tiene marca de plataforma (es el chat del propio
+// sitio): burbuja de conversación genérica, sin color corporativo ajeno.
+const WEB_PATH =
+  "M12 2C6.477 2 2 6.03 2 11c0 2.885 1.507 5.46 3.86 7.06L5 22l4.208-2.114c.897.203 1.84.314 2.792.314 5.523 0 10-4.03 10-9S17.523 2 12 2zm4.5 10.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm-4.5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm-4.5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z";
+
 const MARK: Record<Channel, { path: string; tile: string }> = {
   whatsapp: { path: WHATSAPP_PATH, tile: "bg-[#25d366]" },
   instagram: {
@@ -37,6 +42,7 @@ const MARK: Record<Channel, { path: string; tile: string }> = {
     path: MESSENGER_PATH,
     tile: "bg-gradient-to-tr from-[#0099ff] via-[#a033ff] to-[#ff5280]",
   },
+  web: { path: WEB_PATH, tile: "bg-slate-600" },
 };
 
 /**

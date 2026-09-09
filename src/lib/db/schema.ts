@@ -120,7 +120,7 @@ export const contact = pgTable(
      * 014: canal por el que vive este contacto. Aditivo y con default: toda
      * fila existente sigue significando exactamente lo mismo.
      */
-    channel: text("channel", { enum: ["whatsapp", "instagram", "messenger"] })
+    channel: text("channel", { enum: ["whatsapp", "instagram", "messenger", "web"] })
       .notNull()
       .default("whatsapp"),
     /**
@@ -344,7 +344,7 @@ export const conversation = pgTable(
      * 014: canal de la conversacion. Denormalizado del contacto a proposito:
      * el ruteo de salida y el filtro de la bandeja lo leen en cada mensaje.
      */
-    channel: text("channel", { enum: ["whatsapp", "instagram", "messenger"] })
+    channel: text("channel", { enum: ["whatsapp", "instagram", "messenger", "web"] })
       .notNull()
       .default("whatsapp"),
     /**
@@ -367,6 +367,12 @@ export const conversation = pgTable(
         "manual_reply",
       ],
     }),
+    /**
+     * 1A: etiqueta de negocio de la conversación (p. ej. "cotizacion",
+     * "siniestro", "documentacion"). La setea el cerebro externo al derivar
+     * (handoff) o un operador; alimenta el filtro de la bandeja y el curado.
+     */
+    topic: text("topic"),
     lastInboundAt: timestamp("last_inbound_at"),
     lastMessageAt: timestamp("last_message_at"),
     unreadCount: integer("unread_count").notNull().default(0),
