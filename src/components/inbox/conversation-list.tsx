@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { formatTime, previewText } from "./helpers";
-import { TOPIC_LIST, topicDot, topicLabel } from "@/lib/topics";
+import { topicDot, topicLabel } from "@/lib/topics";
 
 /* Puntos de etapa con la paleta de la landing: azul, ámbar, verde WhatsApp. */
 const STAGE_DOT: Record<string, string> = {
