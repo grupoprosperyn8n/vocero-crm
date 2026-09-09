@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ChevronLeft, PanelRight } from "lucide-react";
+import { CheckCheck, ChevronLeft, PanelRight } from "lucide-react";
 import { cn, formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import type { ConversationDto, MessageDto } from "@/lib/types";
@@ -51,6 +51,16 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
   // Se incrementa con cada evento SSE que puede cambiar la etapa/lead o el
   // estado del agente: el panel de detalles lo observa y refetch en vivo.
   const [detailRev, setDetailRev] = useState(0);
+  // 1F: aviso del cierre (resultado del webhook saliente hacia el backend).
+  const [closureNotice, setClosureNotice] = useState<{
+    kind: "sent" | "skipped" | "failed";
+    text: string;
+  } | null>(null);
+  useEffect(() => {
+    if (!closureNotice) return;
+    const t = setTimeout(() => setClosureNotice(null), 8_000);
+    return () => clearTimeout(t);
+  }, [closureNotice]);
 
   useEffect(() => {
     if (!isWideEnoughForPanel()) return;
@@ -275,6 +285,57 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
     [refetchConversations]
   );
 
+  /**
+   * 1F — Cerrar: archiva la conversación (sale de la cola; el historial
+   * completo queda en el CRM) y el servidor cura la gestión (resumen IA +
+   * datos) y la envía al backoffice por el webhook saliente. El resultado
+   * del envío se muestra como aviso — un fallo nunca pasa en silencio.
+   */
+  const closeSelected = useCallback(async () => {
+    const id = selectedIdRef.current;
+    if (!id) return;
+    if (
+      !window.confirm(
+        "¿Cerrar la conversación?\n\nSe archiva en el CRM y la gestión curada (resumen IA + datos) se envía al backoffice."
+      )
+    )
+      return;
+    setClosureNotice(null);
+    try {
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ close: true }),
+      });
+      const data = (await res.json().catch(() => null)) as {
+        closure?: { webhook: "sent" | "skipped" | "failed"; webhookError: string | null };
+      } | null;
+      const c = data?.closure;
+      if (c?.webhook === "failed") {
+        setClosureNotice({
+          kind: "failed",
+          text: `Cerrada, pero el envío al backoffice falló: ${c.webhookError ?? "error desconocido"}. La gestión quedó guardada en el CRM.`,
+        });
+      } else if (c?.webhook === "skipped") {
+        setClosureNotice({
+          kind: "skipped",
+          text: "Conversación cerrada (sin destino de gestión configurado).",
+        });
+      } else {
+        setClosureNotice({
+          kind: "sent",
+          text: "Cerrada. Gestión curada enviada al backoffice.",
+        });
+      }
+    } catch {
+      setClosureNotice({
+        kind: "failed",
+        text: "No se pudo cerrar la conversación. Intentalo de nuevo.",
+      });
+    }
+    void refetchConversations();
+  }, [refetchConversations]);
+
   return (
     <div className="flex h-full">
       {/* Móvil: una columna a la vez. La lista cede la pantalla completa al
@@ -394,7 +455,32 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
                   <PanelRight className="h-4 w-4" strokeWidth={1.7} />
                 </button>
               )}
+              {/* 1F: cerrar la conversación y guardar la gestión curada. */}
+              <button
+                onClick={() => void closeSelected()}
+                aria-label="Cerrar la conversación y guardar la gestión"
+                title="Cerrar y guardar gestión"
+                className="shrink-0 rounded-full border border-border-strong p-1.5 text-text-3 transition-colors hover:border-success-text hover:text-success-text"
+              >
+                <CheckCheck className="h-4 w-4" strokeWidth={1.9} />
+              </button>
             </header>
+            {closureNotice && (
+              <div
+                role="status"
+                className={cn(
+                  "border-b px-3 py-1.5 text-[12px] font-medium",
+                  closureNotice.kind === "sent" &&
+                    "border-success-soft bg-success-tint text-success-text",
+                  closureNotice.kind === "skipped" &&
+                    "border-border-strong bg-accent text-text-2",
+                  closureNotice.kind === "failed" &&
+                    "border-danger-soft bg-danger-tint text-danger-text"
+                )}
+              >
+                {closureNotice.text}
+              </div>
+            )}
             <MessageThread messages={thread} />
             <Composer
               conversation={selected}

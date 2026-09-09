@@ -383,6 +383,23 @@ export const conversation = pgTable(
       onDelete: "set null",
     }),
     assignedAt: timestamp("assigned_at"),
+    /**
+     * 1F: cierre de conversación. closed_at NOT NULL = cerrada (sale de la
+     * cola de la bandeja; el historial completo queda en la base local). Al
+     * cerrar, el CRM cura un resumen (closure_summary) y emite el webhook
+     * saliente "conversation.closed" hacia el backend (n8n → Airtable): el
+     * transcript NO viaja — solo la gestión curada. closure_status:
+     * pending (cerrando) / sent / failed (reintentable) / skipped (sin
+     * webhook configurado).
+     */
+    closedAt: timestamp("closed_at"),
+    closedBy: text("closed_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    closureStatus: text("closure_status"),
+    closureSummary: text("closure_summary"),
+    closureError: text("closure_error"),
+    closureWebhookAt: timestamp("closure_webhook_at"),
     lastInboundAt: timestamp("last_inbound_at"),
     lastMessageAt: timestamp("last_message_at"),
     unreadCount: integer("unread_count").notNull().default(0),

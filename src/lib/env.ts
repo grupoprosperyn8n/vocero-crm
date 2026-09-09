@@ -60,6 +60,12 @@ const envSchema = z.object({
   // defecto: sin él, una derivación no se asigna a nadie (queda en la bandeja,
   // como siempre). Ej.: ROUTER_ASSIGN=on
   ROUTER_ASSIGN: z.string().optional(),
+  // 1F: destino del webhook saliente de cierre (n8n → backend/Airtable). Sin
+  // URL, el cierre solo archiva en el CRM (closure_status=skipped). El secret
+  // firma el body (x-vocero-signature, HMAC-SHA256 hex) para que el receptor
+  // valide que el mensaje salió de esta instancia.
+  CLOSURE_WEBHOOK_URL: z.string().url().optional(),
+  CLOSURE_WEBHOOK_SECRET: z.string().optional(),
   // 008: volumen local de adjuntos (constitución II: sin S3/R2).
   MEDIA_DIR: z.string().default("./.dev-media"),
   NODE_ENV: z.string().default("development"),

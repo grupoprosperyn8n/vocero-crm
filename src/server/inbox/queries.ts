@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
@@ -49,6 +49,9 @@ export async function listConversations(
         schema.conversation.organizationId,
         organizationId,
         eq(schema.conversation.isTest, false),
+        // 1F: la bandeja muestra la cola viva; las cerradas quedan en el
+        // historial local (y su gestión viajó al backend por el webhook).
+        isNull(schema.conversation.closedAt),
         since ? gt(schema.conversation.updatedAt, since) : undefined
       )
     )
@@ -131,6 +134,8 @@ export function serializeConversation(
     topic: c.topic,
     assignee,
     assignedAt: c.assignedAt?.toISOString() ?? null,
+    /** 1F: cerrada = salió de la cola de la bandeja (el SSE la descarta). */
+    closedAt: c.closedAt?.toISOString() ?? null,
     lastInboundAt: c.lastInboundAt?.toISOString() ?? null,
     lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
     unreadCount: c.unreadCount,
@@ -158,6 +163,12 @@ export async function updateConversation(
     set.handoffAt = null;
     set.handoffReason = null;
     set.aiEnabled = patch.aiEnabled ?? true;
+    // 1F: reabrir una conversación cerrada la vuelve a la cola (el webhook
+    // de cierre ya se emitió; reabrir no lo re-emite).
+    set.closedAt = null;
+    set.closedBy = null;
+    set.closureStatus = null;
+    set.closureError = null;
   }
   if (patch.markRead) set.unreadCount = 0;
   if (patch.topic !== undefined) set.topic = patch.topic;

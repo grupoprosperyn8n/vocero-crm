@@ -16,6 +16,8 @@ export type ConversationDto = {
   /** 1D: empleado a cargo (router por presencia); null = sin asignar. */
   assignee: { id: string; name: string } | null;
   assignedAt: string | null;
+  /** 1F: cerrada = salió de la cola; el SSE la descarta del estado local. */
+  closedAt: string | null;
   lastInboundAt: string | null;
   lastMessageAt: string | null;
   unreadCount: number;
