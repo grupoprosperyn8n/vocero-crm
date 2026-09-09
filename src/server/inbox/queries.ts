@@ -1,12 +1,16 @@
-import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
 import type { ConversationDto } from "@/lib/types";
 
+export type ConversationStatus = "open" | "closed";
+
 export async function listConversations(
   organizationId: string,
-  since?: Date
+  since?: Date,
+  status: ConversationStatus = "open"
 ): Promise<ConversationDto[]> {
   const db = getDb();
   const previewSql = sql<string | null>`(
@@ -19,9 +23,11 @@ export async function listConversations(
   const stageSql = sql<string | null>`(
     select s.name from lead l
     join pipeline_stage s on s.id = l.stage_id
-    where l.contact_id = ${schema.contact.id}
+    where l.contact_id = ${schema.conversation.contactId}
     limit 1
   )`;
+  // 2A: operador que cerró la conversación (para la vista Cerradas).
+  const closer = alias(schema.user, "closer");
 
   const rows = await db
     .select({
@@ -31,6 +37,10 @@ export async function listConversations(
       assignee: {
         id: schema.user.id,
         name: schema.user.name,
+      },
+      closer: {
+        id: closer.id,
+        name: closer.name,
       },
       preview: previewSql,
       stageName: stageSql,
@@ -44,18 +54,29 @@ export async function listConversations(
       schema.user,
       eq(schema.conversation.assigneeId, schema.user.id)
     )
+    .leftJoin(closer, eq(schema.conversation.closedBy, closer.id))
     .where(
       scoped(
         schema.conversation.organizationId,
         organizationId,
-        eq(schema.conversation.isTest, false),
-        // 1F: la bandeja muestra la cola viva; las cerradas quedan en el
-        // historial local (y su gestión viajó al backend por el webhook).
-        isNull(schema.conversation.closedAt),
+        // 1F: la bandeja muestra la cola viva; 2A: la pestaña Cerradas
+        // muestra las archivadas (con su resumen), por fecha de cierre.
+        and(
+          eq(schema.conversation.isTest, false),
+          status === "closed"
+            ? isNotNull(schema.conversation.closedAt)
+            : isNull(schema.conversation.closedAt)
+        ),
         since ? gt(schema.conversation.updatedAt, since) : undefined
       )
     )
-    .orderBy(desc(sql`coalesce(${schema.conversation.lastMessageAt}, ${schema.conversation.createdAt})`));
+    .orderBy(
+      status === "closed"
+        ? desc(schema.conversation.closedAt)
+        : desc(
+            sql`coalesce(${schema.conversation.lastMessageAt}, ${schema.conversation.createdAt})`
+          )
+    );
 
   return rows.map((r) => {
     const asg = r.assignee;
@@ -64,9 +85,32 @@ export async function listConversations(
       r.contact,
       asg?.id ? { id: asg.id, name: asg.name } : null,
       r.preview,
-      r.stageName
+      r.stageName,
+      r.closer?.name ?? null
     );
   });
+}
+
+/** 2A: total de conversaciones en un estado, para los contadores de las tabs. */
+export async function countConversations(
+  organizationId: string,
+  status: ConversationStatus
+): Promise<number> {
+  const db = getDb();
+  const rows = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.conversation)
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        organizationId,
+        eq(schema.conversation.isTest, false),
+        status === "closed"
+          ? isNotNull(schema.conversation.closedAt)
+          : isNull(schema.conversation.closedAt)
+      )
+    );
+  return rows[0]?.n ?? 0;
 }
 
 export async function getConversation(
@@ -121,7 +165,8 @@ export function serializeConversation(
   contact: typeof schema.contact.$inferSelect,
   assignee: { id: string; name: string } | null = null,
   preview: string | null = null,
-  stageName: string | null = null
+  stageName: string | null = null,
+  closedByName: string | null = null
 ): ConversationDto {
   return {
     id: c.id,
@@ -136,6 +181,10 @@ export function serializeConversation(
     assignedAt: c.assignedAt?.toISOString() ?? null,
     /** 1F: cerrada = salió de la cola de la bandeja (el SSE la descarta). */
     closedAt: c.closedAt?.toISOString() ?? null,
+    /** 2A: resumen curado al cerrar (se muestra en la pestaña Cerradas). */
+    closureSummary: c.closureSummary,
+    /** 2A: operador que cerró (chip en la tarjeta de Cerradas). */
+    closedByName,
     lastInboundAt: c.lastInboundAt?.toISOString() ?? null,
     lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
     unreadCount: c.unreadCount,

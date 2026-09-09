@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckCheck, ChevronLeft, PanelRight } from "lucide-react";
+import { CheckCheck, ChevronLeft, PanelRight, RotateCcw } from "lucide-react";
 import { cn, formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import type { ConversationDto, MessageDto } from "@/lib/types";
@@ -13,6 +13,7 @@ import { ConversationList } from "./conversation-list";
 import { MessageThread } from "./message-thread";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
+import { formatTime } from "./helpers";
 import { TOPIC_LIST, topicDot } from "@/lib/topics";
 
 /**
@@ -38,9 +39,15 @@ const isWideEnoughForPanel = () =>
 
 export function InboxClient({ channels }: { channels: readonly Channel[] }) {
   const multiChannel = channels.length > 1;
+  // 2A: qué lista muestra la bandeja: la cola viva (En curso) o el archivo
+  // (Cerradas, con su resumen de gestión).
+  const [view, setView] = useState<"open" | "closed">("open");
   const [conversations, setConversations] = useState<ConversationDto[] | null>(
     null
   );
+  // 2A: contadores de las dos pestañas (los devuelve el mismo GET).
+  const [openTotal, setOpenTotal] = useState(0);
+  const [closedTotal, setClosedTotal] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageDto[]>([]);
   const [pending, setPending] = useState<PendingOut[]>([]);
@@ -83,13 +90,37 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
   // simultáneos pueden llegar a Meta en desorden.
   const sendQueue = useRef<Promise<unknown>>(Promise.resolve());
 
-  const refetchConversations = useCallback(async () => {
-    const res = await fetch("/api/conversations").catch(() => null);
-    if (!res?.ok) return;
-    const data = (await res.json()) as { conversations: ConversationDto[] };
-    setConversations(data.conversations);
-    lastFetchRef.current = new Date().toISOString();
-  }, []);
+  const refetchConversations = useCallback(
+    async (status?: "open" | "closed") => {
+      const st = status ?? view;
+      const res = await fetch(
+        `/api/conversations${st === "closed" ? "?status=closed" : ""}`
+      ).catch(() => null);
+      if (!res?.ok) return;
+      const data = (await res.json()) as {
+        conversations: ConversationDto[];
+        openTotal: number;
+        closedTotal: number;
+      };
+      setConversations(data.conversations);
+      setOpenTotal(data.openTotal);
+      setClosedTotal(data.closedTotal);
+      lastFetchRef.current = new Date().toISOString();
+    },
+    [view]
+  );
+
+  /** 2A: cambiar de pestaña (cola viva ↔ archivo) con selección limpia. */
+  const changeView = useCallback(
+    (v: "open" | "closed") => {
+      setView(v);
+      setSelectedId(null);
+      setMessages([]);
+      setClosureNotice(null);
+      void refetchConversations(v);
+    },
+    [refetchConversations]
+  );
 
   const refetchMessages = useCallback(async (conversationId: string) => {
     const res = await fetch(
@@ -286,17 +317,18 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
   );
 
   /**
-   * 1F — Cerrar: archiva la conversación (sale de la cola; el historial
-   * completo queda en el CRM) y el servidor cura la gestión (resumen IA +
-   * datos) y la envía al backoffice por el webhook saliente. El resultado
-   * del envío se muestra como aviso — un fallo nunca pasa en silencio.
+   * 1F/2A — Cerrar: archiva la conversación (sale de la cola viva; el
+   * historial completo y el resumen quedan en el CRM, pestaña Cerradas).
+   * El servidor cura la gestión (resumen IA + datos) y, si hubiera un
+   * destino configurado (conectores), la envía — hoy en este CRM no hay
+   * ninguno, así que el resultado es "skipped": archivada nomás.
    */
   const closeSelected = useCallback(async () => {
     const id = selectedIdRef.current;
     if (!id) return;
     if (
       !window.confirm(
-        "¿Cerrar la conversación?\n\nSe archiva en el CRM y la gestión curada (resumen IA + datos) se envía al backoffice."
+        "¿Cerrar la conversación?\n\nSe archiva en el CRM: el historial y el resumen quedan en la pestaña Cerradas."
       )
     )
       return;
@@ -314,27 +346,48 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
       if (c?.webhook === "failed") {
         setClosureNotice({
           kind: "failed",
-          text: `Cerrada, pero el envío al backoffice falló: ${c.webhookError ?? "error desconocido"}. La gestión quedó guardada en el CRM.`,
+          text: `Cerrada, pero el envío a la integración falló: ${c.webhookError ?? "error desconocido"}. El historial y el resumen quedaron en el CRM.`,
         });
       } else if (c?.webhook === "skipped") {
         setClosureNotice({
           kind: "skipped",
-          text: "Conversación cerrada (sin destino de gestión configurado).",
+          text: "Conversación cerrada. Quedó archivada en el CRM con su resumen.",
         });
       } else {
         setClosureNotice({
           kind: "sent",
-          text: "Cerrada. Gestión curada enviada al backoffice.",
+          text: "Cerrada. Resumen archivado en el CRM.",
         });
       }
+      // 2A: el cierre se ve en el archivo: pasamos a Cerradas con la
+      // conversación recién archivada seleccionada (con su resumen).
+      setView("closed");
+      void refetchConversations("closed");
     } catch {
       setClosureNotice({
         kind: "failed",
         text: "No se pudo cerrar la conversación. Intentalo de nuevo.",
       });
     }
-    void refetchConversations();
   }, [refetchConversations]);
+
+  /**
+   * 2A — Reabrir: una conversación archivada vuelve a la cola viva (el
+   * historial queda intacto y se puede seguir respondiendo). El cierre
+   * anterior no se re-emite: reabrir es una acción nueva del operador.
+   */
+  const reopenSelected = useCallback(async () => {
+    const id = selectedIdRef.current;
+    if (!id) return;
+    await fetch(`/api/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reactivate: true }),
+    }).catch(() => null);
+    setClosureNotice(null);
+    if (view === "closed") setView("open");
+    void refetchConversations("open");
+  }, [view, refetchConversations]);
 
   return (
     <div className="flex h-full">
@@ -351,7 +404,11 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
           channels={channels}
           selectedId={selectedId}
           onSelect={select}
-          onSeeded={() => void refetchConversations()}
+          onSeeded={() => void refetchConversations("open")}
+          view={view}
+          onViewChange={changeView}
+          openTotal={openTotal}
+          closedTotal={closedTotal}
         />
       </section>
 
@@ -386,18 +443,22 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
                   <p
                     className={cn(
                       "mt-0.5 font-mono text-[10.5px] tracking-[0.04em]",
-                      selected.windowOpen
-                        ? "font-medium text-success-text"
-                        : "text-text-3"
+                      selected.closedAt
+                        ? "font-medium text-text-3"
+                        : selected.windowOpen
+                          ? "font-medium text-success-text"
+                          : "text-text-3"
                     )}
                   >
-                    {selected.windowOpen
-                      ? "ventana abierta"
-                      : selected.contact.phone
-                        ? formatPhone(selected.contact.phone)
-                        : // Instagram no tiene teléfono: decir "Sin teléfono"
-                          // sería contestar una pregunta que nadie hizo.
-                          CHANNEL_LABEL[selected.channel]}
+                    {selected.closedAt
+                      ? `Cerrada ${selected.closedByName ? `por ${selected.closedByName} · ` : ""}${formatTime(selected.closedAt)}`
+                      : selected.windowOpen
+                        ? "ventana abierta"
+                        : selected.contact.phone
+                          ? formatPhone(selected.contact.phone)
+                          : // Instagram no tiene teléfono: decir "Sin teléfono"
+                            // sería contestar una pregunta que nadie hizo.
+                            CHANNEL_LABEL[selected.channel]}
                   </p>
                   {/*
                     1B — Clasificador de topic. Aparece cuando la conversación
@@ -406,9 +467,12 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
                     el router y el curado. En WhatsApp común sin derivar no
                     molesta.
                   */}
+                  {/* 2A: una archivada también se puede (re)etiquetar: el
+                      clasificador queda disponible para el archivo. */}
                   {(selected.handoffAt ||
                     selected.topic ||
-                    selected.channel === "web") && (
+                    selected.channel === "web" ||
+                    selected.closedAt) && (
                     <div className="mt-1 flex items-center gap-1.5">
                       <span
                         className="h-[7px] w-[7px] shrink-0 rounded-full"
@@ -455,15 +519,27 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
                   <PanelRight className="h-4 w-4" strokeWidth={1.7} />
                 </button>
               )}
-              {/* 1F: cerrar la conversación y guardar la gestión curada. */}
-              <button
-                onClick={() => void closeSelected()}
-                aria-label="Cerrar la conversación y guardar la gestión"
-                title="Cerrar y guardar gestión"
-                className="shrink-0 rounded-full border border-border-strong p-1.5 text-text-3 transition-colors hover:border-success-text hover:text-success-text"
-              >
-                <CheckCheck className="h-4 w-4" strokeWidth={1.9} />
-              </button>
+              {/* 1F/2A: cerrar archiva la conversación; si ya está cerrada,
+                  el botón pasa a ser Reabrir (vuelve a la cola viva). */}
+              {selected.closedAt ? (
+                <button
+                  onClick={() => void reopenSelected()}
+                  aria-label="Reabrir la conversación"
+                  title="Reabrir (vuelve a En curso)"
+                  className="shrink-0 rounded-full border border-border-strong p-1.5 text-text-3 transition-colors hover:border-brand hover:text-brand"
+                >
+                  <RotateCcw className="h-4 w-4" strokeWidth={1.9} />
+                </button>
+              ) : (
+                <button
+                  onClick={() => void closeSelected()}
+                  aria-label="Cerrar la conversación y archivarla"
+                  title="Cerrar y archivar"
+                  className="shrink-0 rounded-full border border-border-strong p-1.5 text-text-3 transition-colors hover:border-success-text hover:text-success-text"
+                >
+                  <CheckCheck className="h-4 w-4" strokeWidth={1.9} />
+                </button>
+              )}
             </header>
             {closureNotice && (
               <div
@@ -482,15 +558,33 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
               </div>
             )}
             <MessageThread messages={thread} />
-            <Composer
-              conversation={selected}
-              onSend={sendText}
-              onSent={() => {
-                if (selectedIdRef.current)
-                  void refetchMessages(selectedIdRef.current);
-                void refetchConversations();
-              }}
-            />
+            {selected.closedAt ? (
+              /* 2A: una archivada no se responde: el compositor se reemplaza
+                 por la barra de estado con la acción Reabrir. */
+              <div className="flex items-center justify-between gap-3 border-t bg-secondary/50 px-4 py-2.5">
+                <p className="min-w-0 truncate text-[12px] font-medium text-text-2">
+                  Conversación cerrada: el historial y el resumen quedaron
+                  guardados en el CRM.
+                </p>
+                <button
+                  onClick={() => void reopenSelected()}
+                  className="flex shrink-0 items-center gap-1.5 rounded-full border border-brand-soft bg-brand-veil px-3 py-1.5 text-[12px] font-semibold text-brand transition-colors hover:border-brand"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.9} />
+                  Reabrir
+                </button>
+              </div>
+            ) : (
+              <Composer
+                conversation={selected}
+                onSend={sendText}
+                onSent={() => {
+                  if (selectedIdRef.current)
+                    void refetchMessages(selectedIdRef.current);
+                  void refetchConversations();
+                }}
+              />
+            )}
           </>
         ) : (
           <div className="thread-bg flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">

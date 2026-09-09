@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Search, Sparkles, UserRound, X } from "lucide-react";
+import { CheckCheck, Search, Sparkles, UserRound, X } from "lucide-react";
 import type { ConversationDto } from "@/lib/types";
 import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
 import { ChannelBadge } from "@/components/channel-badge";
@@ -66,6 +66,10 @@ export function ConversationList({
   selectedId,
   onSelect,
   onSeeded,
+  view,
+  onViewChange,
+  openTotal,
+  closedTotal,
 }: {
   conversations: ConversationDto[] | null;
   /** Canales encendidos en esta instancia (ADR-001). */
@@ -73,6 +77,11 @@ export function ConversationList({
   selectedId: string | null;
   onSelect: (id: string) => void;
   onSeeded: () => void;
+  /** 2A: qué lista se muestra: la cola viva (En curso) o el archivo (Cerradas). */
+  view: "open" | "closed";
+  onViewChange: (view: "open" | "closed") => void;
+  openTotal: number;
+  closedTotal: number;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "unread">("all");
@@ -97,6 +106,10 @@ export function ConversationList({
 
   const loading = conversationsProp === null;
   const conversations = conversationsProp ?? [];
+  // 2A: en el archivo (Cerradas) no aplican los filtros de cola — ni
+  // "Todas/No leídas" ni etapa del embudo: quedan la búsqueda y los chips
+  // de cada tarjeta. En la cola viva, todo como antes.
+  const closed = view === "closed";
   // Solo NOMBRE y TELÉFONO, como cualquier filtro de contactos. Antes también
   // miraba el preview, y como el agente nombra al dueño en sus propios
   // mensajes, buscar ese nombre devolvía media bandeja. Encima era una
@@ -118,8 +131,11 @@ export function ConversationList({
   const inboxCount = (ch: Channel) =>
     searched.filter((c) => c.channel === ch).length;
   const unreadCount = inInbox.filter((c) => c.unreadCount > 0).length;
+  // 2A: el filtro "No leídas" es de la cola viva; en el archivo no aplica.
   const visible =
-    filter === "unread" ? inInbox.filter((c) => c.unreadCount > 0) : inInbox;
+    !closed && filter === "unread"
+      ? inInbox.filter((c) => c.unreadCount > 0)
+      : inInbox;
   // Con un solo canal encendido no hay bandejas que distinguir: ni marca en
   // los renglones ni filtro. La pantalla queda exactamente como antes de 014.
   const multiChannel = channels.length > 1;
@@ -147,11 +163,58 @@ export function ConversationList({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="border-b px-4 pb-3 pt-4">
+      <header className="border-b px-4 pb-3 pt-3">
+        {/* 2A: estado de la lista — cola viva vs archivadas. */}
+        <div className="mb-3 grid grid-cols-2 gap-1 rounded-full border border-border-strong bg-secondary/70 p-1">
+          <button
+            type="button"
+            onClick={() => onViewChange("open")}
+            aria-pressed={view === "open"}
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-full py-[6px] text-[12.5px] font-semibold transition-colors",
+              view === "open"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-text-3 hover:text-foreground"
+            )}
+          >
+            En curso
+            <span
+              className={cn(
+                "rounded-full px-1.5 font-mono text-[10.5px]",
+                view === "open" ? "bg-brand-veil text-brand" : "bg-secondary"
+              )}
+            >
+              {openTotal}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onViewChange("closed")}
+            aria-pressed={view === "closed"}
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-full py-[6px] text-[12.5px] font-semibold transition-colors",
+              view === "closed"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-text-3 hover:text-foreground"
+            )}
+          >
+            Cerradas
+            <span
+              className={cn(
+                "rounded-full px-1.5 font-mono text-[10.5px]",
+                view === "closed" ? "bg-brand-veil text-brand" : "bg-secondary"
+              )}
+            >
+              {closedTotal}
+            </span>
+          </button>
+        </div>
         <div className="mb-3 flex items-center gap-2">
-          <h2 className="text-[17px] font-bold tracking-tight">Bandeja</h2>
+          <h2 className="text-[17px] font-bold tracking-tight">
+            {closed ? "Archivo" : "Bandeja"}
+          </h2>
           <span className="font-mono text-[12px] text-text-3">{conversations.length}</span>
-          {multiChannel && (
+          {multiChannel && !closed && (
             <div className="ml-auto flex items-center gap-1">
               {channels.map((ch) => {
                 const on = inbox === ch;
@@ -206,7 +269,8 @@ export function ConversationList({
         </div>
       </header>
 
-      <div className="flex items-center gap-1.5 border-b px-4 py-2.5">
+      {!closed && (
+        <div className="flex items-center gap-1.5 border-b px-4 py-2.5">
         {(
           [
             { id: "all", label: "Todas", count: inInbox.length },
@@ -282,13 +346,28 @@ export function ConversationList({
             )}
           </div>
         )}
-      </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <p className="p-6 text-center text-xs text-text-3">Cargando…</p>
         ) : conversations.length === 0 ? (
-          <EmptyState onSeeded={onSeeded} />
+          closed ? (
+            <div className="flex h-full items-center justify-center p-6 text-center">
+              <div>
+                <p className="font-serif text-[20px] italic leading-tight text-foreground">
+                  Sin conversaciones cerradas
+                </p>
+                <p className="mt-1 text-xs text-text-3">
+                  Cuando cierres una conversación, queda archivada acá con su
+                  resumen y su etiqueta.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <EmptyState onSeeded={onSeeded} />
+          )
         ) : visible.length === 0 ? (
           <p className="p-6 text-center text-xs text-text-3">
             Sin resultados para este filtro.
@@ -296,7 +375,9 @@ export function ConversationList({
         ) : (
           <ul>
             {visible.map((c) => {
-              const unread = c.unreadCount > 0;
+              // 2A: en el archivo no hay no-leídas ni ventana: la tarjeta
+              // muestra la fecha de cierre y el resumen de la gestión.
+              const unread = !closed && c.unreadCount > 0;
               const active = selectedId === c.id;
               return (
                 <li key={c.id} className="relative border-b border-border">
@@ -332,20 +413,34 @@ export function ConversationList({
                         <span
                           className={cn(
                             "shrink-0 font-mono text-[10.5px] tracking-[0.02em]",
-                            unread ? "font-semibold text-brand" : "text-text-3"
+                            unread
+                              ? "font-semibold text-brand"
+                              : closed
+                                ? "font-semibold text-text-2"
+                                : "text-text-3"
                           )}
                         >
-                          {formatTime(c.lastMessageAt)}
+                          {closed
+                            ? `Cerrada ${formatTime(c.closedAt)}`
+                            : formatTime(c.lastMessageAt)}
                         </span>
                       </span>
                       <span className="mt-0.5 flex items-center justify-between gap-2">
                         <span
                           className={cn(
-                            "truncate text-[13px]",
-                            unread ? "font-medium text-text-2" : "text-text-3"
+                            closed
+                              ? "line-clamp-2 whitespace-normal text-[12.5px] leading-snug text-text-2"
+                              : "truncate text-[13px]",
+                            unread ? "font-medium text-text-2" : closed ? "" : "text-text-3"
                           )}
                         >
-                          {previewText(c.preview)}
+                          {/* 2A: en el archivo, el preview es el resumen curado
+                              de la gestión (o el último mensaje si no hay). */}
+                          {previewText(
+                            closed
+                              ? (c.closureSummary ?? c.preview)
+                              : c.preview
+                          )}
                         </span>
                         {unread && (
                           <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-semibold text-brand-fg">
@@ -368,7 +463,26 @@ export function ConversationList({
                             </span>
                           </span>
                         )}
-                        {c.stageName && (
+                        {closed ? (
+                          <>
+                            {c.closedByName && (
+                              <span
+                                className="inline-flex max-w-[55%] items-center gap-1.5 truncate rounded-full border border-border-strong bg-background px-2 py-0.5 text-[11px] font-medium text-text-2"
+                                title={`Cerrada por ${c.closedByName}`}
+                              >
+                                <CheckCheck
+                                  className="h-3 w-3 shrink-0"
+                                  strokeWidth={1.9}
+                                />
+                                <span className="truncate">
+                                  {c.closedByName}
+                                </span>
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {c.stageName && (
                           <span className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-background px-2 py-0.5 text-[11px] font-medium text-text-2">
                             <span
                               className="h-[7px] w-[7px] rounded-full"
@@ -398,6 +512,8 @@ export function ConversationList({
                             <UserRound className="h-3 w-3" strokeWidth={1.7} />
                             Atención humana
                           </span>
+                        )}
+                          </>
                         )}
                       </span>
                     </span>

@@ -18,6 +18,10 @@ export type ConversationDto = {
   assignedAt: string | null;
   /** 1F: cerrada = salió de la cola; el SSE la descarta del estado local. */
   closedAt: string | null;
+  /** 2A: resumen curado al cerrar (vista Cerradas: qué se gestionó). */
+  closureSummary: string | null;
+  /** 2A: operador que cerró la conversación. */
+  closedByName: string | null;
   lastInboundAt: string | null;
   lastMessageAt: string | null;
   unreadCount: number;
