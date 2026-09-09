@@ -9,6 +9,7 @@ type Tab = { href: string; label: string };
 const TABS: Tab[] = [
   { href: "/settings/whatsapp", label: "WhatsApp" },
   { href: "/settings/ai", label: "IA" },
+  { href: "/settings/connectors", label: "Conectores" },
   { href: "/settings/agents", label: "Automejora" },
   { href: "/settings/branding", label: "Marca" },
   { href: "/settings/templates", label: "Plantillas" },

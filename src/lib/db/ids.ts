@@ -28,6 +28,8 @@ const prefixes = {
   // 016 — atribución de anuncios
   adAttribution: "att",
   conversionEvent: "cve",
+  // 1F — conectores salientes (webhooks de cierre hacia el backend)
+  outboundWebhook: "owh",
   capiSettings: "capi",
   // 019 — instalador de IA
   aiSettings: "ais",

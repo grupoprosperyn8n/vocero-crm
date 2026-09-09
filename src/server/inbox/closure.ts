@@ -15,10 +15,12 @@ import { getOrgAiConfig } from "@/server/ai/config";
  *   2. El CRM cura la gestión: resumen IA de lo conversado (rápido, con el
  *      modelo auxiliar de la org) + datos de negocio (cliente, quién atendió,
  *      topic, canal, fechas). El transcript NO viaja.
- *   3. Emite el webhook saliente "conversation.closed" al backend
- *      (CLOSURE_WEBHOOK_URL → n8n → Airtable), que crea el ÚNICO registro
- *      curado (GESTIÓN GENERAL / PROSPECTOS según el workflow). Firma HMAC
- *      cuando hay CLOSURE_WEBHOOK_SECRET; 3 intentos con backoff.
+ *   3. Emite el evento "conversation.closed" a los conectores salientes de la
+ *      org (Configuración → Conectores; multi destino) → n8n → Airtable, que
+ *      crea el ÚNICO registro curado (GESTIÓN GENERAL / PROSPECTOS según el
+ *      workflow). Cada conector firma con su propio secreto (HMAC-SHA256);
+ *      3 intentos con backoff. Sin conectores configurados, el env
+ *      CLOSURE_WEBHOOK_URL actúa como conector implícito (back-compat).
  *
  * Si el webhook falla tras los reintentos, la conversación queda cerrada con
  * closure_status=failed y closure_error visible: la gestión no se pierde en
@@ -41,9 +43,62 @@ export function webhookUrl(): string | null {
   return getEnv().CLOSURE_WEBHOOK_URL ?? null;
 }
 
-/** Firma HMAC-SHA256 hex del body (receptor: n8n). Sin secret → sin firma. */
-export function signatureFor(body: string): string | null {
-  const secret = getEnv().CLOSURE_WEBHOOK_SECRET;
+export type OutboundDestination = {
+  id: string;
+  name: string;
+  url: string;
+  secret: string | null;
+};
+
+/**
+ * Destinos del evento de cierre de la org (Configuración → Conectores).
+ * Si la org no configuró ninguno, el env CLOSURE_WEBHOOK_URL actúa como
+ * conector implícito: back-compat con el 1F original (instalaciones que
+ * nunca abren la UI siguen funcionando igual).
+ */
+export async function destinationsFor(
+  organizationId: string
+): Promise<OutboundDestination[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: schema.outboundWebhook.id,
+      name: schema.outboundWebhook.name,
+      url: schema.outboundWebhook.url,
+      secret: schema.outboundWebhook.secret,
+      enabled: schema.outboundWebhook.enabled,
+    })
+    .from(schema.outboundWebhook)
+    .where(eq(schema.outboundWebhook.organizationId, organizationId))
+    .orderBy(desc(schema.outboundWebhook.createdAt));
+  // La org nunca configuró conectores: el env CLOSURE_WEBHOOK_URL actúa como
+  // conector implícito (back-compat con el 1F original).
+  if (rows.length === 0) {
+    const url = webhookUrl();
+    if (!url) return [];
+    return [
+      {
+        id: "env",
+        name: "CLOSURE_WEBHOOK_URL (env)",
+        url,
+        secret: getEnv().CLOSURE_WEBHOOK_SECRET ?? null,
+      },
+    ];
+  }
+  // La org usa conectores: se respeta su configuración (todos apagados =
+  // nada sale; el env legacy ya no participa).
+  return rows
+    .filter((r) => r.enabled)
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      url: r.url,
+      secret: r.secret,
+    }));
+}
+
+/** Firma HMAC-SHA256 hex del body con el secreto del destino. Sin secret → sin firma. */
+function signatureFor(body: string, secret: string | null): string | null {
   if (!secret) return null;
   return createHmac("sha256", secret).update(body).digest("hex");
 }
@@ -80,22 +135,25 @@ async function curateSummary(
   return result.data.resumen;
 }
 
-async function deliverWebhook(payload: Record<string, unknown>): Promise<{
-  ok: boolean;
-  error: string | null;
-}> {
-  const url = webhookUrl();
-  if (!url) return { ok: false, error: "no_webhook_url" };
-  const body = JSON.stringify(payload);
-  const signature = signatureFor(body);
+async function deliverWebhook(
+  payload: Record<string, unknown>,
+  destination: OutboundDestination
+): Promise<{ ok: boolean; error: string | null }> {
+  // Cada receptor recibe su destino en el payload (multi conector).
+  const body = JSON.stringify({
+    ...payload,
+    destination: { id: destination.id, name: destination.name },
+  });
+  const signature = signatureFor(body, destination.secret);
   let lastError = "sin respuesta del destino";
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const res = await fetch(url, {
+      const res = await fetch(destination.url, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "x-vocero-event": "conversation.closed",
+          "x-vocero-destination": destination.name,
           ...(signature ? { "x-vocero-signature": signature } : {}),
         },
         body,
@@ -108,7 +166,34 @@ async function deliverWebhook(payload: Record<string, unknown>): Promise<{
     }
     if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
   }
-  return { ok: false, error: lastError.slice(0, 500) };
+  return { ok: false, error: lastError.slice(0, 300) };
+}
+
+/** Envía el payload curado a TODOS los destinos; reporta cada fallo por nombre. */
+async function deliverAll(
+  payload: Record<string, unknown>,
+  destinations: OutboundDestination[]
+): Promise<{ ok: boolean; error: string | null }> {
+  if (destinations.length === 0) return { ok: false, error: "no_webhook_url" };
+  const results = await Promise.allSettled(
+    destinations.map((d) => deliverWebhook(payload, d))
+  );
+  const failures: string[] = [];
+  results.forEach((r, i) => {
+    if (r.status === "fulfilled" && r.value.ok) return;
+    const destination = destinations[i];
+    if (!destination) return;
+    const error =
+      r.status === "rejected"
+        ? "error inesperado al enviar"
+        : (r.value.error ?? "error desconocido");
+    failures.push(`${destination.name}: ${error}`);
+  });
+  if (failures.length === 0) return { ok: true, error: null };
+  return {
+    ok: false,
+    error: failures.join(" — ").slice(0, 500),
+  };
 }
 
 export async function closeConversation(input: {
@@ -202,7 +287,7 @@ export async function closeConversation(input: {
     lastMessageAt: conv.lastMessageAt?.toISOString() ?? conv.updatedAt.toISOString(),
   };
 
-  const delivered = await deliverWebhook(payload);
+  const delivered = await deliverAll(payload, await destinationsFor(organizationId));
   const outcome: ClosureOutcome = delivered.ok
     ? { closed: true, alreadyClosed: false, summary, webhook: "sent", webhookError: null }
     : {

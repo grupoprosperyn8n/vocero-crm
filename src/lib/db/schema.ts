@@ -1101,3 +1101,25 @@ export const aiSettings = pgTable(
   },
   (t) => [uniqueIndex("ai_settings_org_uq").on(t.organizationId)]
 );
+
+/**
+ * 1F — Conectores salientes ("multi conector"): destinos del webhook de
+ * cierre configurables desde Configuración, sin tocar env vars. Cada
+ * conector es un endpoint del backend (n8n, Airtable, ...) que recibe el
+ * payload curado firmado con su propio secreto. El env CLOSURE_WEBHOOK_URL
+ * sigue existiendo como conector implícito para instalaciones que nunca
+ * abran la UI (back-compat).
+ */
+export const outboundWebhook = pgTable("outbound_webhook", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  kind: text("kind").notNull().default("conversation.closed"),
+  url: text("url").notNull(),
+  secret: text("secret"),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
