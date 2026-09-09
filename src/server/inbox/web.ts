@@ -63,7 +63,9 @@ export async function ingestWebMessage(input: WebIngestInput): Promise<void> {
       : `${WEB_PREFIX}${newId("message")}`,
     type: "text",
     text: input.text,
-    timestamp: String(Date.now()),
+    // La ingesta común espera epoch en SEGUNDOS (contrato de los webhooks
+    // de Meta: toDate() multiplica por 1000). Date.now() solo daría ms.
+    timestamp: String(Math.floor(Date.now() / 1000)),
   });
 }
 
