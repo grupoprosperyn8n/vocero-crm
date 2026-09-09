@@ -1,5 +1,6 @@
 import { requireSession, UnauthorizedError } from "@/lib/auth/session";
 import { subscribe } from "@/server/events/bus";
+import { dropPresence, touchPresence } from "@/server/events/presence";
 
 /**
  * Canal SSE de la bandeja (contrato sse.md).
@@ -21,12 +22,14 @@ export async function GET(req: Request) {
     }
     throw err;
   }
-  const { organizationId } = session;
+  const { organizationId, userId } = session;
 
   let cleanup: (() => void) | null = null;
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
+      // 019: conexión SSE viva = empleado online (router por presencia).
+      touchPresence(organizationId, userId);
       const send = (chunk: string) => {
         try {
           controller.enqueue(encoder.encode(chunk));
@@ -50,6 +53,8 @@ export async function GET(req: Request) {
       cleanup = () => {
         clearInterval(heartbeat);
         unsubscribe();
+        // 019: se cerró la última conexión de este empleado: ya no está online.
+        dropPresence(organizationId, userId);
         try {
           controller.close();
         } catch {

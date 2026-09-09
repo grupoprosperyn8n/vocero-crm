@@ -379,7 +379,21 @@ export function ConversationList({
                             {c.stageName}
                           </span>
                         )}
-                        {c.handoffAt && (
+                        {c.assignee && (
+                          <span
+                            className="inline-flex max-w-[55%] items-center gap-1.5 truncate rounded-full border border-brand-soft bg-brand-veil px-2 py-0.5 text-[11px] font-medium text-brand"
+                            title={`A cargo de ${c.assignee.name} (atención humana)`}
+                          >
+                            <UserRound
+                              className="h-3 w-3 shrink-0"
+                              strokeWidth={1.7}
+                            />
+                            <span className="truncate">
+                              A cargo: {c.assignee.name}
+                            </span>
+                          </span>
+                        )}
+                        {c.handoffAt && !c.assignee && (
                           <span className="inline-flex items-center gap-1 rounded-full border border-warning-soft bg-warning-tint px-2 py-0.5 text-[11px] text-warning-text">
                             <UserRound className="h-3 w-3" strokeWidth={1.7} />
                             Atención humana

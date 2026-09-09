@@ -27,6 +27,11 @@ export async function listConversations(
     .select({
       conversation: schema.conversation,
       contact: schema.contact,
+      // 1D: nombre del empleado a cargo, para el chip de la bandeja.
+      assignee: {
+        id: schema.user.id,
+        name: schema.user.name,
+      },
       preview: previewSql,
       stageName: stageSql,
     })
@@ -34,6 +39,10 @@ export async function listConversations(
     .innerJoin(
       schema.contact,
       eq(schema.conversation.contactId, schema.contact.id)
+    )
+    .leftJoin(
+      schema.user,
+      eq(schema.conversation.assigneeId, schema.user.id)
     )
     .where(
       scoped(
@@ -45,9 +54,16 @@ export async function listConversations(
     )
     .orderBy(desc(sql`coalesce(${schema.conversation.lastMessageAt}, ${schema.conversation.createdAt})`));
 
-  return rows.map((r) =>
-    serializeConversation(r.conversation, r.contact, r.preview, r.stageName)
-  );
+  return rows.map((r) => {
+    const asg = r.assignee;
+    return serializeConversation(
+      r.conversation,
+      r.contact,
+      asg?.id ? { id: asg.id, name: asg.name } : null,
+      r.preview,
+      r.stageName
+    );
+  });
 }
 
 export async function getConversation(
@@ -100,6 +116,7 @@ export async function listMessages(
 export function serializeConversation(
   c: typeof schema.conversation.$inferSelect,
   contact: typeof schema.contact.$inferSelect,
+  assignee: { id: string; name: string } | null = null,
   preview: string | null = null,
   stageName: string | null = null
 ): ConversationDto {
@@ -112,6 +129,8 @@ export function serializeConversation(
     handoffAt: c.handoffAt?.toISOString() ?? null,
     handoffReason: c.handoffReason,
     topic: c.topic,
+    assignee,
+    assignedAt: c.assignedAt?.toISOString() ?? null,
     lastInboundAt: c.lastInboundAt?.toISOString() ?? null,
     lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
     unreadCount: c.unreadCount,

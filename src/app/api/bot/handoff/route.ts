@@ -4,6 +4,7 @@ import { getDb, schema } from "@/lib/db";
 import { apiError, parseBody } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { publish } from "@/server/events/bus";
+import { assignConversation } from "@/server/router/assign";
 import { toHandoffReason } from "@/server/bot/handoff";
 
 export const dynamic = "force-dynamic";
@@ -75,6 +76,10 @@ export async function POST(req: Request) {
       type: "conversation.updated",
       data: { conversation: { id: conv.id } },
     });
+    // 019: router por presencia — si hay empleados con la bandeja abierta,
+    // la derivación se asigna al de menor carga (su propio updated viaja
+    // después con el assignee, y la bandeja lo pinta en vivo).
+    await assignConversation(organizationId, conv.id);
   }
   return Response.json({ ok: true });
 }

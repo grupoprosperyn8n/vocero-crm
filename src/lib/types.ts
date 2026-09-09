@@ -13,6 +13,9 @@ export type ConversationDto = {
   handoffReason: string | null;
   /** 1B: etiqueta de negocio (catálogo lib/topics.ts; null = sin clasificar). */
   topic: string | null;
+  /** 1D: empleado a cargo (router por presencia); null = sin asignar. */
+  assignee: { id: string; name: string } | null;
+  assignedAt: string | null;
   lastInboundAt: string | null;
   lastMessageAt: string | null;
   unreadCount: number;

@@ -373,6 +373,16 @@ export const conversation = pgTable(
      * (handoff) o un operador; alimenta el filtro de la bandeja y el curado.
      */
     topic: text("topic"),
+    /**
+     * 1D: empleado a cargo de atender este handoff. Lo asigna el router por
+     * presencia (server/router/assign.ts) entre los miembros online de la
+     * organización, al de menor carga. Null = nadie online cuando derivó:
+     * queda en la bandeja y cualquier miembro la toma.
+     */
+    assigneeId: text("assignee_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    assignedAt: timestamp("assigned_at"),
     lastInboundAt: timestamp("last_inbound_at"),
     lastMessageAt: timestamp("last_message_at"),
     unreadCount: integer("unread_count").notNull().default(0),
@@ -385,6 +395,7 @@ export const conversation = pgTable(
       .on(t.organizationId, t.contactId)
       .where(sql`${t.isTest} = false`),
     index("conversation_org_last_idx").on(t.organizationId, t.lastMessageAt),
+    index("conversation_assignee_idx").on(t.assigneeId),
   ]
 );
 
