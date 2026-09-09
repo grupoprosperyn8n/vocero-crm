@@ -4,9 +4,10 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 
-const BASE = "http://localhost:3001";
-const envLocal = fs.existsSync(".env.local")
-  ? fs.readFileSync(".env.local", "utf8")
+const BASE = process.env.BASE_URL ?? "http://localhost:3001";
+const ENV_FILE = process.env.E2E_ENV_FILE ?? ".env.local";
+const envLocal = fs.existsSync(ENV_FILE)
+  ? fs.readFileSync(ENV_FILE, "utf8")
   : "";
 const envOf = (k) => {
   const m = envLocal.match(new RegExp(`^${k}=(.*)$`, "m"));

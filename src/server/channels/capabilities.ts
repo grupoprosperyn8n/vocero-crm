@@ -84,6 +84,17 @@ export const CHANNEL_CAPABILITIES: Record<Channel, ChannelCapabilities> = {
     outboundMedia: false,
     deliveryReceipts: false,
   },
+  // 020: Telegram comparte la naturaleza del web para el CRM: sin ventana de
+  // servicio (el negocio responde cuando quiere) y sin recibos de lectura.
+  // La salida con media llega junto con el adaptador de envío.
+  telegram: {
+    label: CHANNEL_LABEL.telegram,
+    windowMs: null,
+    outsideWindow: "none",
+    maxTextBytes: null,
+    outboundMedia: false,
+    deliveryReceipts: false,
+  },
 };
 
 export function capabilitiesFor(channel: Channel): ChannelCapabilities {

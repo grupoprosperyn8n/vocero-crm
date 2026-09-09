@@ -1,0 +1,218 @@
+import { and, eq } from "drizzle-orm";
+import { getDb, schema } from "@/lib/db";
+import { newId } from "@/lib/db/ids";
+import { normalizeMx } from "@/lib/meta/client";
+import type { Channel } from "@/lib/channels";
+import { publish } from "@/server/events/bus";
+import { toHandoffReason } from "@/server/bot/handoff";
+import { assignConversation } from "@/server/router/assign";
+import { ingestInboundMessage } from "@/server/inbox/ingest";
+import {
+  BSUID_PREFIX,
+  FB_PREFIX,
+  IG_PREFIX,
+  TG_PREFIX,
+  WEB_PREFIX,
+  type ResolvedIdentity,
+} from "@/server/inbox/identity";
+
+/**
+ * 020 — Conector webhook de entrada (cerebros y herramientas externas).
+ *
+ * Una sola puerta para que CUALQUIER herramienta (n8n/Sira hoy, Telegram,
+ * WhatsApp, lo que venga) traiga mensajes del cliente al CRM sin conocer su
+ * modelo interno: manda `channel` + `externalId` + `text` y el conector
+ * resuelve contacto y conversación, ingesta el mensaje por el motor común
+ * (dedup por `eventId`, unread, SSE en vivo) y —si la herramienta lo pide—
+ * deriva a un humano por el router de presencia del 1D.
+ *
+ * La respuesta devuelve el `conversationId` del CRM: es el asa con la que la
+ * herramienta responde después por /api/bot/messages (salida) sin volver a
+ * preguntar nada.
+ *
+ * Por diseño NO dispara el agente interno (scheduleAgent=false): el emisor es
+ * el cerebro; si algún día el CRM contesta solo a un canal, se invierte ahí.
+ */
+
+export type ExternalHandoff = {
+  reason?: string;
+  topic?: string;
+};
+
+export type ExternalInboundResult = {
+  /** true = el eventId ya se había ingerido: sin efectos (idempotencia). */
+  deduplicated: boolean;
+  conversationId: string;
+  contactId: string;
+  messageId: string;
+  /** Estado de la derivación pedida (null = no se pidió). */
+  handoff: {
+    applied: boolean;
+    topic: string | null;
+    assignee: { id: string; name: string } | null;
+  } | null;
+};
+
+/** Identidad del canal en el espacio del CRM (prefijos estables, 014/020). */
+function identityFor(channel: Channel, externalId: string): ResolvedIdentity {
+  switch (channel) {
+    case "whatsapp": {
+      if (externalId.startsWith(BSUID_PREFIX)) {
+        return { identity: externalId, phone: null, waUserId: null, profileName: null };
+      }
+      const phone = normalizeMx(externalId);
+      return { identity: phone, phone, waUserId: null, profileName: null };
+    }
+    // El emisor manda el id crudo de la plataforma; el prefijo es interno y
+    // no debería filtrarse en contratos (el unique es org+channel+identity).
+    case "instagram":
+      return { identity: `${IG_PREFIX}${externalId}`, channel, phone: null, waUserId: null, profileName: null };
+    case "messenger":
+      return { identity: `${FB_PREFIX}${externalId}`, channel, phone: null, waUserId: null, profileName: null };
+    case "telegram":
+      return { identity: `${TG_PREFIX}${externalId}`, channel, phone: null, waUserId: null, profileName: null };
+    case "web":
+      return { identity: `${WEB_PREFIX}${externalId}`, channel, phone: null, waUserId: null, profileName: null };
+  }
+}
+
+/** Acepta epoch (s o ms) o ISO 8601; siempre devuelve epoch en segundos. */
+function toEpochTimestamp(input?: string): string {
+  if (!input) return String(Math.floor(Date.now() / 1000));
+  const n = Number(input);
+  if (Number.isFinite(n) && n > 0) {
+    return String(n < 1e12 ? Math.floor(n) : Math.floor(n / 1000));
+  }
+  const d = new Date(input);
+  if (!Number.isNaN(d.getTime())) return String(Math.floor(d.getTime() / 1000));
+  return String(Math.floor(Date.now() / 1000));
+}
+
+async function assigneeName(userId: string): Promise<{ id: string; name: string } | null> {
+  const rows = await getDb()
+    .select({ id: schema.user.id, name: schema.user.name })
+    .from(schema.user)
+    .where(eq(schema.user.id, userId))
+    .limit(1);
+  const u = rows[0];
+  return u ? { id: u.id, name: u.name } : null;
+}
+
+/**
+ * Derivación a humano, idempotente y atómica — misma transición que
+ * /api/bot/handoff (si ya está derivada no pisa hora ni motivo) seguida del
+ * router de presencia (1D), que publica su propio `conversation.updated`.
+ */
+async function applyExternalHandoff(
+  organizationId: string,
+  conversationId: string,
+  handoff: ExternalHandoff
+): Promise<{ applied: boolean; topic: string | null; assignee: { id: string; name: string } | null }> {
+  const db = getDb();
+  const convs = await db
+    .select({ id: schema.conversation.id, handoffAt: schema.conversation.handoffAt, topic: schema.conversation.topic })
+    .from(schema.conversation)
+    .where(
+      and(
+        eq(schema.conversation.organizationId, organizationId),
+        eq(schema.conversation.id, conversationId)
+      )
+    )
+    .limit(1);
+  const conv = convs[0];
+  if (!conv) return { applied: false, topic: null, assignee: null };
+
+  let topic: string | null = null;
+  if (!conv.handoffAt) {
+    const nextTopic = handoff.topic ?? conv.topic ?? null;
+    await db
+      .update(schema.conversation)
+      .set({
+        aiEnabled: false,
+        handoffAt: new Date(),
+        handoffReason: toHandoffReason(handoff.reason),
+        ...(nextTopic ? { topic: nextTopic } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.conversation.id, conv.id));
+    publish(organizationId, {
+      type: "conversation.updated",
+      data: { conversation: { id: conv.id } },
+    });
+    const result = await assignConversation(organizationId, conv.id);
+    topic = nextTopic;
+    const assignee = result.assignedToId ? await assigneeName(result.assignedToId) : null;
+    return { applied: true, topic, assignee };
+  }
+
+  // Ya derivada: no se re-deriva; se reporta el dueño actual (si lo hay).
+  const current = await db
+    .select({ assigneeId: schema.conversation.assigneeId, topic: schema.conversation.topic })
+    .from(schema.conversation)
+    .where(eq(schema.conversation.id, conv.id))
+    .limit(1);
+  const row = current[0];
+  const assignee = row?.assigneeId ? await assigneeName(row.assigneeId) : null;
+  return { applied: false, topic: row?.topic ?? null, assignee };
+}
+
+export async function ingestExternalInbound(input: {
+  organizationId: string;
+  channel: Channel;
+  externalId: string;
+  profileName?: string | null;
+  text: string;
+  eventId?: string | null;
+  timestamp?: string;
+  handoff?: ExternalHandoff | null;
+}): Promise<ExternalInboundResult> {
+  const { organizationId, channel } = input;
+
+  const identity = identityFor(channel, input.externalId);
+  identity.profileName = input.profileName?.trim() || null;
+
+  const ingested = await ingestInboundMessage({
+    organizationId,
+    identity,
+    waMessageId: input.eventId?.trim() || newId("message"),
+    type: "text",
+    text: input.text,
+    timestamp: toEpochTimestamp(input.timestamp),
+    scheduleAgent: false,
+  });
+
+  if (!ingested) {
+    // Idempotencia dura: el eventId ya se ingirió. Se resuelve el asa para
+    // que la herramienta pueda seguir hablando aunque reintente.
+    const rows = await getDb()
+      .select({ conversationId: schema.message.conversationId, contactId: schema.conversation.contactId })
+      .from(schema.message)
+      .innerJoin(schema.conversation, eq(schema.conversation.id, schema.message.conversationId))
+      .where(eq(schema.message.waMessageId, input.eventId ?? ""))
+      .limit(1);
+    const existing = rows[0];
+    if (!existing) {
+      throw new Error("mensaje duplicado sin conversación original (eventId reutilizado)");
+    }
+    return {
+      deduplicated: true,
+      conversationId: existing.conversationId,
+      contactId: existing.contactId,
+      messageId: "",
+      handoff: null,
+    };
+  }
+
+  const { contact, conversation, message } = ingested;
+  const handoff = input.handoff
+    ? await applyExternalHandoff(organizationId, conversation.id, input.handoff)
+    : null;
+
+  return {
+    deduplicated: false,
+    conversationId: conversation.id,
+    contactId: contact.id,
+    messageId: message.id,
+    handoff,
+  };
+}

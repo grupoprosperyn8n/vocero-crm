@@ -388,7 +388,17 @@ export async function ingestInboundMessage(input: {
   threadRef?: string | null;
   /** 016: origen del anuncio, si el mensaje vino de uno. */
   referral?: WebhookReferral | null;
-}): Promise<void> {
+  /**
+   * 020: false = el agente interno NO toma el turno tras la ingesta (lo hace
+   * un cerebro externo vía /api/bot/messages). Default true conserva el
+   * comportamiento del webhook de Meta y del widget.
+   */
+  scheduleAgent?: boolean;
+}): Promise<{
+  contact: typeof schema.contact.$inferSelect;
+  conversation: typeof schema.conversation.$inferSelect;
+  message: typeof schema.message.$inferSelect;
+} | undefined> {
   const db = getDb();
   const { organizationId } = input;
 
@@ -435,7 +445,7 @@ export async function ingestInboundMessage(input: {
     .onConflictDoNothing({ target: [schema.message.waMessageId] })
     .returning();
   const message = inserted[0];
-  if (!message) return; // duplicado
+  if (!message) return undefined; // duplicado
 
   const asset = input.media
     ? await attachMediaAsset(organizationId, message.id, input.media)
@@ -465,7 +475,12 @@ export async function ingestInboundMessage(input: {
     data: { conversation: { id: conversation.id } },
   });
 
-  await maybeRunAgentTurn(conversation.id);
+  // 020: el emisor decide si el agente interno toma el turno (el conector
+  // webhook de entrada lo apaga: el cerebro externo responde por /api/bot).
+  if (input.scheduleAgent !== false) {
+    await maybeRunAgentTurn(conversation.id);
+  }
+  return { contact, conversation, message };
 }
 
 function toDate(timestamp: string): Date {

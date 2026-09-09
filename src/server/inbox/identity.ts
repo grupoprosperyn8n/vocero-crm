@@ -22,6 +22,8 @@ export const IG_PREFIX = "ig:";
 export const FB_PREFIX = "fb:";
 /** 1A: identidad del chat web: la sesión opaca que genera el widget. */
 export const WEB_PREFIX = "web:";
+/** 020: identidad de Telegram: el chat id del remitente. */
+export const TG_PREFIX = "tg:";
 
 // El tipo vive en lib/ porque la interfaz tambien lo necesita; se reexporta
 // aqui para no tocar a quien ya lo importaba de este modulo.
