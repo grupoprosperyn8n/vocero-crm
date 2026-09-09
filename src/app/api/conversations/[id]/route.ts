@@ -9,6 +9,8 @@ const patchSchema = z.object({
   aiEnabled: z.boolean().optional(),
   reactivate: z.boolean().optional(),
   markRead: z.boolean().optional(),
+  // 1B: catalogar la conversación desde la bandeja (null la deja sin topic).
+  topic: z.string().trim().min(1).max(120).nullable().optional(),
 });
 
 type Params = { params: Promise<{ id: string }> };

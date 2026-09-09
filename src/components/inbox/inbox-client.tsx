@@ -13,6 +13,7 @@ import { ConversationList } from "./conversation-list";
 import { MessageThread } from "./message-thread";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
+import { TOPIC_LIST, topicDot } from "@/lib/topics";
 
 /**
  * Texto que ya salió del compositor pero cuyo POST todavía viaja. Existe solo
@@ -258,7 +259,11 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
   );
 
   const patchConversation = useCallback(
-    async (patch: { aiEnabled?: boolean; reactivate?: boolean }) => {
+    async (patch: {
+      aiEnabled?: boolean;
+      reactivate?: boolean;
+      topic?: string | null;
+    }) => {
       if (!selectedIdRef.current) return;
       await fetch(`/api/conversations/${selectedIdRef.current}`, {
         method: "PATCH",
@@ -333,6 +338,51 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
                           // sería contestar una pregunta que nadie hizo.
                           CHANNEL_LABEL[selected.channel]}
                   </p>
+                  {/*
+                    1B — Clasificador de topic. Aparece cuando la conversación
+                    derivó a humano, ya tiene topic (para corregirlo) o es del
+                    canal web: los hilos que el negocio quiere etiquetar para
+                    el router y el curado. En WhatsApp común sin derivar no
+                    molesta.
+                  */}
+                  {(selected.handoffAt ||
+                    selected.topic ||
+                    selected.channel === "web") && (
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <span
+                        className="h-[7px] w-[7px] shrink-0 rounded-full"
+                        style={{
+                          background: selected.topic
+                            ? topicDot(selected.topic)
+                            : "#8391aa",
+                        }}
+                      />
+                      <select
+                        value={selected.topic ?? ""}
+                        onChange={(e) =>
+                          void patchConversation({
+                            topic: e.target.value || null,
+                          })
+                        }
+                        aria-label="Clasificar el tema de la consulta"
+                        className={cn(
+                          "truncate rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors",
+                          selected.topic
+                            ? "border-brand bg-brand-veil text-foreground"
+                            : "border-border-strong text-text-3 hover:border-text-3"
+                        )}
+                      >
+                        <option value="">
+                          {selected.topic ? "Sin clasificar" : "Clasificar…"}
+                        </option>
+                        {TOPIC_LIST.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
               {!panelOpen && (

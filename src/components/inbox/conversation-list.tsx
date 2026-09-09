@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { formatTime, previewText } from "./helpers";
+import { TOPIC_LIST, topicDot, topicLabel } from "@/lib/topics";
 
 /* Puntos de etapa con la paleta de la landing: azul, ámbar, verde WhatsApp. */
 const STAGE_DOT: Record<string, string> = {
@@ -77,6 +78,9 @@ export function ConversationList({
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [stage, setStage] = useState<string>("all");
   const [inbox, setInbox] = useState<Channel | "all">("all");
+  // 1B: filtro por topic de negocio. "all" = todas, "untagged" = sin
+  // clasificar (las que el operador debe catalogar), resto = topic concreto.
+  const [topic, setTopic] = useState<string>("all");
   const inputRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -102,7 +106,10 @@ export function ConversationList({
       matchesQuery(query, {
         text: [c.contact.name],
         phone: c.contact.phone,
-      }) && (stage === "all" || c.stageName === stage)
+      }) &&
+      (stage === "all" || c.stageName === stage) &&
+      (topic === "all" ||
+        (topic === "untagged" ? !c.topic : c.topic === topic))
   );
   // La bandeja elegida es el filtro de AFUERA: "Todas" y "No leídas" cuentan
   // dentro de ella, no sobre la suma de los dos canales.
@@ -122,6 +129,15 @@ export function ConversationList({
   for (const c of conversations) {
     if (c.stageName && !stages.includes(c.stageName)) stages.push(c.stageName);
   }
+
+  // 1B: topics presentes (los del catálogo y los desconocidos, raw) y
+  // cuántas conversaciones esperan clasificación del operador.
+  const topicIds: string[] = [];
+  for (const c of conversations) {
+    if (c.topic && !topicIds.includes(c.topic)) topicIds.push(c.topic);
+  }
+  const untaggedCount = conversations.filter((c) => !c.topic).length;
+  const hasTopicFilter = topicIds.length > 0 || untaggedCount > 0;
 
   function clearQuery() {
     if (inputRef.current) inputRef.current.value = "";
@@ -219,25 +235,52 @@ export function ConversationList({
           </button>
         ))}
 
-        {stages.length > 0 && (
-          <select
-            value={stage}
-            onChange={(e) => setStage(e.target.value)}
-            aria-label="Filtrar por etapa del embudo"
-            className={cn(
-              "ml-auto min-w-0 max-w-[42%] truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
-              stage === "all"
-                ? "border-border-strong bg-background text-text-2 hover:border-text-3"
-                : "border-brand bg-brand text-brand-fg"
+        {(stages.length > 0 || hasTopicFilter) && (
+          <div className="ml-auto flex min-w-0 items-center gap-1.5">
+            {stages.length > 0 && (
+              <select
+                value={stage}
+                onChange={(e) => setStage(e.target.value)}
+                aria-label="Filtrar por etapa del embudo"
+                className={cn(
+                  "min-w-0 flex-1 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
+                  stage === "all"
+                    ? "border-border-strong bg-background text-text-2 hover:border-text-3"
+                    : "border-brand bg-brand text-brand-fg"
+                )}
+              >
+                <option value="all">Toda etapa</option>
+                {stages.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
             )}
-          >
-            <option value="all">Toda etapa</option>
-            {stages.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            {hasTopicFilter && (
+              <select
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                aria-label="Filtrar por tema de la consulta"
+                className={cn(
+                  "min-w-0 flex-1 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
+                  topic === "all"
+                    ? "border-border-strong bg-background text-text-2 hover:border-text-3"
+                    : "border-brand bg-brand text-brand-fg"
+                )}
+              >
+                <option value="all">Toda clasificación</option>
+                {untaggedCount > 0 && (
+                  <option value="untagged">Sin topic ({untaggedCount})</option>
+                )}
+                {topicIds.map((t) => (
+                  <option key={t} value={t}>
+                    {topicLabel(t)}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         )}
       </div>
 
@@ -311,6 +354,20 @@ export function ConversationList({
                         )}
                       </span>
                       <span className="mt-1.5 flex items-center gap-1.5">
+                        {c.topic && (
+                          <span
+                            className="inline-flex max-w-[45%] items-center gap-1.5 truncate rounded-full border border-border-strong bg-background px-2 py-0.5 text-[11px] font-medium text-text-2"
+                            title={topicLabel(c.topic) ?? c.topic}
+                          >
+                            <span
+                              className="h-[7px] w-[7px] shrink-0 rounded-full"
+                              style={{ background: topicDot(c.topic) }}
+                            />
+                            <span className="truncate">
+                              {topicLabel(c.topic)}
+                            </span>
+                          </span>
+                        )}
                         {c.stageName && (
                           <span className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-background px-2 py-0.5 text-[11px] font-medium text-text-2">
                             <span

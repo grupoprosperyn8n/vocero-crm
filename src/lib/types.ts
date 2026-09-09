@@ -11,6 +11,8 @@ export type ConversationDto = {
   aiEnabled: boolean;
   handoffAt: string | null;
   handoffReason: string | null;
+  /** 1B: etiqueta de negocio (catálogo lib/topics.ts; null = sin clasificar). */
+  topic: string | null;
   lastInboundAt: string | null;
   lastMessageAt: string | null;
   unreadCount: number;

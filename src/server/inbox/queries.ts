@@ -111,6 +111,7 @@ export function serializeConversation(
     aiEnabled: c.aiEnabled,
     handoffAt: c.handoffAt?.toISOString() ?? null,
     handoffReason: c.handoffReason,
+    topic: c.topic,
     lastInboundAt: c.lastInboundAt?.toISOString() ?? null,
     lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
     unreadCount: c.unreadCount,
@@ -123,7 +124,13 @@ export function serializeConversation(
 export async function updateConversation(
   organizationId: string,
   conversationId: string,
-  patch: { aiEnabled?: boolean; reactivate?: boolean; markRead?: boolean }
+  patch: {
+    aiEnabled?: boolean;
+    reactivate?: boolean;
+    markRead?: boolean;
+    /** 1B: catalogar/recatalogar (null limpia el topic). */
+    topic?: string | null;
+  }
 ) {
   const db = getDb();
   const set: Record<string, unknown> = { updatedAt: new Date() };
@@ -134,6 +141,7 @@ export async function updateConversation(
     set.aiEnabled = patch.aiEnabled ?? true;
   }
   if (patch.markRead) set.unreadCount = 0;
+  if (patch.topic !== undefined) set.topic = patch.topic;
 
   const updated = await db
     .update(schema.conversation)
