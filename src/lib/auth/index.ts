@@ -69,7 +69,9 @@ function createAuth() {
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         // Rate limit por IP en login/registro (FR-062): 10 / 10 min → 429.
-        if (RATE_LIMITED_PATHS.has(ctx.path)) {
+        // El alta interna (sync LOGIN por admin API / settings) NO se limita:
+        // es server-side, ya autenticada, y el primer sync crea >10 cuentas.
+        if (RATE_LIMITED_PATHS.has(ctx.path) && !isInternalSignup()) {
           const ip =
             ctx.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ||
             ctx.headers?.get("x-real-ip") ||

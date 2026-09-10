@@ -105,6 +105,18 @@ let out;
   check("422 con password de 5", cinco.status === 422, `got ${cinco.status}`);
   await api(`/api/admin/users?email=${EMAIL_6}`, { method: "DELETE" });
 
+  // Alta interna en lote: el sync crea >10 cuentas en el primer barrido y el
+  // rate limit público de /sign-up NO debe frenar las altas server-side.
+  const lote = [];
+  for (let i = 0; i < 11; i++) lote.push(`e2e-1c-lote-${Date.now().toString(36)}-${i}@test.local`);
+  let loteOk = 0;
+  for (let i = 0; i < lote.length; i++) {
+    const r = await put({ email: lote[i], name: `Lote ${i}`, password: "LotePass-1c", role: "member" });
+    if (r.status === 201) loteOk++;
+  }
+  check("11 altas internas seguidas → todas 201 (rate limit exento)", loteOk === 11, `ok=${loteOk}`);
+  for (const em of lote) await api(`/api/admin/users?email=${em}`, { method: "DELETE" });
+
   const sinPass = await put({ email: `nuevo-${EMAIL}`, name: "Sin Pass", role: "member" });
   check("422 alta sin password", sinPass.status === 422, `got ${sinPass.status}`);
 }
