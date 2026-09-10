@@ -269,9 +269,12 @@ export function ConversationList({
         </div>
       </header>
 
-      {!closed && (
+      {(!closed || hasTopicFilter) && (
         <div className="flex items-center gap-1.5 border-b px-4 py-2.5">
-        {(
+        {/* 2B: en el archivo (Cerradas) la barra existe solo para el filtro
+            por etiqueta; Todas/No leídas y etapa son de la cola viva. */}
+        {!closed &&
+        (
           [
             { id: "all", label: "Todas", count: inInbox.length },
             { id: "unread", label: "No leídas", count: unreadCount },
@@ -301,7 +304,7 @@ export function ConversationList({
 
         {(stages.length > 0 || hasTopicFilter) && (
           <div className="ml-auto flex min-w-0 items-center gap-1.5">
-            {stages.length > 0 && (
+            {!closed && stages.length > 0 && (
               <select
                 value={stage}
                 onChange={(e) => setStage(e.target.value)}
@@ -325,7 +328,9 @@ export function ConversationList({
               <select
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                aria-label="Filtrar por tema de la consulta"
+                aria-label={
+                  closed ? "Filtrar por etiqueta" : "Filtrar por tema de la consulta"
+                }
                 className={cn(
                   "min-w-0 flex-1 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
                   topic === "all"
@@ -333,9 +338,15 @@ export function ConversationList({
                     : "border-brand bg-brand text-brand-fg"
                 )}
               >
-                <option value="all">Toda clasificación</option>
+                <option value="all">
+                  {closed ? "Toda etiqueta" : "Toda clasificación"}
+                </option>
                 {untaggedCount > 0 && (
-                  <option value="untagged">Sin topic ({untaggedCount})</option>
+                  <option value="untagged">
+                    {closed
+                      ? `Sin etiqueta (${untaggedCount})`
+                      : `Sin topic (${untaggedCount})`}
+                  </option>
                 )}
                 {topicIds.map((t) => (
                   <option key={t} value={t}>
