@@ -60,7 +60,10 @@ function createAuth() {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,
-      minPasswordLength: 8,
+      // 6, no 8: el sync de LOGIN provisiona las contraseñas REALES del
+      // sistema (Rafael y parte del equipo usan 6-7 caracteres) — el login
+      // único exige aceptarlas tal cual; el CRM igual las hashea.
+      minPasswordLength: 6,
     },
     plugins: [organization({ creatorRole: "owner" })],
     hooks: {

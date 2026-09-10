@@ -1,7 +1,7 @@
 import { and, count, eq } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { hashPassword } from "better-auth/crypto";
+import { hashPassword, verifyPassword } from "better-auth/crypto";
 import { apiError, parseBody } from "@/lib/api";
 import { withAdminKey } from "@/server/admin/auth";
 import { getAuth, runInternalSignup } from "@/lib/auth";
@@ -39,10 +39,10 @@ export const dynamic = "force-dynamic";
  */
 
 const upsertSchema = z.object({
-  email: z.string().trim().email().max(254),
+  email: z.string().trim().toLowerCase().email().max(254),
   name: z.string().trim().min(1).max(120),
-  /** Obligatoria solo en el alta; si viene en un cambio, se actualiza. */
-  password: z.string().min(8).max(128).optional(),
+  /** Obligatoria en el alta; en un cambio se aplica solo si difiere del hash. */
+  password: z.string().min(6).max(128).optional(),
   role: z.enum(["owner", "admin", "member"]),
   /** false = baja: se quita la membresía (ver DELETE). */
   active: z.boolean().default(true),
@@ -212,10 +212,13 @@ export const PUT = withAdminKey(async (req: Request) => {
   }
 
   // Contraseña (mismo hasher que el registro: formato de better-auth).
+  // Si ya coincide con el hash guardado no se toca: el sync manda la fila
+  // completa de LOGIN en cada corrida y re-hashear siempre sería churn de
+  // escrituras y "changes" falsos en cada polling.
   if (password) {
     const hash = await hashPassword(password);
     const accounts = await db
-      .select({ id: schema.account.id })
+      .select({ id: schema.account.id, password: schema.account.password })
       .from(schema.account)
       .where(
         and(
@@ -224,11 +227,18 @@ export const PUT = withAdminKey(async (req: Request) => {
         )
       )
       .limit(1);
-    if (accounts[0]) {
+    const cred = accounts[0];
+    const same =
+      cred?.password != null &&
+      (await verifyPassword({ hash: cred.password, password }));
+    if (cred && same) {
+      // ya está sincronizada — sin cambios
+    } else if (cred) {
       await db
         .update(schema.account)
         .set({ password: hash, updatedAt: new Date() })
-        .where(eq(schema.account.id, accounts[0].id));
+        .where(eq(schema.account.id, cred.id));
+      changes.push("password");
     } else {
       // Las cuentas credential las crea better-auth con su propio formato de
       // id (account_…); este insert es solo para el caso raro de una cuenta
@@ -241,8 +251,8 @@ export const PUT = withAdminKey(async (req: Request) => {
         userId: user.id,
         password: hash,
       });
+      changes.push("password");
     }
-    changes.push("password");
   }
 
   // Membresía (alta o cambio de rol; nunca dejar sin dueño a la instancia).

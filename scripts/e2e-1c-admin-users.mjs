@@ -93,6 +93,18 @@ let out;
   out = await put({ email: EMAIL, name: "Empleado Sync", password: PASS_1, role: "member" });
   check("alta 201 created", out.status === 201, `got ${out.status} ${JSON.stringify(out.json)}`);
 
+  // Contraseñas de 6 caracteres: las reales de LOGIN (Rafael y parte del
+  // equipo) — el login único exige aceptarlas; 5 debe seguir rechazándose.
+  const EMAIL_6 = `e2e-1c-6-${Date.now().toString(36)}@test.local`;
+  await api(`/api/admin/users?email=${EMAIL_6}`, { method: "DELETE" });
+  const seis = await put({ email: EMAIL_6, name: "Empleado Seis", password: "Clv123", role: "member" });
+  check("alta con password de 6 → 201", seis.status === 201, `got ${seis.status} ${JSON.stringify(seis.json)}`);
+  const s6 = await signIn(EMAIL_6, "Clv123");
+  check("login con password de 6 → 200", s6.status === 200, `got ${s6.status}`);
+  const cinco = await put({ email: `corto-${EMAIL}`, name: "Corta", password: "12345", role: "member" });
+  check("422 con password de 5", cinco.status === 422, `got ${cinco.status}`);
+  await api(`/api/admin/users?email=${EMAIL_6}`, { method: "DELETE" });
+
   const sinPass = await put({ email: `nuevo-${EMAIL}`, name: "Sin Pass", role: "member" });
   check("422 alta sin password", sinPass.status === 422, `got ${sinPass.status}`);
 }
@@ -114,6 +126,13 @@ let out;
   const again = await put({ email: EMAIL, name: "Empleado Sync", role: "member" });
   check("PUT repetido idempotente → 200 sin changes", again.status === 200 && again.json.changes.length === 0,
     `got ${again.status} ${JSON.stringify(again.json)}`);
+
+  // El sync manda la fila completa de LOGIN en cada corrida: con la misma
+  // contraseña no debe figurar "password" en changes (skip-if-same).
+  const mismaPass = await put({ email: EMAIL, name: "Empleado Sync", password: PASS_1, role: "member" });
+  check("PUT con la MISMA password → sin changes de password",
+    mismaPass.status === 200 && !mismaPass.json.changes.includes("password"),
+    `got ${mismaPass.status} ${JSON.stringify(mismaPass.json)}`);
 
   const renombrado = await put({ email: EMAIL, name: "Empleado Sync Renombrado", role: "member" });
   check("cambio de nombre", renombrado.json.changes.includes("name"), JSON.stringify(renombrado.json));
