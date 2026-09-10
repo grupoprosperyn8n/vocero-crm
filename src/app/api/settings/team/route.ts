@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getAuth, runInternalSignup } from "@/lib/auth";
@@ -17,9 +17,21 @@ export const GET = withAuth(async (session) => {
       createdAt: schema.member.createdAt,
       name: schema.user.name,
       email: schema.user.email,
+      // Ficha del empleado (sync LOGIN v2): presente solo si el sync la cargó.
+      employeeCode: schema.staffProfile.employeeCode,
+      operationalRole: schema.staffProfile.operationalRole,
+      locality: schema.staffProfile.locality,
+      sourceStatus: schema.staffProfile.sourceStatus,
     })
     .from(schema.member)
     .innerJoin(schema.user, eq(schema.member.userId, schema.user.id))
+    .leftJoin(
+      schema.staffProfile,
+      and(
+        eq(schema.staffProfile.userId, schema.member.userId),
+        eq(schema.staffProfile.organizationId, schema.member.organizationId)
+      )
+    )
     .where(scoped(schema.member.organizationId, session.organizationId));
   return Response.json({
     members: members.map((m) => ({
@@ -27,6 +39,10 @@ export const GET = withAuth(async (session) => {
       role: m.role,
       name: m.name,
       email: m.email,
+      employeeCode: m.employeeCode,
+      operationalRole: m.operationalRole,
+      locality: m.locality,
+      sourceStatus: m.sourceStatus,
       createdAt: m.createdAt.toISOString(),
     })),
   });

@@ -1123,3 +1123,56 @@ export const outboundWebhook = pgTable("outbound_webhook", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+/* ============================================================
+ * Equipo (sync LOGIN v2) — ficha del empleado + oficinas
+ *
+ * `staff_profile`: una fila por usuario con los datos que viajan desde
+ * EMPLEADOS (Airtable) — la pestaña Equipo los muestra. `office`: espejo de
+ * OFICINAS para la lista de sucursales (selector del ingreso a futuro y
+ * lectura administrativa). Bajas del origen = `active=false`, sin borrar.
+ * ============================================================ */
+
+export const staffProfile = pgTable(
+  "staff_profile",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    employeeCode: text("employee_code"),
+    operationalRole: text("operational_role"),
+    locality: text("locality"),
+    sourceStatus: text("source_status"),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("staff_profile_org_user_uq").on(t.organizationId, t.userId),
+  ]
+);
+
+export const office = pgTable(
+  "office",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** rec de Airtable — la clave del espejo. */
+    externalId: text("external_id").notNull(),
+    name: text("name").notNull(),
+    cleanName: text("clean_name"),
+    locality: text("locality"),
+    sortOrder: integer("sort_order"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("office_org_external_uq").on(t.organizationId, t.externalId),
+    index("office_org_active_idx").on(t.organizationId, t.active),
+  ]
+);

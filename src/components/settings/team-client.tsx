@@ -14,8 +14,19 @@ type Member = {
   role: string;
   name: string;
   email: string;
+  /** Ficha del empleado (sync LOGIN v2); null si la cuenta es manual. */
+  employeeCode: string | null;
+  operationalRole: string | null;
+  locality: string | null;
+  sourceStatus: string | null;
   createdAt: string;
 };
+
+function roleLabel(role: string): string {
+  if (role === "owner") return "Propietario";
+  if (role === "admin") return "Gerente";
+  return "Miembro";
+}
 
 export function TeamClient() {
   const [members, setMembers] = useState<Member[]>([]);
@@ -152,9 +163,19 @@ export function TeamClient() {
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{m.name}</p>
               <p className="text-xs text-muted-foreground">{m.email}</p>
+              {(m.employeeCode ||
+                m.operationalRole ||
+                m.locality ||
+                m.sourceStatus) && (
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {[m.employeeCode, m.operationalRole, m.locality, m.sourceStatus]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              )}
             </div>
             <Badge variant={m.role === "owner" ? "default" : "secondary"}>
-              {m.role === "owner" ? "Propietario" : "Miembro"}
+              {roleLabel(m.role)}
             </Badge>
           </div>
         ))}

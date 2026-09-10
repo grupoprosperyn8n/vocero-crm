@@ -46,6 +46,12 @@ const upsertSchema = z.object({
   role: z.enum(["owner", "admin", "member"]),
   /** false = baja: se quita la membresía (ver DELETE). */
   active: z.boolean().default(true),
+  // Ficha del empleado (sync v2): viaja desde EMPLEADOS de Airtable y la
+  // pestaña Equipo la muestra. Opcionales — el alta manual no las manda.
+  employeeCode: z.string().trim().max(40).optional(),
+  operationalRole: z.string().trim().max(40).optional(),
+  locality: z.string().trim().max(160).optional(),
+  sourceStatus: z.string().trim().max(40).optional(),
 });
 
 async function findUserByEmail(email: string) {
@@ -144,7 +150,17 @@ export const GET = withAdminKey(async () => {
 export const PUT = withAdminKey(async (req: Request) => {
   const body = await parseBody(req, upsertSchema);
   if (!body.ok) return body.response;
-  const { email, name, password, role, active } = body.data;
+  const {
+    email,
+    name,
+    password,
+    role,
+    active,
+    employeeCode,
+    operationalRole,
+    locality,
+    sourceStatus,
+  } = body.data;
 
   const orgId = await resolveInstanceOrg();
   if (!orgId) {
@@ -282,6 +298,49 @@ export const PUT = withAdminKey(async (req: Request) => {
       .set({ role })
       .where(eq(schema.member.id, membership.id));
     changes.push("role");
+  }
+
+  // Ficha del empleado: solo si el productor mandó algún dato. Sin cambios
+  // reales no se toca `updated_at` — el sync manda la fila completa en cada
+  // corrida y re-escribir siempre sería churn.
+  const staffIn = {
+    employeeCode: employeeCode ?? null,
+    operationalRole: operationalRole ?? null,
+    locality: locality ?? null,
+    sourceStatus: sourceStatus ?? null,
+  };
+  if (Object.values(staffIn).some((v) => v !== null)) {
+    const staffRows = await db
+      .select()
+      .from(schema.staffProfile)
+      .where(
+        and(
+          eq(schema.staffProfile.organizationId, orgId),
+          eq(schema.staffProfile.userId, user.id)
+        )
+      )
+      .limit(1);
+    const currentStaff = staffRows[0];
+    if (!currentStaff) {
+      await db.insert(schema.staffProfile).values({
+        id: newId("staffProfile"),
+        organizationId: orgId,
+        userId: user.id,
+        ...staffIn,
+      });
+      changes.push("staff");
+    } else if (
+      currentStaff.employeeCode !== staffIn.employeeCode ||
+      currentStaff.operationalRole !== staffIn.operationalRole ||
+      currentStaff.locality !== staffIn.locality ||
+      currentStaff.sourceStatus !== staffIn.sourceStatus
+    ) {
+      await db
+        .update(schema.staffProfile)
+        .set({ ...staffIn, updatedAt: new Date() })
+        .where(eq(schema.staffProfile.id, currentStaff.id));
+      changes.push("staff");
+    }
   }
 
   return Response.json(

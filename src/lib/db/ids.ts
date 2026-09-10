@@ -33,6 +33,9 @@ const prefixes = {
   capiSettings: "capi",
   // 019 — instalador de IA
   aiSettings: "ais",
+  // Equipo (sync LOGIN v2) — ficha del empleado + oficinas
+  staffProfile: "stf",
+  office: "off",
 } as const;
 
 export type IdKind = keyof typeof prefixes;
