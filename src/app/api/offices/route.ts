@@ -34,5 +34,33 @@ export const GET = async () => {
       sql`${schema.office.sortOrder} asc nulls last`,
       asc(schema.office.name)
     );
-  return Response.json({ offices: rows });
+
+  // Nombre a mostrar: el limpio (NOMBRE_OFICINA_LIMPIO_WEB). Si dos oficinas
+  // comparten el mismo nombre limpio (ej. "BLED GRAL" 7204 y 9513), se
+  // desambiguan con localidad e interno extraídos del nombre crudo —
+  // decisión Diego: "pone las dos".
+  const display = rows.map((r) => ({
+    ...r,
+    displayName: (r.cleanName ?? r.name).trim(),
+  }));
+  const seen = new Map<string, number>();
+  for (const o of display) {
+    const k = o.displayName.toLowerCase();
+    seen.set(k, (seen.get(k) ?? 0) + 1);
+  }
+  const offices = display.map((o) => {
+    if ((seen.get(o.displayName.toLowerCase()) ?? 0) < 2) return o;
+    const tel = o.name.match(/\((\d+)\)\s*$/)?.[1] ?? null;
+    const parts = [o.locality?.trim() || null, tel ? `int. ${tel}` : null].filter(
+      (p): p is string => !!p
+    );
+    return {
+      ...o,
+      displayName: parts.length
+        ? `${o.displayName} (${parts.join(" · ")})`
+        : o.displayName,
+    };
+  });
+
+  return Response.json({ offices });
 };

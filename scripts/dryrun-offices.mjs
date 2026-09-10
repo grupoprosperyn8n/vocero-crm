@@ -59,7 +59,12 @@ let out = await put(offices);
 console.log("PUT#1:", out.status, JSON.stringify(out.json));
 
 let pub = await (await fetch(`${CRM}/api/offices`)).json();
-console.log("GET público tras #1:", pub.offices.length, "| ej:", pub.offices.slice(0, 3).map((o) => o.name).join(" · "));
+console.log("GET público tras #1:", pub.offices.length, "| ej:", pub.offices.slice(0, 3).map((o) => o.displayName ?? o.name).join(" · "));
+{
+  const dn = pub.offices.map((o) => o.displayName ?? o.name);
+  const dups = dn.filter((n, i) => dn.indexOf(n) !== i);
+  console.log("displayNames duplicados (esperado: ninguno):", dups.length ? dups : "ninguno");
+}
 
 out = await put(offices);
 console.log("PUT#2 (idempotencia, esperado upserted=0):", out.status, JSON.stringify(out.json));
