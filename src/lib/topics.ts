@@ -17,6 +17,7 @@
  * nunca se pierde ni rompe la conversación.
  */
 export const TOPIC_LIST = [
+  { id: "urgente", label: "Urgente" },
   { id: "cotizacion", label: "Cotización" },
   { id: "renovacion", label: "Renovación / vencimiento" },
   { id: "siniestro", label: "Siniestro / reclamo" },
@@ -47,6 +48,7 @@ export function topicLabel(topic: string | null): string | null {
  * consulta/otro = neutro.
  */
 export const TOPIC_DOT: Record<string, string> = {
+  urgente: "#d94a4a",
   siniestro: "#d94a4a",
   documentacion: "#f2a71b",
   cuenta: "#f2a71b",
