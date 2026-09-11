@@ -20,15 +20,21 @@ describe("CHANNELS: qué bandejas enciende la instancia (ADR-001)", () => {
     expect(parseChannels("instagram").has("whatsapp")).toBe(true);
   });
 
+  it("telegram ES un canal del catálogo: se enciende como cualquier otro", () => {
+    // 021: el catálogo lo reconoce (misma lista que usa la bandeja).
+    expect(parseChannels("telegram").has("telegram")).toBe(true);
+  });
+
   it("un canal que no existe se ignora, no tumba el arranque", () => {
-    const on = parseChannels("telegram,instagram,,");
+    const on = parseChannels("signal,instagram,,");
     expect([...on].sort()).toEqual(["instagram", "whatsapp"]);
   });
 
   it("isChannel es la única lista: no hay uniones sueltas por ahí", () => {
     expect(isChannel("whatsapp")).toBe(true);
     expect(isChannel("instagram")).toBe(true);
-    expect(isChannel("telegram")).toBe(false);
+    expect(isChannel("telegram")).toBe(true);
+    expect(isChannel("signal")).toBe(false);
     expect(isChannel("")).toBe(false);
   });
 });
@@ -41,7 +47,7 @@ describe("capacidades por canal", () => {
   });
 
   it("un canal desconocido cae en WhatsApp en vez de reventar", () => {
-    const caps = capabilitiesFor("telegram" as never);
+    const caps = capabilitiesFor("signal" as never);
     expect(caps.label).toBe(CHANNEL_LABEL.whatsapp);
   });
 
@@ -56,6 +62,20 @@ describe("capacidades por canal", () => {
   it("WhatsApp no tiene límite práctico de texto", () => {
     expect(textFits("whatsapp", "a".repeat(5000))).toBe(true);
   });
+
+  it("Telegram: 4096 bytes por mensaje (Bot API) y sin ventana de servicio", () => {
+    const caps = capabilitiesFor("telegram");
+    expect(caps.windowMs).toBeNull();
+    expect(caps.outsideWindow).toBe("none");
+    // El límite es en bytes, como Instagram: 2048 acentos ya son 4096.
+    expect(textFits("telegram", "a".repeat(4096))).toBe(true);
+    expect(textFits("telegram", "a".repeat(4097))).toBe(false);
+    expect(textFits("telegram", "é".repeat(2049))).toBe(false);
+  });
+
+  it("Telegram ya acepta adjuntos salientes (021: adaptador de envío)", () => {
+    expect(capabilitiesFor("telegram").outboundMedia).toBe(true);
+  });
 });
 
 describe("distintivo de bandeja", () => {
@@ -68,6 +88,6 @@ describe("distintivo de bandeja", () => {
   });
 
   it("un canal desconocido no pinta nada en vez de tumbar la lista", () => {
-    expect(channelMark("telegram" as never)).toBeNull();
+    expect(channelMark("signal" as never)).toBeNull();
   });
 });

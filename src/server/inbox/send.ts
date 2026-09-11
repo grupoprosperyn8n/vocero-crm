@@ -17,13 +17,24 @@ import {
   type InstagramCredentials,
 } from "@/server/instagram/credentials";
 import { sendInstagramText } from "@/server/instagram/send";
-import { FB_PREFIX } from "@/server/inbox/identity";
+import { FB_PREFIX, TG_PREFIX } from "@/server/inbox/identity";
 import {
   getMessengerCredentialsByOrg,
   markMessengerReconnectRequired,
   type MessengerCredentials,
 } from "@/server/messenger/credentials";
 import { sendMessengerText } from "@/server/messenger/send";
+import { TelegramApiError } from "@/lib/telegram/client";
+import {
+  getTelegramCredentialsByOrg,
+  markTelegramReconnectRequired,
+  type TelegramCredentials,
+} from "@/server/telegram/credentials";
+import {
+  sendTelegramLocation,
+  sendTelegramMedia,
+  sendTelegramText,
+} from "@/server/telegram/send";
 import {
   capabilitiesFor,
   textFits,
@@ -71,6 +82,8 @@ type SendTarget = {
   instagram?: InstagramCredentials;
   /** 017: presente solo en conversaciones de Messenger. */
   messenger?: MessengerCredentials;
+  /** 021: presente solo en conversaciones de Telegram. */
+  telegram?: TelegramCredentials;
 };
 
 /**
@@ -196,6 +209,41 @@ async function prepareSend(
       destinatario: { to: fbRecipient },
       recipient: fbRecipient,
       messenger: fbCreds,
+    };
+  }
+
+  // 021: Telegram, mismo trato que Messenger: transporte propio (Bot API),
+  // sin ventana de servicio y sin plantillas.
+  if (row.conversation.channel === "telegram") {
+    if (!isChannelEnabled("telegram")) {
+      throw new SendError(
+        "not_connected",
+        "El canal de Telegram está desactivado en esta instancia"
+      );
+    }
+    const tgCreds = await getTelegramCredentialsByOrg(organizationId);
+    if (!tgCreds) {
+      throw new SendError(
+        "not_connected",
+        "No hay un bot de Telegram conectado"
+      );
+    }
+    if (tgCreds.status === "reconnect_required") {
+      throw new SendError(
+        "reconnect_required",
+        "El token del bot expiró o fue revocado: reconecta el bot en Configuración"
+      );
+    }
+    const tgRecipient = row.contact.waIdentity.startsWith(TG_PREFIX)
+      ? row.contact.waIdentity.slice(TG_PREFIX.length)
+      : row.contact.waIdentity;
+    return {
+      conversation: row.conversation,
+      credentials: null,
+      // Telegram no pasa por la Graph API de WhatsApp.
+      destinatario: { to: tgRecipient },
+      recipient: tgRecipient,
+      telegram: tgCreds,
     };
   }
 
@@ -327,7 +375,9 @@ export async function sendText(input: {
         ? await callInstagramSend(target, input.text)
         : target.messenger
           ? await callMessengerSend(target, input.text)
-          : await callGraphSend(credentials!, {
+          : target.telegram
+            ? await callTelegramSend(target, input.text)
+            : await callGraphSend(credentials!, {
           messaging_product: "whatsapp",
           ...target.destinatario,
           type: "text",
@@ -402,23 +452,39 @@ export async function sendMediaMessage(input: {
   const asset = assetRows[0]!;
 
   try {
-    const waMediaId = await uploadGraphMedia(credentials!, input.file);
-    await db
-      .update(schema.mediaAsset)
-      .set({ waMediaId, updatedAt: new Date() })
-      .where(eq(schema.mediaAsset.id, assetId));
+    let waMessageId: string;
+    if (target.telegram) {
+      // Telegram sube y envía en un solo paso (multipart): no hay media id
+      // previo que reutilizar.
+      const res = await sendTelegramMedia({
+        credentials: target.telegram,
+        chatId: target.recipient,
+        kind,
+        data: input.file.data,
+        mimeType: input.file.mimeType,
+        fileName: input.file.fileName,
+        caption: input.caption,
+      });
+      waMessageId = res.platformMessageId;
+    } else {
+      const waMediaId = await uploadGraphMedia(credentials!, input.file);
+      await db
+        .update(schema.mediaAsset)
+        .set({ waMediaId, updatedAt: new Date() })
+        .where(eq(schema.mediaAsset.id, assetId));
 
-    const mediaPayload: Record<string, unknown> = { id: waMediaId };
-    if (input.caption && kind !== "audio") mediaPayload.caption = input.caption;
-    if (kind === "document" && input.file.fileName) {
-      mediaPayload.filename = input.file.fileName;
+      const mediaPayload: Record<string, unknown> = { id: waMediaId };
+      if (input.caption && kind !== "audio") mediaPayload.caption = input.caption;
+      if (kind === "document" && input.file.fileName) {
+        mediaPayload.filename = input.file.fileName;
+      }
+      waMessageId = await callGraphSend(credentials!, {
+        messaging_product: "whatsapp",
+        ...target.destinatario,
+        type: kind,
+        [kind]: mediaPayload,
+      });
     }
-    const waMessageId = await callGraphSend(credentials!, {
-      messaging_product: "whatsapp",
-      ...target.destinatario,
-      type: kind,
-      [kind]: mediaPayload,
-    });
 
     const messageId = await persistOutbound({
       organizationId: input.organizationId,
@@ -426,7 +492,11 @@ export async function sendMediaMessage(input: {
       waMessageId,
       type: kind,
       text: null,
-      status: "pending",
+      // Un canal sin acuses confirma al aceptar (Telegram); WhatsApp avanza
+      // después por webhook.
+      status: capabilitiesFor(target.conversation.channel).deliveryReceipts
+        ? "pending"
+        : "sent",
       origin: "operator",
       mediaAssetId: assetId,
       media: asset,
@@ -436,6 +506,24 @@ export async function sendMediaMessage(input: {
     let sendErr: SendError;
     if (err instanceof SendError) {
       sendErr = err;
+    } else if (err instanceof TelegramApiError) {
+      if (err.isAuthError) {
+        await markTelegramReconnectRequired(input.organizationId);
+        sendErr = new SendError(
+          "reconnect_required",
+          "El token del bot expiró o fue revocado: reconecta el bot en Configuración"
+        );
+      } else if (err.status === 0 || err.status >= 500) {
+        sendErr = new SendError(
+          "meta_unavailable",
+          "Telegram no está disponible en este momento; intenta de nuevo"
+        );
+      } else {
+        sendErr = new SendError(
+          "upload_failed",
+          `No se pudo enviar el adjunto por Telegram (${err.message})`
+        );
+      }
     } else if (err instanceof MetaApiError && err.isAuthError) {
       // Mismo criterio que el texto: SOLO 401/código 190 (fix 2026-08-04).
       await markReconnectRequired(input.organizationId);
@@ -489,6 +577,44 @@ export async function sendStructured(
     input.conversationId,
     input.organizationId
   );
+
+  // 021: Telegram tiene sendLocation propio; los contactos no tienen
+  // equivalente directo en la Bot API (se avisa claro).
+  if (target.telegram) {
+    if (input.kind !== "location") {
+      throw new SendError(
+        "meta_error",
+        "Este canal no admite contactos; manda el texto"
+      );
+    }
+    const tgMessageId = await callTelegramLocation(target, input.location);
+    const db = getDb();
+    const assetRows = await db
+      .insert(schema.mediaAsset)
+      .values({
+        id: newId("mediaAsset"),
+        organizationId: input.organizationId,
+        kind: input.kind,
+        payload: input.location,
+        fetchStatus: "available",
+      })
+      .returning();
+    const asset = assetRows[0]!;
+    const messageId = await persistOutbound({
+      organizationId: input.organizationId,
+      conversationId: input.conversationId,
+      waMessageId: tgMessageId,
+      type: input.kind,
+      text: null,
+      // Telegram no entrega acuses: la aceptación ES la confirmación.
+      status: "sent",
+      origin: "operator",
+      mediaAssetId: asset.id,
+      media: asset,
+    });
+    return { messageId };
+  }
+
   // Ubicaciones y contactos son mensajes de WhatsApp: en los demás canales no
   // hay credenciales de WhatsApp que usar y Graph los rechazaría.
   if (!target.credentials) {
@@ -679,4 +805,78 @@ async function callMessengerSend(
     }
     throw err;
   }
+}
+
+/**
+ * 021 — Envío por el canal de Telegram. Mismo vocabulario de SendError que
+ * WhatsApp, Instagram y Messenger: la bandeja no aprende un idioma por
+ * plataforma.
+ */
+async function callTelegramSend(
+  target: SendTarget,
+  text: string
+): Promise<string> {
+  const creds = target.telegram!;
+
+  const caps = capabilitiesFor("telegram");
+  if (!textFits("telegram", text)) {
+    throw new SendError(
+      "meta_error",
+      `${caps.label} no acepta mensajes de más de ${caps.maxTextBytes} bytes: acorta el texto`
+    );
+  }
+
+  try {
+    const res = await sendTelegramText({
+      credentials: creds,
+      chatId: target.recipient,
+      text,
+    });
+    return res.platformMessageId;
+  } catch (err) {
+    throw await telegramSendError(err, creds.organizationId);
+  }
+}
+
+/** Ubicaciones por Telegram (no hay camino para contactos). */
+async function callTelegramLocation(
+  target: SendTarget,
+  location: LocationInput
+): Promise<string> {
+  const creds = target.telegram!;
+  try {
+    const res = await sendTelegramLocation({
+      credentials: creds,
+      chatId: target.recipient,
+      latitude: location.latitude,
+      longitude: location.longitude,
+    });
+    return res.platformMessageId;
+  } catch (err) {
+    throw await telegramSendError(err, creds.organizationId);
+  }
+}
+
+/** Traduce un fallo de la Bot API al vocabulario de SendError. */
+async function telegramSendError(
+  err: unknown,
+  organizationId: string
+): Promise<SendError> {
+  if (err instanceof TelegramApiError) {
+    if (err.isAuthError) {
+      await markTelegramReconnectRequired(organizationId);
+      return new SendError(
+        "reconnect_required",
+        "El token del bot expiró o fue revocado: reconecta el bot en Configuración"
+      );
+    }
+    if (err.status === 0 || err.status >= 500) {
+      return new SendError(
+        "meta_unavailable",
+        "Telegram no está disponible en este momento; intenta de nuevo"
+      );
+    }
+    return new SendError("meta_error", err.message);
+  }
+  throw err;
 }

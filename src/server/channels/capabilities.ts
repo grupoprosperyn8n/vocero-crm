@@ -84,15 +84,18 @@ export const CHANNEL_CAPABILITIES: Record<Channel, ChannelCapabilities> = {
     outboundMedia: false,
     deliveryReceipts: false,
   },
-  // 020: Telegram comparte la naturaleza del web para el CRM: sin ventana de
-  // servicio (el negocio responde cuando quiere) y sin recibos de lectura.
-  // La salida con media llega junto con el adaptador de envío.
+  // 020/021: Telegram comparte la naturaleza del web para el CRM: sin ventana
+  // de servicio (el negocio responde cuando quiere) y sin recibos de entrega
+  // (la Bot API no los entrega a bots): la aceptación de la plataforma ES la
+  // confirmación. La Bot API acepta 4096 caracteres por mensaje — se declara
+  // en bytes para no ser más generoso con acentos y emojis. Media saliente:
+  // foto hasta 10 MB, documento hasta 50 MB, el resto hasta 50 MB.
   telegram: {
     label: CHANNEL_LABEL.telegram,
     windowMs: null,
     outsideWindow: "none",
-    maxTextBytes: null,
-    outboundMedia: false,
+    maxTextBytes: 4096,
+    outboundMedia: true,
     deliveryReceipts: false,
   },
 };

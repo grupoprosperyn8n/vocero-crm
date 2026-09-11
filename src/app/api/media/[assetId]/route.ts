@@ -2,10 +2,8 @@ import { eq } from "drizzle-orm";
 import { apiError, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import {
-  ensureAssetAvailable,
-  readMediaFile,
-} from "@/server/whatsapp/media";
+import { readMediaFile } from "@/server/whatsapp/media";
+import { ensureAssetDownload } from "@/server/media/download";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +13,8 @@ type Params = { params: Promise<{ assetId: string }> };
  * 008 — Sirve el binario de un adjunto desde el volumen local. Solo con
  * sesión y dentro de la organización (un asset ajeno responde 404: jamás se
  * filtra existencia entre tenants). Si el archivo aún no se descargó,
- * intenta on-demand contra Graph; si Meta ya lo expiró → 410.
+ * intenta on-demand con el descargador del canal; si la plataforma ya lo
+ * expiró → 410.
  */
 export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
   const { assetId } = await ctx.params;
@@ -44,8 +43,29 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
   }
 
   if (asset.fetchStatus !== "available") {
-    // On-demand: reintenta la descarga en el momento (pending o failed).
-    asset = (await ensureAssetAvailable(session.organizationId, assetId)) ?? asset;
+    // On-demand: reintenta la descarga en el momento (pending o failed), con
+    // el descargador del canal de la conversación (Graph o Bot API).
+    const channelRows = await db
+      .select({ channel: schema.conversation.channel })
+      .from(schema.message)
+      .innerJoin(
+        schema.conversation,
+        eq(schema.conversation.id, schema.message.conversationId)
+      )
+      .where(
+        scoped(
+          schema.message.organizationId,
+          session.organizationId,
+          eq(schema.message.mediaAssetId, assetId)
+        )
+      )
+      .limit(1);
+    asset =
+      (await ensureAssetDownload(
+        channelRows[0]?.channel,
+        session.organizationId,
+        assetId
+      )) ?? asset;
   }
   if (asset.fetchStatus !== "available" || !asset.storagePath) {
     return apiError(

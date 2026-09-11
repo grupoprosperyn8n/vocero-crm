@@ -25,25 +25,31 @@ const ADS_TAB: Tab = { href: "/settings/ads", label: "Anuncios" };
 /** 017 — "Messenger" solo si el canal está encendido con CHANNELS. */
 const MESSENGER_TAB: Tab = { href: "/settings/messenger", label: "Messenger" };
 
+/** 021 — "Telegram" solo si el canal está encendido con CHANNELS. */
+const TELEGRAM_TAB: Tab = { href: "/settings/telegram", label: "Telegram" };
+
 export function SettingsNav({
   role = "member",
   agenda = false,
   atribucion = false,
   messenger = false,
+  telegram = false,
 }: {
   /** 021 — Qué pestañas ve cada rol lo decide el layout server y baja por prop. */
   role?: string;
   agenda?: boolean;
   atribucion?: boolean;
   messenger?: boolean;
+  telegram?: boolean;
 }) {
   const pathname = usePathname();
   // Qué pestañas existen lo decide el servidor y baja por prop: este es un
   // componente de cliente y no puede leer variables de entorno.
-  // Messenger va junto a WhatsApp: son las dos conexiones de mensajería.
+  // Messenger y Telegram van junto a WhatsApp: las conexiones de mensajería.
   const all = [
     ...TABS.slice(0, 1),
     ...(messenger ? [MESSENGER_TAB] : []),
+    ...(telegram ? [TELEGRAM_TAB] : []),
     ...TABS.slice(1),
     ...(agenda ? [AGENDA_TAB] : []),
     ...(atribucion ? [ADS_TAB] : []),

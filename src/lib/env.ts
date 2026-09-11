@@ -47,6 +47,9 @@ const envSchema = z.object({
     .url()
     .default("https://www.googleapis.com/calendar/v3"),
   GOOGLE_OAUTH_BASE_URL: z.string().url().default("https://oauth2.googleapis.com"),
+  // 021: base de la API de bots de Telegram. Solo se sobreescribe para apuntar
+  // a un servidor de pruebas (mock local); en producción se usa la real.
+  TELEGRAM_BASE_URL: z.string().url().default("https://api.telegram.org"),
   ALLOW_SIGNUP: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
   WA_MOCK_ENABLED: z.string().optional(),

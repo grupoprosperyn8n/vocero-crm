@@ -635,6 +635,45 @@ export const messengerCredentials = pgTable(
   ]
 );
 
+/**
+ * 021 — Credenciales del canal de Telegram: el bot creado en BotFather y su
+ * token, cifrado con el mismo AES-256-GCM que los demás. Tabla propia y
+ * explícita, como las de Instagram y Messenger.
+ *
+ * `webhookSecret` NO es opcional a diferencia de las otras plataformas: acá no
+ * hay handshake ni firma HMAC del emisor — Telegram entrega donde se le diga y
+ * firma con el `secret_token` que uno elige. Ese mismo secreto viaja como
+ * segmento de la URL del webhook (setWebhook es una llamada NUESTRA: elegimos
+ * las dos capas) y se exige además en el header de cada entrega.
+ */
+export const telegramCredentials = pgTable(
+  "telegram_credentials",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** ID numérico del bot (getMe), como texto para conservarlo exacto. */
+    botId: text("bot_id").notNull(),
+    botUsername: text("bot_username"),
+    tokenCipher: text("token_cipher").notNull(),
+    tokenIv: text("token_iv").notNull(),
+    tokenTag: text("token_tag").notNull(),
+    /** Secreto compartido con Telegram: segmento de la URL + secret_token. */
+    webhookSecret: text("webhook_secret").notNull(),
+    status: text("status", { enum: ["connected", "reconnect_required"] })
+      .notNull()
+      .default("connected"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("telegram_credentials_org_uq").on(t.organizationId),
+    // El webhook enruta por este secreto: debe ser único en la instancia.
+    uniqueIndex("telegram_credentials_secret_uq").on(t.webhookSecret),
+  ]
+);
+
 export const agentProfile = pgTable(
   "agent_profile",
   {

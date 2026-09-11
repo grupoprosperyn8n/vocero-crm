@@ -4,7 +4,7 @@ import { newId } from "@/lib/db/ids";
 import { normalizeMx } from "@/lib/meta/client";
 import { publish } from "@/server/events/bus";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
-import { ensureAssetAvailable } from "@/server/whatsapp/media";
+import { ensureAssetDownload } from "@/server/media/download";
 import type { Channel } from "@/lib/channels";
 import type {
   WebhookMediaPayload,
@@ -44,7 +44,7 @@ const BINARY_MEDIA_TYPES = new Set([
   "sticker",
 ] as const);
 
-type MediaInput = {
+export type MediaInput = {
   kind: (typeof schema.mediaAsset.$inferSelect)["kind"];
   waMediaId: string | null;
   mimeType: string | null;
@@ -110,7 +110,9 @@ export function mediaInputFrom(msg: WebhookMessage): MediaInput | null {
 async function attachMediaAsset(
   organizationId: string,
   messageId: string,
-  media: MediaInput
+  media: MediaInput,
+  /** 021: de qué canal es el binario — decide el descargador. */
+  channel: Channel
 ): Promise<typeof schema.mediaAsset.$inferSelect | null> {
   try {
     const db = getDb();
@@ -135,8 +137,9 @@ async function attachMediaAsset(
       .set({ mediaAssetId: asset.id })
       .where(eq(schema.message.id, messageId));
     if (asset.fetchStatus === "pending") {
-      // Descarga in-process, sin bloquear la ingesta; on-demand reintenta.
-      void ensureAssetAvailable(organizationId, asset.id).catch(() => {});
+      // Descarga in-process por el canal (Graph o Bot API), sin bloquear la
+      // ingesta; on-demand reintenta.
+      void ensureAssetDownload(channel, organizationId, asset.id).catch(() => {});
     }
     return asset;
   } catch (err) {
@@ -332,7 +335,7 @@ async function ingestManualEcho(
 
   const mediaInput = mediaInputFrom(echo);
   const asset = mediaInput
-    ? await attachMediaAsset(organizationId, message.id, mediaInput)
+    ? await attachMediaAsset(organizationId, message.id, mediaInput, "whatsapp")
     : null;
 
   // Solo lastMessageAt: un mensaje del negocio NUNCA abre la ventana de 24 h.
@@ -448,7 +451,12 @@ export async function ingestInboundMessage(input: {
   if (!message) return undefined; // duplicado
 
   const asset = input.media
-    ? await attachMediaAsset(organizationId, message.id, input.media)
+    ? await attachMediaAsset(
+        organizationId,
+        message.id,
+        input.media,
+        input.identity.channel ?? "whatsapp"
+      )
     : null;
 
   await db
