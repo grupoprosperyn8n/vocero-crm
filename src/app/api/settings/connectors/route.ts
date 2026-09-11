@@ -3,7 +3,8 @@ import { desc, eq, sql } from "drizzle-orm";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
-import { isConnectorAdmin } from "@/server/settings/connectors";
+import { customizationGate } from "@/server/settings/access";
+import { isConnectorOwner } from "@/server/settings/connectors";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,8 @@ const createSchema = z.object({
 export type { ConnectorAdminSession } from "@/server/settings/connectors";
 
 export const GET = withAuth(async (session) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   const db = getDb();
   const rows = await db
     .select({
@@ -59,8 +62,8 @@ export const GET = withAuth(async (session) => {
 });
 
 export const POST = withAuth(async (session, req: Request) => {
-  if (!isConnectorAdmin(session)) {
-    return apiError(403, "FORBIDDEN", "Solo owner y admin configuran conectores.");
+  if (!isConnectorOwner(session)) {
+    return apiError(403, "FORBIDDEN", "Solo el propietario configura conectores.");
   }
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { customizationGate } from "@/server/settings/access";
 import {
   getInstagramCredentialsByOrg,
   saveInstagramCredentials,
@@ -14,6 +15,8 @@ export const dynamic = "force-dynamic";
 
 /** 014 — Estado de la conexión de Instagram (el token nunca sale entero). */
 export const GET = withAuth(async (session) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   if (!isChannelEnabled("instagram")) return channelDisabledResponse();
   const creds = await getInstagramCredentialsByOrg(session.organizationId);
   if (!creds) return Response.json({ connection: null });
@@ -43,6 +46,8 @@ const putSchema = z.object({
  * wizard de WhatsApp: un token que no sirve no llega a la base.
  */
 export const PUT = withAuth(async (session, req: Request) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   if (!isChannelEnabled("instagram")) return channelDisabledResponse();
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;

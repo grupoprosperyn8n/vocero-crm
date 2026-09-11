@@ -1,4 +1,5 @@
 import { withAuth } from "@/lib/api";
+import { customizationGate } from "@/server/settings/access";
 import {
   atribucionDisabledResponse,
   atribucionEnabled,
@@ -15,6 +16,8 @@ export const dynamic = "force-dynamic";
  * escribe.
  */
 export const GET = withAuth(async (session, req: Request) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   if (!atribucionEnabled()) return atribucionDisabledResponse();
   const raw = new URL(req.url).searchParams.get("limit");
   const parsed = raw ? Number.parseInt(raw, 10) : NaN;

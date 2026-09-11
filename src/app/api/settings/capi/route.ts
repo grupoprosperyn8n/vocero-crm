@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { customizationGate } from "@/server/settings/access";
 import {
   atribucionDisabledResponse,
   atribucionEnabled,
@@ -22,6 +23,8 @@ export const dynamic = "force-dynamic";
  */
 
 export const GET = withAuth(async (session) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   if (!atribucionEnabled()) return atribucionDisabledResponse();
   const capi = await getCapiSettingsView(session.organizationId);
   return Response.json({ capi });
@@ -40,6 +43,8 @@ const putSchema = z.object({
 });
 
 export const PUT = withAuth(async (session, req: Request) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   if (!atribucionEnabled()) return atribucionDisabledResponse();
 
   const body = await parseBody(req, putSchema);
@@ -80,6 +85,8 @@ export const PUT = withAuth(async (session, req: Request) => {
 });
 
 export const DELETE = withAuth(async (session) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   if (!atribucionEnabled()) return atribucionDisabledResponse();
   await deleteCapiSettings(session.organizationId);
   return Response.json({ ok: true });

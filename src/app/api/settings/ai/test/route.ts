@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { customizationGate } from "@/server/settings/access";
 import { probeProvider, type AiCallConfig } from "@/lib/ai";
 import {
   AI_PROVIDERS,
@@ -21,6 +22,8 @@ const testSchema = z.object({
 
 /** 019 — Prueba de conexión del instalador de IA (sin guardar nada). */
 export const POST = withAuth(async (session, req: Request) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   const body = await parseBody(req, testSchema);
   if (!body.ok) return body.response;
 

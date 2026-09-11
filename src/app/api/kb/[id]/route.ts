@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { customizationGate } from "@/server/settings/access";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,8 @@ const patchSchema = z.object({
 });
 
 export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
@@ -36,6 +39,8 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
 });
 
 export const DELETE = withAuth(async (session, _req: Request, ctx: Params) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   const { id } = await ctx.params;
   const db = getDb();
   const deleted = await db

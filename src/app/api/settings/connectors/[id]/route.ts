@@ -2,7 +2,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
-import { isConnectorAdmin, loadOwnedConnector } from "@/server/settings/connectors";
+import { isConnectorOwner, loadOwnedConnector } from "@/server/settings/connectors";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +22,8 @@ const patchSchema = z.object({
 export const PATCH = withAuth(
   async (session, req: Request, ctx: { params: Promise<{ id: string }> }) => {
     const { id } = await ctx.params;
-    if (!isConnectorAdmin(session)) {
-      return apiError(403, "FORBIDDEN", "Solo owner y admin configuran conectores.");
+    if (!isConnectorOwner(session)) {
+      return apiError(403, "FORBIDDEN", "Solo el propietario configura conectores.");
     }
     const owned = await loadOwnedConnector(session, id);
     if (!owned.ok) return owned.response;
@@ -47,8 +47,8 @@ export const PATCH = withAuth(
 export const DELETE = withAuth(
   async (session, _req: Request, ctx: { params: Promise<{ id: string }> }) => {
     const { id } = await ctx.params;
-    if (!isConnectorAdmin(session)) {
-      return apiError(403, "FORBIDDEN", "Solo owner y admin configuran conectores.");
+    if (!isConnectorOwner(session)) {
+      return apiError(403, "FORBIDDEN", "Solo el propietario configura conectores.");
     }
     const owned = await loadOwnedConnector(session, id);
     if (!owned.ok) return owned.response;

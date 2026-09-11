@@ -1,5 +1,6 @@
 import { withAuth } from "@/lib/api";
 import { getEnv } from "@/lib/env";
+import { customizationGate } from "@/server/settings/access";
 import { isChannelEnabled } from "@/server/channels/enabled";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,9 @@ export const dynamic = "force-dynamic";
  * viajan las tres URLs y la pantalla de cada canal enseña la suya. Las de un
  * canal apagado van en null: no existen en esta instancia (ADR-001).
  */
-export const GET = withAuth(async () => {
+export const GET = withAuth(async (session) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   const env = getEnv();
   const base = env.APP_BASE_URL.replace(/\/$/, "");
   const url = `${base}/api/webhooks/wa/${env.META_WEBHOOK_VERIFY_TOKEN}`;

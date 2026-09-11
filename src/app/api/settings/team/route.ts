@@ -6,10 +6,13 @@ import { getAuth, runInternalSignup } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { teamGate } from "@/server/settings/access";
 
 export const dynamic = "force-dynamic";
 
 export const GET = withAuth(async (session) => {
+  const gate = teamGate(session);
+  if (gate) return gate;
   const db = getDb();
   // Alias para saber quién aplicó el "fuera de línea" (020).
   const offlineUser = alias(schema.user, "offline_user");

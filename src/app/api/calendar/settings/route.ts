@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { customizationGate } from "@/server/settings/access";
 import { CONNECTOR_ORDER } from "@/lib/agenda-connectors";
 import { agendaDisabledResponse, agendaEnabled } from "@/server/agenda/flag";
 import {
@@ -20,6 +21,8 @@ export const dynamic = "force-dynamic";
  * endpoint y solo salen como últimos 4 dígitos.
  */
 export const GET = withAuth(async (session) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   if (!agendaEnabled()) return agendaDisabledResponse();
   const settings = await getSettings(session.organizationId);
   return Response.json({ settings });
@@ -55,6 +58,8 @@ const putSchema = z.object({
  * zona horaria que el runtime no conoce, o un conector inexistente.
  */
 export const PUT = withAuth(async (session, req: Request) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   if (!agendaEnabled()) return agendaDisabledResponse();
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;

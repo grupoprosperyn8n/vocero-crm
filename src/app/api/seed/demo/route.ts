@@ -1,6 +1,7 @@
 import { apiError, withAuth } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import { isDomainEmpty, seedDemo } from "@/server/seed/demo";
+import { customizationGate } from "@/server/settings/access";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
  * versión por script (`pnpm seed:demo`) permite recargar con --force.
  */
 export const POST = withAuth(async (session) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   const db = getDb();
   const empty = await isDomainEmpty(db, session.organizationId);
   if (!empty) {

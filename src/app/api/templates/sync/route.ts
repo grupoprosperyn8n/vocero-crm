@@ -1,4 +1,5 @@
 import { apiError, withAuth } from "@/lib/api";
+import { customizationGate } from "@/server/settings/access";
 import {
   syncTemplates,
   TemplateError,
@@ -13,6 +14,8 @@ export const dynamic = "force-dynamic";
  * callback (limitación de Meta documentada en el README).
  */
 export const POST = withAuth(async (session) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   try {
     const updated = await syncTemplates(session.organizationId);
     return Response.json({ ok: true, updated });

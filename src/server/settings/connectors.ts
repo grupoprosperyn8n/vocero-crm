@@ -11,9 +11,9 @@ export type ConnectorAdminSession = {
   role: string;
 };
 
-/** Escritura de conectores: solo owner y admin. */
-export function isConnectorAdmin(session: ConnectorAdminSession): boolean {
-  return session.role === "owner" || session.role === "admin";
+/** Escritura de conectores: solo el propietario (021 — customización). */
+export function isConnectorOwner(session: ConnectorAdminSession): boolean {
+  return session.role === "owner";
 }
 
 /** Carga scoped del conector (org) + gate de escritura. */
@@ -24,10 +24,10 @@ export async function loadOwnedConnector(
   | { ok: true; row: typeof schema.outboundWebhook.$inferSelect }
   | { ok: false; response: Response }
 > {
-  if (!isConnectorAdmin(session)) {
+  if (!isConnectorOwner(session)) {
     return {
       ok: false,
-      response: apiError(403, "FORBIDDEN", "Solo owner y admin configuran conectores."),
+      response: apiError(403, "FORBIDDEN", "Solo el propietario configura conectores."),
     };
   }
   const db = getDb();

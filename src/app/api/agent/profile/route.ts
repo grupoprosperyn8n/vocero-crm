@@ -3,6 +3,7 @@ import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isAiConfigured } from "@/lib/env";
+import { customizationGate } from "@/server/settings/access";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,8 @@ const putSchema = z.object({
 });
 
 export const PUT = withAuth(async (session, req: Request) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;
 

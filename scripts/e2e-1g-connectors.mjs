@@ -1,7 +1,8 @@
 // e2e Bloque 1G — Conectores salientes configurables (multi conector).
-// Corre contra el dev 3001. Verifica: CRUD de conectores, gate por rol,
-// cierre emite a TODOS los habilitados con destino+destino en el payload,
-// apagado deja de recibir, y el receptor de prueba acumula los eventos.
+// Corre contra el dev 3001. Verifica: CRUD de conectores (021: la
+// customización es del PROPIETARIO; admin y member rebotan 403), cierre emite
+// a TODOS los habilitados con destino+destino en el payload, apagado deja de
+// recibir, y el receptor de prueba acumula los eventos.
 import fs from "node:fs";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3001";
@@ -47,11 +48,12 @@ const stamp = Date.now().toString(36);
 const stampNum = Date.now();
 try { fs.rmSync("/tmp/closure-hook.jsonl", { force: true }); } catch {}
 const PHONE = `5491166666${String(stampNum % 1000).padStart(3, "0")}`.slice(0, 13);
-const EMAIL_ADMIN = `e2e1g-${stamp}@test.local`;
+const EMAIL_OWNER = `e2e1g-owner-${stamp}@test.local`;
+const EMAIL_ADMIN = `e2e1g-admin-${stamp}@test.local`;
 const EMAIL_MEMBER = `e2e1g-member-${stamp}@test.local`;
 const PW = "E2E-1G-2026!";
 
-// 0) alta owner + member de prueba, login de ambos
+// 0) altas owner/admin/member de prueba, login de los tres
 const mkUser = async (email, name, role) => {
   const r = await api("/api/admin/users", {
     method: "PUT",
@@ -67,12 +69,13 @@ const mkUser = async (email, name, role) => {
   const cookie = (lr.headers.get("set-cookie") || "").split(";")[0];
   return cookie;
 };
-// La API admin no permite alta de owner (el owner ya existe en la org): uso
-// admin para el CRUD de conectores y member para verificar el gate 403.
+// 021 — El CRUD de conectores va con el PROPIETARIO; admin y member
+// verifican que la customización quedó bloqueada para ellos.
+const cookieOwner = await mkUser(EMAIL_OWNER, "Owner 1G", "owner");
 const cookieAdmin = await mkUser(EMAIL_ADMIN, "Admin 1G", "admin");
 const cookieMember = await mkUser(EMAIL_MEMBER, "Member 1G", "member");
 
-// 1) member NO puede crear conectores (gate owner/admin)
+// 1) member NO puede crear conectores (021: customización solo propietario)
 {
   const r = await api("/api/settings/connectors", {
     method: "POST",
@@ -82,11 +85,23 @@ const cookieMember = await mkUser(EMAIL_MEMBER, "Member 1G", "member");
   check("1. member => 403 al crear", r.status === 403, String(r.status));
 }
 
-// 2) admin crea dos conectores: uno OK y uno apagado
+// 1b) el administrador tampoco (021)
+{
+  const r = await api("/api/settings/connectors", {
+    method: "POST",
+    headers: { cookie: cookieAdmin },
+    body: { name: "no-deberia-admin", url: "http://127.0.0.1:3901/hook" },
+  });
+  check("1b. admin => 403 al crear", r.status === 403, String(r.status));
+  const rl = await api("/api/settings/connectors", { headers: { cookie: cookieAdmin } });
+  check("1c. admin => 403 al listar", rl.status === 403, String(rl.status));
+}
+
+// 2) el propietario crea dos conectores: uno OK y uno apagado
 const HOOK = "http://127.0.0.1:3901/hook";
 const c1 = await api("/api/settings/connectors", {
   method: "POST",
-  headers: { cookie: cookieAdmin },
+  headers: { cookie: cookieOwner },
   body: { name: "Receptor 1G OK", url: HOOK, secret: "secret-1g-ok-123456" },
 });
 const id1 = c1.json?.connector?.id;
@@ -94,7 +109,7 @@ check("2. alta conector 1 (con firma)", c1.status === 201 && !!id1 && c1.json?.c
 
 const c2 = await api("/api/settings/connectors", {
   method: "POST",
-  headers: { cookie: cookieAdmin },
+  headers: { cookie: cookieOwner },
   body: { name: "Receptor 1G apagado", url: HOOK },
 });
 const id2 = c2.json?.connector?.id;
@@ -102,7 +117,7 @@ check("2b. alta conector 2", c2.status === 201 && !!id2, String(c2.status));
 
 // 3) la lista no expone el secreto
 {
-  const r = await api("/api/settings/connectors", { headers: { cookie: cookieAdmin } });
+  const r = await api("/api/settings/connectors", { headers: { cookie: cookieOwner } });
   const list = r.json?.connectors ?? [];
   const c = list.find((x) => x.id === id1);
   check("3. GET lista + secret nunca viaja", r.status === 200 && c?.secretSet === true && c?.secret === undefined, `n=${list.length}`);
@@ -112,7 +127,7 @@ check("2b. alta conector 2", c2.status === 201 && !!id2, String(c2.status));
 {
   const r = await api(`/api/settings/connectors/${id2}`, {
     method: "PATCH",
-    headers: { cookie: cookieAdmin },
+    headers: { cookie: cookieOwner },
     body: { enabled: false },
   });
   check("4. apagar conector 2", r.status === 200, String(r.status));
@@ -138,7 +153,7 @@ check("2b. alta conector 2", c2.status === 201 && !!id2, String(c2.status));
 
   const cl = await api(`/api/conversations/${convId}`, {
     method: "PATCH",
-    headers: { cookie: cookieAdmin },
+    headers: { cookie: cookieOwner },
     body: { close: true },
   });
   await new Promise((r) => setTimeout(r, 800));
@@ -164,7 +179,7 @@ check("2b. alta conector 2", c2.status === 201 && !!id2, String(c2.status));
 {
   await api(`/api/settings/connectors/${id1}`, {
     method: "PATCH",
-    headers: { cookie: cookieAdmin },
+    headers: { cookie: cookieOwner },
     body: { enabled: false },
   });
   const ing = await api("/api/bot/inbound", {
@@ -180,7 +195,7 @@ check("2b. alta conector 2", c2.status === 201 && !!id2, String(c2.status));
   });
   const cl = await api(`/api/conversations/${ing.json?.conversationId}`, {
     method: "PATCH",
-    headers: { cookie: cookieAdmin },
+    headers: { cookie: cookieOwner },
     body: { close: true },
   });
   check("6. sin conectores habilitados => skipped", cl.json?.closure?.webhook === "skipped", JSON.stringify(cl.json?.closure));
@@ -190,12 +205,12 @@ check("2b. alta conector 2", c2.status === 201 && !!id2, String(c2.status));
 {
   await api(`/api/settings/connectors/${id1}`, {
     method: "PATCH",
-    headers: { cookie: cookieAdmin },
+    headers: { cookie: cookieOwner },
     body: { enabled: true },
   });
   const r = await api(`/api/settings/connectors/${id1}/test`, {
     method: "POST",
-    headers: { cookie: cookieAdmin },
+    headers: { cookie: cookieOwner },
   });
   await new Promise((r2) => setTimeout(r2, 500));
   const evts = received();
@@ -204,33 +219,38 @@ check("2b. alta conector 2", c2.status === 201 && !!id2, String(c2.status));
   check("7b. evento test llegó al destino", last?.event === "test" && last?.body?.destination?.id === id1, last?.event);
 }
 
-// 8) borrar el conector 1 (y apagar el 2 ya estaba); DELETE + member 403
+// 8) borrar el conector 1 (y el 2 apagado); DELETE gate: member y admin 403
 {
   const rM = await api(`/api/settings/connectors/${id1}`, {
     method: "DELETE",
     headers: { cookie: cookieMember },
   });
   check("8. member => 403 al eliminar", rM.status === 403, String(rM.status));
-  const r = await api(`/api/settings/connectors/${id1}`, {
+  const rA = await api(`/api/settings/connectors/${id1}`, {
     method: "DELETE",
     headers: { cookie: cookieAdmin },
   });
-  check("8b. DELETE conector 1", r.status === 200, String(r.status));
+  check("8a. admin => 403 al eliminar", rA.status === 403, String(rA.status));
+  const r = await api(`/api/settings/connectors/${id1}`, {
+    method: "DELETE",
+    headers: { cookie: cookieOwner },
+  });
+  check("8b. DELETE conector 1 (owner)", r.status === 200, String(r.status));
   const r404 = await api(`/api/settings/connectors/${id1}`, {
     method: "PATCH",
-    headers: { cookie: cookieAdmin },
+    headers: { cookie: cookieOwner },
     body: { enabled: true },
   });
   check("8c. conector borrado => 404", r404.status === 404, String(r404.status));
   // limpiar el conector 2
   await api(`/api/settings/connectors/${id2}`, {
     method: "DELETE",
-    headers: { cookie: cookieAdmin },
+    headers: { cookie: cookieOwner },
   });
 }
 
 // 9) cleanup usuarios
-for (const email of [EMAIL_ADMIN, EMAIL_MEMBER]) {
+for (const email of [EMAIL_OWNER, EMAIL_ADMIN, EMAIL_MEMBER]) {
   const d = await api(`/api/admin/users?email=${encodeURIComponent(email)}`, {
     method: "DELETE",
     headers: { "x-admin-key": ADMIN_KEY },

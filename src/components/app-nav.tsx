@@ -111,11 +111,15 @@ export function AppNav({
 
   const sha = commit || BUILD_COMMIT;
   const settingsActive = pathname.startsWith("/settings");
+  // 021 — La configuración del CRM es del propietario: "Agente" (perfil y
+  // conocimiento del bot) se esconde para el resto; el administrador entra a
+  // Ajustes solo por Equipo.
+  const nav = role === "owner" ? NAV : NAV.filter((i) => i.href !== "/agent");
   // Citas va después de Pipeline: es el paso siguiente de un trato, no una
   // sección aparte.
   const items = agenda
-    ? [...NAV.slice(0, 2), AGENDA_ITEM, ...NAV.slice(2)]
-    : NAV;
+    ? [...nav.slice(0, 2), AGENDA_ITEM, ...nav.slice(2)]
+    : nav;
 
   return (
     <aside
@@ -170,13 +174,16 @@ export function AppNav({
 
       <div className="flex-1" />
 
-      <Link href="/settings" className={navItemClass(settingsActive)}>
-        <Settings
-          className={cn("h-[17px] w-[17px]", settingsActive ? "text-brand" : "text-text-3")}
-          strokeWidth={1.8}
-        />
-        Ajustes
-      </Link>
+      {/* 021 — Ajustes: el administrador entra solo por Equipo; el miembro no lo ve. */}
+      {role !== "member" && (
+        <Link href="/settings" className={navItemClass(settingsActive)}>
+          <Settings
+            className={cn("h-[17px] w-[17px]", settingsActive ? "text-brand" : "text-text-3")}
+            strokeWidth={1.8}
+          />
+          Ajustes
+        </Link>
+      )}
 
       <div className="mt-1 flex items-center gap-2.5 rounded-sm px-2.5 py-2 hover:bg-accent">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-bold text-brand-text">
@@ -185,7 +192,12 @@ export function AppNav({
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold">{userName}</span>
           <span className="block truncate text-[11px] text-text-3">
-            {role === "owner" ? "Propietario" : "Equipo"} · En línea
+            {role === "owner"
+              ? "Propietario"
+              : role === "admin"
+                ? "Administrador"
+                : "Miembro"}{" "}
+            · En línea
           </span>
         </span>
         <ThemeToggle initial={theme} />

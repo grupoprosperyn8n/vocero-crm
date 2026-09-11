@@ -26,10 +26,13 @@ const ADS_TAB: Tab = { href: "/settings/ads", label: "Anuncios" };
 const MESSENGER_TAB: Tab = { href: "/settings/messenger", label: "Messenger" };
 
 export function SettingsNav({
+  role = "member",
   agenda = false,
   atribucion = false,
   messenger = false,
 }: {
+  /** 021 — Qué pestañas ve cada rol lo decide el layout server y baja por prop. */
+  role?: string;
   agenda?: boolean;
   atribucion?: boolean;
   messenger?: boolean;
@@ -38,13 +41,21 @@ export function SettingsNav({
   // Qué pestañas existen lo decide el servidor y baja por prop: este es un
   // componente de cliente y no puede leer variables de entorno.
   // Messenger va junto a WhatsApp: son las dos conexiones de mensajería.
-  const tabs = [
+  const all = [
     ...TABS.slice(0, 1),
     ...(messenger ? [MESSENGER_TAB] : []),
     ...TABS.slice(1),
     ...(agenda ? [AGENDA_TAB] : []),
     ...(atribucion ? [ADS_TAB] : []),
   ];
+  // 021 — La customización del CRM es del propietario; el administrador ve
+  // únicamente Equipo; a los miembros los rebota la guarda del layout.
+  const tabs =
+    role === "owner"
+      ? all
+      : role === "admin"
+        ? all.filter((t) => t.href === "/settings/team")
+        : [];
   return (
     <nav className="flex shrink-0 gap-1 overflow-x-auto border-b p-2 sm:w-44 sm:flex-col sm:space-y-1 sm:overflow-visible sm:border-b-0 sm:border-r sm:p-3">
       {tabs.map((t) => (

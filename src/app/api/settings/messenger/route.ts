@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { customizationGate } from "@/server/settings/access";
 import { graphRequest, MetaApiError } from "@/lib/meta/client";
 import {
   getMessengerCredentialsByOrg,
@@ -16,6 +17,8 @@ export const dynamic = "force-dynamic";
 
 /** 017 — Estado de la conexión de Messenger (el token nunca sale entero). */
 export const GET = withAuth(async (session) => {
+  const gate = customizationGate(session);
+  if (gate) return gate;
   if (!isChannelEnabled("messenger")) return channelDisabledResponse();
   const creds = await getMessengerCredentialsByOrg(session.organizationId);
   if (!creds) return Response.json({ connection: null });

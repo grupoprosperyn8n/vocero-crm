@@ -129,6 +129,8 @@ export function TeamClient() {
 
   return (
     <div className="max-w-2xl space-y-6">
+      {/* 021 — Alta de cuentas: solo el propietario (el server lo re-valida). */}
+      {viewer?.role === "owner" && (
       <Card>
         <CardHeader>
           <CardTitle>Crear cuenta de equipo</CardTitle>
@@ -194,6 +196,7 @@ export function TeamClient() {
           </Button>
         </CardContent>
       </Card>
+      )}
 
       <div className="space-y-2">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

@@ -38,7 +38,7 @@ export type BoardLead = {
   priority: PriorityValue | null;
 };
 
-export function PipelineClient() {
+export function PipelineClient({ role }: { role: string }) {
   const [stages, setStages] = useState<StageDto[]>([]);
   const [currency, setCurrency] = useState("MXN");
   const [leads, setLeads] = useState<BoardLead[]>([]);
@@ -174,9 +174,11 @@ export function PipelineClient() {
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
         <h2 className="text-[17px] font-bold tracking-tight">Pipeline</h2>
-        <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
-          <Settings2 className="h-4 w-4" /> Gestionar etapas
-        </Button>
+        {role === "owner" && (
+          <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
+            <Settings2 className="h-4 w-4" /> Gestionar etapas
+          </Button>
+        )}
       </header>
 
       {/* El tablero se arrastra en horizontal; en el teléfono cada columna
