@@ -48,13 +48,16 @@ export function SettingsNav({
     ...(agenda ? [AGENDA_TAB] : []),
     ...(atribucion ? [ADS_TAB] : []),
   ];
-  // 021 — La customización del CRM es del propietario; el administrador ve
-  // únicamente Equipo; a los miembros los rebota la guarda del layout.
+  // 021 v2 — Customización (IA, Automejora, Marca): solo propietario.
+  // La operación (plantillas, etapas, agenda) y Equipo: propietario + administrador;
+  // a los miembros los rebota la guarda del layout.
   const tabs =
     role === "owner"
       ? all
       : role === "admin"
-        ? all.filter((t) => t.href === "/settings/team")
+        ? all.filter((t) =>
+            ["/settings/team", "/settings/templates", "/settings/calendar"].includes(t.href)
+          )
         : [];
   return (
     <nav className="flex shrink-0 gap-1 overflow-x-auto border-b p-2 sm:w-44 sm:flex-col sm:space-y-1 sm:overflow-visible sm:border-b-0 sm:border-r sm:p-3">

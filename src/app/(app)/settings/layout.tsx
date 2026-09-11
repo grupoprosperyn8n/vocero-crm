@@ -14,7 +14,8 @@ export default async function SettingsLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   // 021 — Los miembros no tienen nada que hacer en Ajustes: la customización
-  // es del propietario y el Equipo lo ven propietario/administrador.
+  // es del propietario; Equipo y la operación (plantillas, etapas, agenda) los
+  // ven propietario y administrador.
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
   if (session.role === "member") redirect("/inbox");

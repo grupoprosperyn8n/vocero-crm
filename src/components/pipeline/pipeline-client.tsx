@@ -174,7 +174,7 @@ export function PipelineClient({ role }: { role: string }) {
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
         <h2 className="text-[17px] font-bold tracking-tight">Pipeline</h2>
-        {role === "owner" && (
+        {role !== "member" && (
           <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
             <Settings2 className="h-4 w-4" /> Gestionar etapas
           </Button>

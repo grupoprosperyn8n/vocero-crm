@@ -6,7 +6,7 @@ import { guardSettingsTab } from "@/server/settings/page-guard";
 export const dynamic = "force-dynamic";
 
 export default async function AgendaSettingsPage() {
-  await guardSettingsTab("owner");
+  await guardSettingsTab("team");
   // Sin la bandera esta pantalla no existe en esta instancia.
   if (!agendaEnabled()) notFound();
   return <AgendaClient />;

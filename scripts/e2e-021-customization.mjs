@@ -1,11 +1,14 @@
-// e2e Bloque 021 — Customización del CRM solo para el propietario (Diego,
-// 2026-09-11). Corre contra el dev 3001:
-//   - admin: 403 en toda la superficie de configuración; el área de Equipo
-//     sigue disponible (ver + dejar offline);
-//   - member: 403 en configuración Y en Equipo; la operación (plantillas,
-//     etapas, agente y KB en LECTURA) sigue disponible;
-//   - owner: lectura de configuración 200; en escrituras con body inválido
-//     responde 422 (la guarda pasó) — así se verifica la puerta sin efectos.
+// e2e Bloque 021 (v2) — Reparto de la configuración (Diego, 2026-09-11):
+// «el agente de mejoras y la configuración IA solo yo (propietario);
+//  después todo lo operativo para administrador».
+// Corre contra el dev 3001:
+//   - owner: customización completa (IA, Automejora, Agente/KB, Marca,
+//     canales/integraciones) + operación + Equipo;
+//   - admin: 403 en la customización; SÍ operación (plantillas, etapas,
+//     agenda) y Equipo (ver + dejar offline);
+//   - member: 403 en configuración y Equipo; operación (plantillas, etapas,
+//     agente y KB en LECTURA) disponible.
+// Las puertas se verifican sin efectos: body inválido → 422 (la guarda pasó).
 import fs from "node:fs";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3001";
@@ -76,7 +79,7 @@ check(
 
 const h = (s) => ({ cookie: s.cookie });
 
-// 2) ADMIN: la customización entera responde 403 (gate antes que validación)
+// 2) ADMIN: la customización responde 403 (gate antes que validación)
 const adminDenied = [
   ["GET whatsapp", "/api/settings/whatsapp", "GET", undefined],
   ["PUT whatsapp", "/api/settings/whatsapp", "PUT", {}],
@@ -84,18 +87,47 @@ const adminDenied = [
   ["GET IA", "/api/settings/ai", "GET", undefined],
   ["GET conectores", "/api/settings/connectors", "GET", undefined],
   ["POST conector", "/api/settings/connectors", "POST", {}],
-  ["GET agenda", "/api/calendar/settings", "GET", undefined],
-  ["POST sync plantillas", "/api/templates/sync", "POST", undefined],
-  ["POST plantilla", "/api/templates", "POST", {}],
+  ["GET messenger", "/api/settings/messenger", "GET", undefined],
+  ["GET instagram", "/api/settings/instagram", "GET", undefined],
+  ["GET zoom", "/api/settings/zoom", "GET", undefined],
+  ["GET google", "/api/settings/google", "GET", undefined],
+  ["GET capi", "/api/settings/capi", "GET", undefined],
+  ["PUT marca", "/api/settings/branding", "PUT", {}],
   ["PUT agente", "/api/agent/profile", "PUT", {}],
   ["POST KB", "/api/kb", "POST", {}],
-  ["POST etapa", "/api/pipeline/stages", "POST", {}],
   ["POST aplicar sugerencia", "/api/lab/suggestions/apply", "POST", {}],
   ["POST seed demo", "/api/seed/demo", "POST", undefined],
 ];
 for (const [name, path, method, body] of adminDenied) {
   const r = await api(path, { method, headers: h(sAdmin), body });
   check(`2. admin ${name} → 403`, r.status === 403, String(r.status));
+}
+
+// 2b) ADMIN: la operación SÍ (plantillas, etapas, agenda)
+{
+  const reads = [
+    ["GET plantillas", "/api/templates"],
+    ["GET etapas", "/api/pipeline/stages"],
+    ["GET marca (lectura pública)", "/api/settings/branding"],
+  ];
+  for (const [name, path] of reads) {
+    const r = await api(path, { headers: h(sAdmin) });
+    check(`2b. admin ${name} (operación) → 200`, r.status === 200, String(r.status));
+  }
+  const probes = [
+    ["POST plantilla (body inválido)", "/api/templates", "POST", {}],
+    ["POST etapa (body inválido)", "/api/pipeline/stages", "POST", {}],
+  ];
+  for (const [name, path, method, body] of probes) {
+    const r = await api(path, { method, headers: h(sAdmin), body });
+    check(`2b. admin ${name} → 422 (operación permitida)`, r.status === 422, String(r.status));
+  }
+  const agenda = await api("/api/calendar/settings", { headers: h(sAdmin) });
+  check(
+    "2b. admin GET agenda → 404 (bandera off) / 200 (on), nunca 403",
+    agenda.status === 404 || agenda.status === 200,
+    String(agenda.status)
+  );
 }
 
 // 3) ADMIN: Equipo sigue disponible (ver + gestionar)
@@ -122,9 +154,11 @@ const memberDenied = [
   ["GET whatsapp", "/api/settings/whatsapp", "GET", undefined],
   ["GET webhook", "/api/settings/webhook", "GET", undefined],
   ["GET team", "/api/settings/team", "GET", undefined],
+  ["GET agenda", "/api/calendar/settings", "GET", undefined],
   ["POST plantilla", "/api/templates", "POST", {}],
   ["POST KB", "/api/kb", "POST", {}],
   ["POST etapa", "/api/pipeline/stages", "POST", {}],
+  ["PUT marca", "/api/settings/branding", "PUT", {}],
 ];
 for (const [name, path, method, body] of memberDenied) {
   const r = await api(path, { method, headers: h(sMember), body });
