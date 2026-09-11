@@ -7,6 +7,7 @@ import { getDb, schema } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { AUTH_RATE_LIMIT, checkRateLimit } from "@/lib/rate-limit";
 import {
+  isEmailOffline,
   onUserCreated,
   resolveActiveOrganizationId,
 } from "@/server/auth/on-signup";
@@ -80,6 +81,21 @@ function createAuth() {
           if (!result.allowed) {
             throw new APIError("TOO_MANY_REQUESTS", {
               message: "Demasiados intentos; espera unos minutos",
+            });
+          }
+        }
+        // 020 — "Dejar offline" (Equipo): una cuenta fuera de línea no entra,
+        // aunque la contraseña sea correcta. El mensaje dice a quién acudir.
+        if (ctx.path === "/sign-in/email") {
+          const body = (ctx.body ?? {}) as { email?: unknown };
+          const email =
+            typeof body.email === "string"
+              ? body.email.trim().toLowerCase()
+              : "";
+          if (email && (await isEmailOffline(email))) {
+            throw new APIError("FORBIDDEN", {
+              message:
+                "Esta cuenta está fuera de línea. Hablá con el propietario o un administrador.",
             });
           }
         }

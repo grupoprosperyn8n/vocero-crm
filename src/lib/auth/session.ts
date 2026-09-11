@@ -29,6 +29,11 @@ export async function requireSession(): Promise<SessionContext> {
   if (!membership) {
     throw new UnauthorizedError("Sesión sin organización activa");
   }
+  // 020 — "Dejar offline" (Equipo): el corte manda aunque la cookie exista.
+  // Se resuelve en cada request justamente para que valga en caliente.
+  if (membership.offlineAt) {
+    throw new UnauthorizedError("Cuenta fuera de línea");
+  }
   return {
     userId: session.user.id,
     organizationId: membership.organizationId,

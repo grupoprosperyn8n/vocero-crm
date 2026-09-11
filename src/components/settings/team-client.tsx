@@ -9,8 +9,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+type Viewer = { userId: string; role: string };
+
 type Member = {
   id: string;
+  userId: string;
   role: string;
   name: string;
   email: string;
@@ -19,29 +22,50 @@ type Member = {
   operationalRole: string | null;
   locality: string | null;
   sourceStatus: string | null;
+  /** 020 — Fuera de línea manual: no puede entrar hasta "Poner online". */
+  offlineAt: string | null;
+  offlineByName: string | null;
   createdAt: string;
 };
 
 function roleLabel(role: string): string {
   if (role === "owner") return "Propietario";
-  if (role === "admin") return "Gerente";
+  if (role === "admin") return "Administrador";
   return "Miembro";
+}
+
+/**
+ * Espejo EXACTO de las reglas del servidor (PATCH /api/settings/team), para
+ * no mostrar botones que van a rebotar: propietario → maneja miembros y
+ * administradores; administrador → solo miembros; nadie a sí mismo; al
+ * propietario no se lo toca.
+ */
+function canToggle(viewer: Viewer | null, m: Member): boolean {
+  if (!viewer) return false;
+  if (m.userId === viewer.userId || m.role === "owner") return false;
+  if (viewer.role === "owner") return true;
+  if (viewer.role === "admin") return m.role === "member";
+  return false;
 }
 
 export function TeamClient() {
   const [members, setMembers] = useState<Member[]>([]);
+  const [viewer, setViewer] = useState<Viewer | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [tempPassword, setTempPassword] = useState("");
   const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/settings/team").catch(() => null);
     if (!res?.ok) return;
-    const data = (await res.json()) as { members: Member[] };
+    const data = (await res.json()) as { members: Member[]; viewer: Viewer };
     setMembers(data.members);
+    setViewer(data.viewer ?? null);
   }, []);
 
   useEffect(() => {
@@ -81,6 +105,27 @@ export function TeamClient() {
     setTempPassword("");
     void refetch();
   }
+
+  async function toggleOffline(m: Member) {
+    setBusyId(m.id);
+    setActionError(null);
+    const res = await fetch("/api/settings/team", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ memberId: m.id, offline: !m.offlineAt }),
+    }).catch(() => null);
+    setBusyId(null);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setActionError(data?.error?.message ?? "No se pudo cambiar el estado");
+      return;
+    }
+    void refetch();
+  }
+
+  const canManage = viewer?.role === "owner" || viewer?.role === "admin";
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -154,6 +199,15 @@ export function TeamClient() {
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Miembros
         </p>
+        {canManage && (
+          <p className="text-xs text-muted-foreground">
+            Dejar offline corta el acceso sin borrar nada: la cuenta conserva
+            su ficha y su historial, y podés ponerla online cuando quieras.
+          </p>
+        )}
+        {actionError && (
+          <p className="text-sm text-destructive">{actionError}</p>
+        )}
         {members.map((m) => (
           <div
             key={m.id}
@@ -173,10 +227,33 @@ export function TeamClient() {
                     .join(" · ")}
                 </p>
               )}
+              {m.offlineAt && (
+                <p className="mt-0.5 truncate text-xs text-warning-text">
+                  Fuera de línea
+                  {m.offlineByName ? ` — por ${m.offlineByName}` : ""}
+                </p>
+              )}
             </div>
-            <Badge variant={m.role === "owner" ? "default" : "secondary"}>
-              {roleLabel(m.role)}
-            </Badge>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              {m.offlineAt && <Badge variant="warning">Offline</Badge>}
+              <Badge variant={m.role === "owner" ? "default" : "secondary"}>
+                {roleLabel(m.role)}
+              </Badge>
+              {canToggle(viewer, m) && (
+                <Button
+                  variant={m.offlineAt ? "secondary" : "outline"}
+                  size="sm"
+                  disabled={busyId === m.id}
+                  onClick={() => void toggleOffline(m)}
+                >
+                  {busyId === m.id
+                    ? "…"
+                    : m.offlineAt
+                      ? "Poner online"
+                      : "Dejar offline"}
+                </Button>
+              )}
+            </div>
           </div>
         ))}
       </div>

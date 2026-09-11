@@ -24,8 +24,10 @@ export const dynamic = "force-dynamic";
  *   - baja: active=false (o DELETE) → se quita la membresía de la bandeja.
  *
  * Roles que entiende el CRM y su equivalente en LOGIN (Airtable):
- *   owner  ← Dueño      (autoridad máxima; crea cuentas de equipo)
- *   admin  ← Gerente    (hoy atiende igual que member; invita por plugin)
+ *   owner  ← Propietario (autoridad máxima, "todo libre"; el único que no
+ *            puede quedar fuera de línea y maneja a cualquiera desde Equipo)
+ *   admin  ← Dueño / Gerente (la autoridad del negocio; desde Equipo puede
+ *            dejar fuera de línea a los miembros)
  *   member ← Empleado / Siniestros (atienden la bandeja)
  *   (Visitante no tiene cuenta CRM: el productor no lo sincroniza)
  *

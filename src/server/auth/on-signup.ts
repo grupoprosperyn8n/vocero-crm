@@ -67,15 +67,37 @@ export async function resolveActiveOrganizationId(
 
 export async function resolveMembership(
   userId: string
-): Promise<{ organizationId: string; role: string } | null> {
+): Promise<{
+  organizationId: string;
+  role: string;
+  /** 020 — "Dejar offline" (Equipo): si no es null, el acceso está cortado. */
+  offlineAt: Date | null;
+} | null> {
   const db = getDb();
   const rows = await db
     .select({
       organizationId: schema.member.organizationId,
       role: schema.member.role,
+      offlineAt: schema.member.offlineAt,
     })
     .from(schema.member)
     .where(eq(schema.member.userId, userId))
     .limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * 020 — ¿Esta cuenta está fuera de línea? Lo consulta el hook de login para
+ * frenar el ingreso ANTES de crear la sesión: la contraseña puede ser
+ * correcta, pero el negocio decidió cortarle el acceso (pestaña Equipo).
+ */
+export async function isEmailOffline(email: string): Promise<boolean> {
+  const db = getDb();
+  const rows = await db
+    .select({ offlineAt: schema.member.offlineAt })
+    .from(schema.user)
+    .innerJoin(schema.member, eq(schema.member.userId, schema.user.id))
+    .where(eq(schema.user.email, email))
+    .limit(1);
+  return (rows[0]?.offlineAt ?? null) !== null;
 }

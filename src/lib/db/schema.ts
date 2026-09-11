@@ -84,6 +84,18 @@ export const member = pgTable("member", {
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
   role: text("role").notNull().default("member"),
+  /**
+   * 020 — "Dejar offline" manual (pestaña Equipo, propietario/administrador):
+   * la membresía queda (ficha e historial intactos) pero el acceso se corta —
+   * requireSession rechaza la sesión y el login lo avisa con claridad. El
+   * sync del sistema NO toca este estado: solo la baja de LOGIN (ESTADO ≠
+   * Activo) quita la membresía entera, y una re-alta vuelve ONLINE.
+   */
+  offlineAt: timestamp("offline_at"),
+  /** Quién lo dejó fuera de línea; null en cuentas nunca tocadas. */
+  offlineBy: text("offline_by").references(() => user.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

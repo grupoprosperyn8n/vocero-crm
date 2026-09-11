@@ -127,6 +127,13 @@
       "when": 1789082711145,
       "tag": "0019_equipo_oficinas",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789086000000,
+      "tag": "0020_miembro_offline",
+      "breakpoints": true
     }
   ]
 }
