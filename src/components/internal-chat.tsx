@@ -7,6 +7,7 @@ import {
   Briefcase,
   Building2,
   Check,
+  ChevronRight,
   LogOut,
   Mail,
   MapPin,
@@ -274,7 +275,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const [modal, setModal] = useState<null | "dm" | "group">(null);
-  // 022c — ficha de la conversación (doble clic en el header).
+  // 022c — ficha de la conversación (un clic en el header).
   const [profileOpen, setProfileOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -550,7 +551,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
     }
   }
 
-  // 022c — Ficha de la conversación: doble clic en el header del hilo.
+  // 022c — Ficha de la conversación: un clic en el header del hilo.
   function openProfile() {
     if (!roomMeta) return;
     setFormError(null);
@@ -745,6 +746,11 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const peerStaff = peer
     ? staff.find((s) => s.userId === peer.userId) ?? null
     : null;
+  // Sucursal del día de un integrante (header del DM y filas de miembros).
+  const officeOf = useCallback(
+    (userId: string) => staff.find((x) => x.userId === userId)?.officeName ?? null,
+    [staff]
+  );
   const groupOnline = roomMeta?.kind === "group"
     ? roomMeta.members.filter(
         (m) => !m.paused && m.userId !== meId && isOnline(m.userId)
@@ -972,20 +978,17 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
               >
                 <ArrowLeft className="h-[18px] w-[18px]" strokeWidth={1.8} />
               </button>
-              {/* 022c — doble clic en el perfil abre la ficha (grupo: tarjeta
-                  con gestión; empleado: datos y estado). En táctil, un toque. */}
-              <div
-                className="flex min-w-0 flex-1 cursor-pointer select-none items-center gap-2.5"
-                onDoubleClick={openProfile}
-                onClick={() => {
-                  if (
-                    typeof window !== "undefined" &&
-                    window.matchMedia?.("(pointer: coarse)").matches
-                  ) {
-                    openProfile();
-                  }
-                }}
-                title="Doble clic: ver la ficha"
+              {/* 022c — la ficha se abre con UN clic en el perfil (grupo:
+                  tarjeta con gestión; empleado: datos y estado). */}
+              <button
+                type="button"
+                onClick={openProfile}
+                className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-accent"
+                title={
+                  roomMeta?.kind === "group"
+                    ? "Ver la tarjeta del grupo"
+                    : "Ver la ficha del empleado"
+                }
               >
                 <Avatar
                   name={roomMeta?.displayName ?? ""}
@@ -1024,16 +1027,31 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                             : "nadie en línea"}
                         </span>
                       </>
-                    ) : peerOnline ? (
-                      <span className="font-semibold text-emerald-600">
-                        En línea
-                      </span>
                     ) : (
-                      <span className="text-text-3">Desconectado</span>
+                      <span>
+                        {peerOnline ? (
+                          <span className="font-semibold text-emerald-600">
+                            En línea
+                          </span>
+                        ) : (
+                          <span className="text-text-3">Desconectado</span>
+                        )}
+                        <span className="text-text-3">
+                          {" · "}
+                          {peerStaff?.officeName
+                            ? `Sucursal: ${peerStaff.officeName}`
+                            : "Sin sucursal marcada"}
+                        </span>
+                      </span>
                     )}
                   </p>
                 </div>
-              </div>
+                <ChevronRight
+                  className="h-4 w-4 shrink-0 text-text-3 transition-transform group-hover:translate-x-0.5 group-hover:text-text-2"
+                  strokeWidth={2}
+                  aria-hidden="true"
+                />
+              </button>
               {roomMeta?.kind === "group" && (
                 <div className="relative">
                   <button
@@ -1109,6 +1127,12 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                                 : on
                                   ? "En línea"
                                   : "Desconectado"}
+                              <span className="text-text-3">
+                                {" · "}
+                                {officeOf(mem.userId)
+                                  ? `Sucursal: ${officeOf(mem.userId)}`
+                                  : "Sin sucursal"}
+                              </span>
                             </span>
                           </span>
                         </button>
@@ -1399,7 +1423,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
         </div>
       )}
 
-      {/* 022c — Ficha de la conversación: doble clic en el header del hilo.
+      {/* 022c — Ficha de la conversación: un clic en el header del hilo.
           Grupo → tarjeta con datos y gestión (nombre, miembros, pausas,
           eliminar). Empleado (DM) → datos, estado en línea y ficha. */}
       {profileOpen && roomMeta && (
@@ -1513,6 +1537,10 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                                 : on
                                   ? "En línea"
                                   : "Desconectado"}
+                              {" · "}
+                              {officeOf(mem.userId)
+                                ? `Sucursal: ${officeOf(mem.userId)}`
+                                : "Sin sucursal"}
                             </span>
                           </span>
                           {canGroup && !me && (
