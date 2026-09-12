@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { OfficeTodayPicker } from "@/components/office-today";
 import {
   CalendarDays,
   FlaskConical,
@@ -193,6 +194,9 @@ export function AppNav({
       </nav>
 
       <div className="flex-1" />
+
+      {/* 023 — Sucursal del día: dónde trabaja hoy (rota entre oficinas). */}
+      <OfficeTodayPicker />
 
       {/* 021 — Ajustes: el administrador entra solo por Equipo; el miembro no lo ve. */}
       {role !== "member" && (

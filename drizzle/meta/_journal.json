@@ -148,6 +148,20 @@
       "when": 1789239187977,
       "tag": "0020_fantastic_morlun",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789243710502,
+      "tag": "0021_chat_member_pause",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1789244068124,
+      "tag": "0022_staff_office_day",
+      "breakpoints": true
     }
   ]
 }

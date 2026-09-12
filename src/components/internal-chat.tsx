@@ -3,12 +3,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
+  BadgeCheck,
+  Briefcase,
+  Building2,
   Check,
+  Mail,
+  MapPin,
   MessageSquareText,
+  PauseCircle,
   Pencil,
+  PlayCircle,
   Plus,
   Search,
   Send,
+  Trash2,
+  UserMinus,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -44,14 +54,35 @@ type ChatRoom = {
   name: string | null;
   displayName: string;
   membersCount: number;
+  /** 022c — integrantes pausados (no cuentan como activos). */
+  pausedCount: number;
   onlineCount: number;
   unreadCount: number;
   lastMessage: Omit<ChatMessage, "roomId"> | null;
   updatedAt: string;
-  members: { userId: string; name: string; online: boolean }[];
+  createdAt: string;
+  createdByName: string | null;
+  members: {
+    userId: string;
+    name: string;
+    online: boolean;
+    paused: boolean;
+  }[];
 };
 
-type StaffMember = { userId: string; name: string; role: string; online: boolean };
+type StaffMember = {
+  userId: string;
+  name: string;
+  role: string;
+  online: boolean;
+  email: string | null;
+  employeeCode: string | null;
+  operationalRole: string | null;
+  locality: string | null;
+  /** 023 — sucursal marcada hoy (si la eligió). */
+  officeName: string | null;
+  officeSince: string | null;
+};
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("es-AR", {
@@ -82,6 +113,18 @@ function dayLabel(iso: string): string {
     day: "2-digit",
     month: "long",
   });
+}
+
+function fmtProfileDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString("es-AR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  } catch {
+    return "";
+  }
 }
 
 function roleLabel(role: string): string {
@@ -230,10 +273,15 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const [modal, setModal] = useState<null | "dm" | "group">(null);
-  const [manage, setManage] = useState<{ name: string; sel: Set<string> } | null>(
-    null
-  );
-  const [savingManage, setSavingManage] = useState(false);
+  // 022c — ficha de la conversación (doble clic en el header).
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [pausedBusy, setPausedBusy] = useState<string | null>(null);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupSel, setGroupSel] = useState<Set<string>>(new Set());
   const [dmQuery, setDmQuery] = useState("");
@@ -365,6 +413,9 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
     },
     onInternalRoom: () => {
       void loadRooms();
+      // 022c — la sala abierta se refresca sola (pausas, altas y bajas se
+      // reflejan sin recargar la página).
+      if (activeIdRef.current) void openRoom(activeIdRef.current);
     },
     onPresenceUpdated: (data) => {
       setOnlineIds((prev) => {
@@ -496,63 +547,110 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
     }
   }
 
-  function openManage() {
-    if (roomMeta?.kind !== "group") return;
+  // 022c — Ficha de la conversación: doble clic en el header del hilo.
+  function openProfile() {
+    if (!roomMeta) return;
     setFormError(null);
     setMembersOpen(false);
-    setManage({
-      name: roomMeta.name ?? roomMeta.displayName,
-      sel: new Set(roomMeta.members.map((m) => m.userId)),
-    });
+    setNameDraft(roomMeta.name ?? roomMeta.displayName);
+    setConfirmDelete(false);
+    setConfirmRemoveId(null);
+    setAddOpen(false);
+    setProfileOpen(true);
   }
 
-  async function saveManage() {
-    if (!manage || !roomMeta || savingManage) return;
-    const orig = new Set(roomMeta.members.map((m) => m.userId));
-    const name = manage.name.trim();
+  /** PATCH al grupo + refresco de lista e hilo (la ficha queda viva). */
+  async function patchRoom(patch: Record<string, unknown>): Promise<boolean> {
+    if (!roomMeta) return false;
+    setFormError(null);
+    const res = await fetch(`/api/internal/rooms/${roomMeta.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).catch(() => null);
+    if (!res) {
+      setFormError("Sin conexión con el servidor");
+      return false;
+    }
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      setFormError(data?.error?.message ?? "No se pudo guardar el grupo");
+      return false;
+    }
+    await loadRooms();
+    if (activeIdRef.current) await openRoom(activeIdRef.current);
+    return true;
+  }
+
+  async function saveName() {
+    if (!roomMeta || savingName) return;
+    const name = nameDraft.trim();
     if (!name) {
       setFormError("Poné un nombre para el grupo");
       return;
     }
-    if (manage.sel.size < 2) {
-      setFormError("El grupo necesita al menos otro integrante");
+    if (name === (roomMeta.name ?? "")) return;
+    setSavingName(true);
+    try {
+      await patchRoom({ name });
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  async function togglePause(userId: string, paused: boolean) {
+    if (pausedBusy) return;
+    setPausedBusy(userId);
+    try {
+      await patchRoom(
+        paused ? { unpauseUserIds: [userId] } : { pauseUserIds: [userId] }
+      );
+    } finally {
+      setPausedBusy(null);
+    }
+  }
+
+  async function removeMember(userId: string) {
+    // Dos toques: el primero pide confirmación ("¿Sacar?"), el segundo saca.
+    if (confirmRemoveId !== userId) {
+      setConfirmRemoveId(userId);
       return;
     }
-    const add = [...manage.sel].filter((id) => !orig.has(id));
-    const remove = [...orig].filter(
-      (id) => !manage.sel.has(id) && id !== meId
-    );
-    const patch: Record<string, unknown> = {};
-    if (name !== (roomMeta.name ?? "")) patch.name = name;
-    if (add.length > 0) patch.addUserIds = add;
-    if (remove.length > 0) patch.removeUserIds = remove;
-    if (Object.keys(patch).length === 0) {
-      setManage(null);
+    setConfirmRemoveId(null);
+    await patchRoom({ removeUserIds: [userId] });
+  }
+
+  async function addMember(userId: string) {
+    await patchRoom({ addUserIds: [userId] });
+  }
+
+  async function deleteGroup() {
+    if (!roomMeta || deleting) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
       return;
     }
-    setSavingManage(true);
+    setDeleting(true);
     try {
       const res = await fetch(`/api/internal/rooms/${roomMeta.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
+        method: "DELETE",
       }).catch(() => null);
-      if (!res) {
-        setFormError("Sin conexión con el servidor");
+      if (!res || !res.ok) {
+        const data = res
+          ? ((await res.json().catch(() => null)) as
+              | { error?: { message?: string } }
+              | null)
+          : null;
+        setFormError(data?.error?.message ?? "No se pudo eliminar el grupo");
         return;
       }
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as
-          | { error?: { message?: string } }
-          | null;
-        setFormError(data?.error?.message ?? "No se pudo guardar el grupo");
-        return;
-      }
-      setManage(null);
+      setProfileOpen(false);
+      backToList();
       await loadRooms();
-      if (activeIdRef.current) await openRoom(activeIdRef.current);
     } finally {
-      setSavingManage(false);
+      setDeleting(false);
     }
   }
 
@@ -585,6 +683,13 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
     return staffForPicker.filter((s) => s.name.toLowerCase().includes(q));
   }, [staffForPicker, dmQuery]);
 
+  /** 022c — quiénes se pueden sumar al grupo abierto (fuera de él). */
+  const staffAddable = useMemo(() => {
+    if (!roomMeta || roomMeta.kind !== "group") return [];
+    const current = new Set(roomMeta.members.map((m) => m.userId));
+    return staffForPicker.filter((s) => !current.has(s.userId));
+  }, [staffForPicker, roomMeta]);
+
   const teamOnline = useMemo(
     () => staffForPicker.filter((s) => isOnline(s.userId)).length,
     [staffForPicker, isOnline]
@@ -601,9 +706,13 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
       ? roomMeta.members.find((m) => m.userId !== meId) ?? null
       : null;
   const peerOnline = peer ? isOnline(peer.userId) : false;
+  const peerStaff = peer
+    ? staff.find((s) => s.userId === peer.userId) ?? null
+    : null;
   const groupOnline = roomMeta?.kind === "group"
-    ? roomMeta.members.filter((m) => m.userId !== meId && isOnline(m.userId))
-        .length
+    ? roomMeta.members.filter(
+        (m) => !m.paused && m.userId !== meId && isOnline(m.userId)
+      ).length
     : 0;
 
   return (
@@ -709,7 +818,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                 ? room.members.find((m) => m.userId !== meId) ?? null
                 : null;
             const onlineCount = room.members.filter(
-              (m) => m.userId !== meId && isOnline(m.userId)
+              (m) => !m.paused && m.userId !== meId && isOnline(m.userId)
             ).length;
             return (
               <button
@@ -757,7 +866,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                   {room.kind === "group" && (
                     <span className="mt-1 flex items-center gap-2">
                       <MemberStack
-                        members={room.members}
+                        members={room.members.filter((m) => !m.paused)}
                         meId={meId}
                         isOnline={isOnline}
                       />
@@ -827,43 +936,67 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
               >
                 <ArrowLeft className="h-[18px] w-[18px]" strokeWidth={1.8} />
               </button>
-              <Avatar
-                name={roomMeta?.displayName ?? ""}
-                group={roomMeta?.kind === "group"}
-                online={roomMeta?.kind === "dm" ? peerOnline : undefined}
-                size="md"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[14px] font-bold">
-                  {roomMeta?.displayName ?? ""}
-                </p>
-                <p className="text-[11.5px]">
-                  {roomMeta?.kind === "group" ? (
-                    <>
-                      <span className="text-text-3">
-                        {roomMeta.membersCount} miembros
-                      </span>
-                      <span className="text-text-3"> · </span>
-                      <span
-                        className={cn(
-                          groupOnline > 0
-                            ? "font-semibold text-emerald-600"
-                            : "text-text-3"
+              {/* 022c — doble clic en el perfil abre la ficha (grupo: tarjeta
+                  con gestión; empleado: datos y estado). En táctil, un toque. */}
+              <div
+                className="flex min-w-0 flex-1 cursor-pointer select-none items-center gap-2.5"
+                onDoubleClick={openProfile}
+                onClick={() => {
+                  if (
+                    typeof window !== "undefined" &&
+                    window.matchMedia?.("(pointer: coarse)").matches
+                  ) {
+                    openProfile();
+                  }
+                }}
+                title="Doble clic: ver la ficha"
+              >
+                <Avatar
+                  name={roomMeta?.displayName ?? ""}
+                  group={roomMeta?.kind === "group"}
+                  online={roomMeta?.kind === "dm" ? peerOnline : undefined}
+                  size="md"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-bold">
+                    {roomMeta?.displayName ?? ""}
+                  </p>
+                  <p className="text-[11.5px]">
+                    {roomMeta?.kind === "group" ? (
+                      <>
+                        <span className="text-text-3">
+                          {roomMeta.membersCount} miembros
+                        </span>
+                        {roomMeta.pausedCount > 0 && (
+                          <>
+                            <span className="text-text-3"> · </span>
+                            <span className="text-amber-700">
+                              {roomMeta.pausedCount} en pausa
+                            </span>
+                          </>
                         )}
-                      >
-                        {groupOnline > 0
-                          ? `${groupOnline} en línea`
-                          : "nadie en línea"}
+                        <span className="text-text-3"> · </span>
+                        <span
+                          className={cn(
+                            groupOnline > 0
+                              ? "font-semibold text-emerald-600"
+                              : "text-text-3"
+                          )}
+                        >
+                          {groupOnline > 0
+                            ? `${groupOnline} en línea`
+                            : "nadie en línea"}
+                        </span>
+                      </>
+                    ) : peerOnline ? (
+                      <span className="font-semibold text-emerald-600">
+                        En línea
                       </span>
-                    </>
-                  ) : peerOnline ? (
-                    <span className="font-semibold text-emerald-600">
-                      En línea
-                    </span>
-                  ) : (
-                    <span className="text-text-3">Desconectado</span>
-                  )}
-                </p>
+                    ) : (
+                      <span className="text-text-3">Desconectado</span>
+                    )}
+                  </p>
+                </div>
               </div>
               {roomMeta?.kind === "group" && (
                 <div className="relative">
@@ -895,7 +1028,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                     </p>
                     {canGroup && (
                       <button
-                        onClick={openManage}
+                        onClick={openProfile}
                         className="flex items-center gap-1 text-[12px] font-semibold text-brand-text hover:underline"
                       >
                         <Pencil className="h-3 w-3" strokeWidth={2} />
@@ -905,7 +1038,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                   </div>
                   <div className="max-h-72 overflow-y-auto py-1">
                     {roomMeta.members.map((mem) => {
-                      const on = isOnline(mem.userId);
+                      const on = !mem.paused && isOnline(mem.userId);
                       const me = mem.userId === meId;
                       return (
                         <button
@@ -928,12 +1061,18 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                             <span
                               className={cn(
                                 "block text-[11px]",
-                                on
-                                  ? "font-semibold text-emerald-600"
-                                  : "text-text-3"
+                                mem.paused
+                                  ? "text-amber-700"
+                                  : on
+                                    ? "font-semibold text-emerald-600"
+                                    : "text-text-3"
                               )}
                             >
-                              {on ? "En línea" : "Desconectado"}
+                              {mem.paused
+                                ? "Pausado"
+                                : on
+                                  ? "En línea"
+                                  : "Desconectado"}
                             </span>
                           </span>
                         </button>
@@ -1224,97 +1363,372 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
         </div>
       )}
 
-      {/* Modal: gestionar grupo (dueño/admin) */}
-      {manage && roomMeta?.kind === "group" && (
+      {/* 022c — Ficha de la conversación: doble clic en el header del hilo.
+          Grupo → tarjeta con datos y gestión (nombre, miembros, pausas,
+          eliminar). Empleado (DM) → datos, estado en línea y ficha. */}
+      {profileOpen && roomMeta && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay p-4">
-          <div className="flex max-h-[80vh] w-full max-w-md flex-col rounded-md border bg-background shadow-pop">
-            <header className="flex items-center justify-between border-b px-4 py-3">
-              <h3 className="text-[15px] font-bold">Gestionar grupo</h3>
-              <button
-                onClick={() => setManage(null)}
-                className="rounded-md p-1 text-text-3 hover:bg-accent"
-                aria-label="Cerrar"
-              >
-                <X className="h-4 w-4" strokeWidth={1.8} />
-              </button>
-            </header>
-            <div className="border-b px-4 py-3">
-              <label className="mb-1 block text-[12.5px] font-semibold text-text-2">
-                Nombre del grupo
-              </label>
-              <input
-                value={manage.name}
-                onChange={(e) =>
-                  setManage((m) => (m ? { ...m, name: e.target.value } : m))
-                }
-                maxLength={80}
-                className="w-full rounded-md border bg-background px-3 py-2 text-[13.5px] outline-none placeholder:text-text-3 focus:border-brand"
-              />
-            </div>
-            <p className="px-4 pt-3 text-[12.5px] font-semibold text-text-2">
-              Integrantes ({manage.sel.size})
-            </p>
-            {formError && (
-              <p className="px-4 pt-1 text-[12px] font-semibold text-red-600">
-                {formError}
-              </p>
-            )}
-            <div className="min-h-0 flex-1 overflow-y-auto py-1">
-              {staffForPicker.map((s) => {
-                const checked = manage.sel.has(s.userId);
-                const on = isOnline(s.userId);
-                return (
+          <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-md border bg-background shadow-pop">
+            {roomMeta.kind === "group" ? (
+              <>
+                <header className="flex items-center justify-between border-b px-4 py-3">
+                  <div className="min-w-0">
+                    <h3 className="truncate text-[15px] font-bold">
+                      {roomMeta.name ?? roomMeta.displayName}
+                    </h3>
+                    <p className="mt-0.5 text-[11.5px] text-text-3">
+                      Creado el {fmtProfileDate(roomMeta.createdAt)}
+                      {roomMeta.createdByName
+                        ? ` por ${roomMeta.createdByName}`
+                        : ""}
+                    </p>
+                  </div>
                   <button
-                    key={s.userId}
-                    onClick={() =>
-                      setManage((m) => {
-                        if (!m) return m;
-                        const next = new Set(m.sel);
-                        if (next.has(s.userId)) next.delete(s.userId);
-                        else next.add(s.userId);
-                        return { ...m, sel: next };
-                      })
-                    }
-                    className="flex w-full items-center gap-2.5 px-4 py-2 text-left hover:bg-accent"
+                    onClick={() => setProfileOpen(false)}
+                    className="rounded-md p-1 text-text-3 hover:bg-accent"
+                    aria-label="Cerrar"
+                  >
+                    <X className="h-4 w-4" strokeWidth={1.8} />
+                  </button>
+                </header>
+
+                {canGroup && (
+                  <div className="border-b px-4 py-3">
+                    <label className="mb-1 block text-[12.5px] font-semibold text-text-2">
+                      Nombre del grupo
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={nameDraft}
+                        onChange={(e) => setNameDraft(e.target.value)}
+                        maxLength={80}
+                        className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-[13.5px] outline-none placeholder:text-text-3 focus:border-brand"
+                      />
+                      <button
+                        onClick={() => void saveName()}
+                        disabled={
+                          savingName ||
+                          !nameDraft.trim() ||
+                          nameDraft.trim() === (roomMeta.name ?? "")
+                        }
+                        className="rounded-md border px-2.5 py-2 text-[12.5px] font-semibold text-text-2 hover:bg-accent disabled:opacity-40"
+                      >
+                        {savingName ? "Guardando…" : "Guardar"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <p className="flex items-center gap-2 px-4 pt-3 text-[12.5px] font-semibold text-text-2">
+                  Integrantes ({roomMeta.membersCount})
+                  {roomMeta.pausedCount > 0 && (
+                    <span className="font-normal text-amber-700">
+                      · {roomMeta.pausedCount} en pausa
+                    </span>
+                  )}
+                </p>
+                {formError && (
+                  <p className="px-4 pt-1 text-[12px] font-semibold text-red-600">
+                    {formError}
+                  </p>
+                )}
+                <div className="min-h-0 flex-1 overflow-y-auto py-1">
+                  {[...roomMeta.members]
+                    .sort((a, b) => {
+                      if (a.paused !== b.paused) return a.paused ? 1 : -1;
+                      const aOn = !a.paused && isOnline(a.userId);
+                      const bOn = !b.paused && isOnline(b.userId);
+                      if (aOn !== bOn) return aOn ? -1 : 1;
+                      return a.name.localeCompare(b.name, "es");
+                    })
+                    .map((mem) => {
+                      const on = !mem.paused && isOnline(mem.userId);
+                      const me = mem.userId === meId;
+                      const busy = pausedBusy === mem.userId;
+                      const confirming = confirmRemoveId === mem.userId;
+                      return (
+                        <div
+                          key={mem.userId}
+                          className="flex items-center gap-2.5 px-4 py-2"
+                        >
+                          <Avatar name={mem.name} online={on} size="sm" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13.5px] font-semibold">
+                              {mem.name}
+                              {me ? " (vos)" : ""}
+                            </span>
+                            <span
+                              className={cn(
+                                "block text-[11.5px]",
+                                mem.paused
+                                  ? "text-amber-700"
+                                  : on
+                                    ? "font-semibold text-emerald-600"
+                                    : "text-text-3"
+                              )}
+                            >
+                              {roleLabel(
+                                staff.find((s) => s.userId === mem.userId)
+                                  ?.role ?? "member"
+                              )}
+                              {" · "}
+                              {mem.paused
+                                ? "Pausado"
+                                : on
+                                  ? "En línea"
+                                  : "Desconectado"}
+                            </span>
+                          </span>
+                          {canGroup && !me && (
+                            <span className="flex shrink-0 items-center gap-1">
+                              {mem.paused ? (
+                                <button
+                                  onClick={() => void togglePause(mem.userId, true)}
+                                  disabled={busy}
+                                  className="flex items-center gap-1 rounded-md border px-2 py-1 text-[11.5px] font-semibold text-emerald-700 hover:bg-accent disabled:opacity-40"
+                                  title="Reactivar en el grupo"
+                                >
+                                  <PlayCircle
+                                    className="h-3.5 w-3.5"
+                                    strokeWidth={1.8}
+                                  />
+                                  {busy ? "…" : "Reactivar"}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => void togglePause(mem.userId, false)}
+                                  disabled={busy}
+                                  className="flex items-center gap-1 rounded-md border px-2 py-1 text-[11.5px] font-semibold text-text-2 hover:bg-accent disabled:opacity-40"
+                                  title="Pausar en el grupo (reversible)"
+                                >
+                                  <PauseCircle
+                                    className="h-3.5 w-3.5"
+                                    strokeWidth={1.8}
+                                  />
+                                  {busy ? "…" : "Pausar"}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => void removeMember(mem.userId)}
+                                className={cn(
+                                  "flex items-center gap-1 rounded-md border px-2 py-1 text-[11.5px] font-semibold",
+                                  confirming
+                                    ? "border-red-300 bg-red-50 text-red-700"
+                                    : "text-text-2 hover:bg-accent"
+                                )}
+                                title="Sacar del grupo"
+                              >
+                                <UserMinus
+                                  className="h-3.5 w-3.5"
+                                  strokeWidth={1.8}
+                                />
+                                {confirming ? "¿Sacar?" : "Sacar"}
+                              </button>
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  {canGroup && (
+                    <div className="mt-1 border-t px-4 pb-1 pt-2">
+                      <button
+                        onClick={() => setAddOpen((v) => !v)}
+                        className="flex items-center gap-1.5 text-[12.5px] font-semibold text-brand-text hover:underline"
+                      >
+                        <UserPlus className="h-3.5 w-3.5" strokeWidth={2} />
+                        {addOpen ? "Ocultar" : "Agregar integrantes"}
+                      </button>
+                      {addOpen && (
+                        <div className="mt-1.5 overflow-hidden rounded-md border">
+                          {staffAddable.length === 0 && (
+                            <p className="px-3 py-2 text-[12.5px] text-text-3">
+                              No queda nadie para agregar
+                            </p>
+                          )}
+                          {staffAddable.map((s) => (
+                            <button
+                              key={s.userId}
+                              onClick={() => void addMember(s.userId)}
+                              className="flex w-full items-center gap-2.5 border-b px-3 py-1.5 text-left last:border-b-0 hover:bg-accent"
+                            >
+                              <Avatar
+                                name={s.name}
+                                online={isOnline(s.userId)}
+                                size="sm"
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[13px] font-semibold">
+                                  {s.name}
+                                </span>
+                                <span className="block text-[11px] text-text-3">
+                                  {roleLabel(s.role)}
+                                </span>
+                              </span>
+                              <Plus
+                                className="h-3.5 w-3.5 shrink-0 text-text-3"
+                                strokeWidth={2}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <footer className="flex items-center justify-between gap-2 border-t px-4 py-3">
+                  {canGroup ? (
+                    confirmDelete ? (
+                      <span className="flex items-center gap-2">
+                        <button
+                          onClick={() => setConfirmDelete(false)}
+                          className="rounded-md border px-2.5 py-2 text-[12.5px] font-semibold text-text-2 hover:bg-accent"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => void deleteGroup()}
+                          disabled={deleting}
+                          className="rounded-md bg-red-600 px-2.5 py-2 text-[12.5px] font-semibold text-white hover:opacity-90 disabled:opacity-40"
+                        >
+                          {deleting ? "Eliminando…" : "Eliminar para todos"}
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDelete(true)}
+                        className="flex items-center gap-1 rounded-md border border-red-200 px-2.5 py-2 text-[12.5px] font-semibold text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        Eliminar grupo
+                      </button>
+                    )
+                  ) : (
+                    <span />
+                  )}
+                  <button
+                    onClick={() => setProfileOpen(false)}
+                    className="rounded-md bg-brand px-3 py-2 text-[13px] font-semibold text-brand-fg hover:opacity-90"
+                  >
+                    Listo
+                  </button>
+                </footer>
+              </>
+            ) : (
+              <>
+                <header className="flex items-center justify-between border-b px-4 py-3">
+                  <h3 className="text-[15px] font-bold">Ficha del empleado</h3>
+                  <button
+                    onClick={() => setProfileOpen(false)}
+                    className="rounded-md p-1 text-text-3 hover:bg-accent"
+                    aria-label="Cerrar"
+                  >
+                    <X className="h-4 w-4" strokeWidth={1.8} />
+                  </button>
+                </header>
+                <div className="flex flex-col items-center gap-1.5 px-4 pb-2 pt-4">
+                  <Avatar
+                    name={roomMeta.displayName}
+                    online={peerOnline}
+                    size="md"
+                  />
+                  <p className="text-[15.5px] font-bold">
+                    {roomMeta.displayName}
+                  </p>
+                  <p className="text-[12px] text-text-2">
+                    {peerStaff ? roleLabel(peerStaff.role) : "Empleado"}
+                  </p>
+                  <span
+                    className={cn(
+                      "mt-0.5 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold",
+                      peerOnline
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "text-text-3"
+                    )}
                   >
                     <span
                       className={cn(
-                        "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded border",
-                        checked
-                          ? "border-brand bg-brand text-brand-fg"
-                          : "bg-background"
+                        "h-2 w-2 rounded-full",
+                        peerOnline ? "bg-emerald-500" : "bg-text-3"
                       )}
-                    >
-                      {checked && <Check className="h-3 w-3" strokeWidth={3} />}
-                    </span>
-                    <Avatar name={s.name} online={on} size="sm" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13.5px] font-semibold">
-                        {s.name}
-                      </span>
-                      <span className="block text-[11.5px] text-text-3">
-                        {roleLabel(s.role)}
-                      </span>
-                    </span>
+                    />
+                    {peerOnline ? "En línea ahora" : "Desconectado"}
+                  </span>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
+                  {!peerStaff && (
+                    <p className="py-2 text-[12.5px] text-text-3">
+                      Sin ficha de empleado (la cuenta no está en el equipo
+                      activo).
+                    </p>
+                  )}
+                  {peerStaff?.email && (
+                    <p className="flex items-center gap-2 border-b py-2 text-[13px] last:border-b-0">
+                      <Mail
+                        className="h-4 w-4 shrink-0 text-text-3"
+                        strokeWidth={1.7}
+                      />
+                      <span className="truncate">{peerStaff.email}</span>
+                    </p>
+                  )}
+                  {peerStaff?.employeeCode && (
+                    <p className="flex items-center gap-2 border-b py-2 text-[13px] last:border-b-0">
+                      <BadgeCheck
+                        className="h-4 w-4 shrink-0 text-text-3"
+                        strokeWidth={1.7}
+                      />
+                      Código de empleado: {peerStaff.employeeCode}
+                    </p>
+                  )}
+                  {peerStaff?.operationalRole && (
+                    <p className="flex items-center gap-2 border-b py-2 text-[13px] last:border-b-0">
+                      <Briefcase
+                        className="h-4 w-4 shrink-0 text-text-3"
+                        strokeWidth={1.7}
+                      />
+                      {peerStaff.operationalRole}
+                    </p>
+                  )}
+                  {peerStaff?.locality && (
+                    <p className="flex items-center gap-2 border-b py-2 text-[13px] last:border-b-0">
+                      <MapPin
+                        className="h-4 w-4 shrink-0 text-text-3"
+                        strokeWidth={1.7}
+                      />
+                      {peerStaff.locality}
+                    </p>
+                  )}
+                  {peerStaff && (
+                    <p className="flex items-center gap-2 py-2 text-[13px]">
+                      <Building2
+                        className="h-4 w-4 shrink-0 text-text-3"
+                        strokeWidth={1.7}
+                      />
+                      {peerStaff.officeName ? (
+                        <>
+                          Sucursal hoy: {peerStaff.officeName}
+                          {peerStaff.officeSince
+                            ? ` · desde ${fmtTime(peerStaff.officeSince)}`
+                            : ""}
+                        </>
+                      ) : (
+                        <span className="text-text-3">
+                          Sin sucursal elegida hoy
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </div>
+                <footer className="flex justify-end border-t px-4 py-3">
+                  <button
+                    onClick={() => setProfileOpen(false)}
+                    className="rounded-md bg-brand px-3 py-2 text-[13px] font-semibold text-brand-fg hover:opacity-90"
+                  >
+                    Cerrar
                   </button>
-                );
-              })}
-            </div>
-            <footer className="flex justify-end gap-2 border-t px-4 py-3">
-              <button
-                onClick={() => setManage(null)}
-                className="rounded-md border px-3 py-2 text-[13px] font-semibold text-text-2 hover:bg-accent"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => void saveManage()}
-                disabled={savingManage}
-                className="rounded-md bg-brand px-3 py-2 text-[13px] font-semibold text-brand-fg hover:opacity-90 disabled:opacity-40"
-              >
-                {savingManage ? "Guardando…" : "Guardar cambios"}
-              </button>
-            </footer>
+                </footer>
+              </>
+            )}
           </div>
         </div>
       )}

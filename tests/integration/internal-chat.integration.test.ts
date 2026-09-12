@@ -171,6 +171,7 @@ suite("chat interno — integración con copia de la BD real", () => {
       chat.updateGroupRoom({
         organizationId: orgId,
         roomId: groupId,
+        actorId: memberId,
         actorRole: "member",
         name: "Renombrado por miembro",
       })
@@ -179,6 +180,7 @@ suite("chat interno — integración con copia de la BD real", () => {
     await chat.updateGroupRoom({
       organizationId: orgId,
       roomId: groupId,
+      actorId: ownerId,
       actorRole: "owner",
       name: "Equipo renombrado",
       addUserIds: [outsiderId],
@@ -203,6 +205,7 @@ suite("chat interno — integración con copia de la BD real", () => {
     await chat.updateGroupRoom({
       organizationId: orgId,
       roomId: groupId,
+      actorId: ownerId,
       actorRole: "owner",
       removeUserIds: [outsiderId],
     });
@@ -244,6 +247,12 @@ suite("chat interno — integración con copia de la BD real", () => {
     const staff = await chat.listStaff(orgId);
     expect(staff.some((s) => s.userId === ownerId)).toBe(true);
     expect(staff.some((s) => s.name === outsiderName)).toBe(true);
+    // 022c — la ficha del empleado viaja con el perfil (email + staff_profile).
+    const ownerRow = staff.find((s) => s.userId === ownerId)!;
+    expect(typeof ownerRow.email).toBe("string");
+    expect("employeeCode" in ownerRow).toBe(true);
+    expect("operationalRole" in ownerRow).toBe(true);
+    expect("locality" in ownerRow).toBe(true);
   });
 
   it("presencia: onlineCount y flags de 'en línea' salen de las conexiones SSE", async () => {
@@ -276,5 +285,125 @@ suite("chat interno — integración con copia de la BD real", () => {
     found = rooms.find((r) => r.id === room.id);
     expect(found?.onlineCount).toBe(0);
     expect(found?.members.find((m) => m.userId === adminId)?.online).toBe(false);
+  });
+
+  it("022c — pausar a un integrante: sale de su lista, no escribe, se reactiva", async () => {
+    const room = await chat.createGroupRoom({
+      organizationId: orgId,
+      creatorId: ownerId,
+      creatorRole: "owner",
+      name: "Pausas QA",
+      memberIds: [memberId, adminId],
+    });
+
+    // Pausar al miembro (lo hace el dueño).
+    await chat.updateGroupRoom({
+      organizationId: orgId,
+      roomId: room.id,
+      actorId: ownerId,
+      actorRole: "owner",
+      pauseUserIds: [memberId],
+    });
+
+    // Para el miembro pausado la sala desaparece…
+    const mine = await chat.listRoomsForUser(orgId, memberId);
+    expect(mine.find((r) => r.id === room.id)).toBeUndefined();
+
+    // …y no puede escribir.
+    await expect(
+      chat.postChatMessage({
+        organizationId: orgId,
+        roomId: room.id,
+        senderId: memberId,
+        body: "estoy pausado",
+      })
+    ).rejects.toMatchObject({ status: 403 });
+
+    // Para los demás sigue visible: la pausa se marca y no cuenta como activo.
+    const forOwner = (await chat.listRoomsForUser(orgId, ownerId)).find(
+      (r) => r.id === room.id
+    );
+    expect(forOwner?.membersCount).toBe(2);
+    expect(forOwner?.pausedCount).toBe(1);
+    expect(forOwner?.members.find((m) => m.userId === memberId)?.paused).toBe(
+      true
+    );
+
+    // No te podés pausar a vos mismo.
+    await expect(
+      chat.updateGroupRoom({
+        organizationId: orgId,
+        roomId: room.id,
+        actorId: ownerId,
+        actorRole: "owner",
+        pauseUserIds: [ownerId],
+      })
+    ).rejects.toMatchObject({ status: 422 });
+
+    // Reactivar: vuelve a verla y puede escribir.
+    await chat.updateGroupRoom({
+      organizationId: orgId,
+      roomId: room.id,
+      actorId: ownerId,
+      actorRole: "owner",
+      unpauseUserIds: [memberId],
+    });
+    const back = await chat.listRoomsForUser(orgId, memberId);
+    expect(back.find((r) => r.id === room.id)).toBeDefined();
+    await expect(
+      chat.postChatMessage({
+        organizationId: orgId,
+        roomId: room.id,
+        senderId: memberId,
+        body: "volví",
+      })
+    ).resolves.toMatchObject({ senderId: memberId });
+  });
+
+  it("022c — eliminar grupo: solo dueño/admin, se lleva la historia, los DM no se tocan", async () => {
+    const room = await chat.createGroupRoom({
+      organizationId: orgId,
+      creatorId: ownerId,
+      creatorRole: "owner",
+      name: "Para borrar",
+      memberIds: [memberId],
+    });
+    await chat.postChatMessage({
+      organizationId: orgId,
+      roomId: room.id,
+      senderId: ownerId,
+      body: "mensaje que se va con el grupo",
+    });
+
+    // Un miembro no puede eliminarlo.
+    await expect(
+      chat.deleteGroupRoom({
+        organizationId: orgId,
+        roomId: room.id,
+        actorRole: "member",
+      })
+    ).rejects.toMatchObject({ status: 403 });
+
+    // El dueño sí: sala y mensajes desaparecen (cascade).
+    await chat.deleteGroupRoom({
+      organizationId: orgId,
+      roomId: room.id,
+      actorRole: "owner",
+    });
+    const rooms = await chat.listRoomsForUser(orgId, ownerId);
+    expect(rooms.find((r) => r.id === room.id)).toBeUndefined();
+    const orphan = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM chat_message WHERE room_id = ${room.id}`;
+    expect(orphan[0]!.n).toBe(0);
+
+    // Cordura: un DM no se elimina por esta vía.
+    const dm = await chat.createDmRoom(orgId, ownerId, memberId);
+    await expect(
+      chat.deleteGroupRoom({
+        organizationId: orgId,
+        roomId: dm.id,
+        actorRole: "owner",
+      })
+    ).rejects.toMatchObject({ status: 422 });
   });
 });

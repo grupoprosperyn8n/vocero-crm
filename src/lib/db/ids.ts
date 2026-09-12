@@ -40,6 +40,8 @@ const prefixes = {
   chatRoom: "chtr",
   chatRoomMember: "chmb",
   chatMessage: "chms",
+  // 023 — sucursal del día
+  staffOfficeDay: "ofd",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

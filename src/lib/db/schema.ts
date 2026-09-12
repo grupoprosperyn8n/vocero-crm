@@ -1229,6 +1229,35 @@ export const office = pgTable(
 );
 
 /* ============================================================
+ * 023 — Sucursal del día (el empleado marca dónde trabaja al
+ * entrar al CRM; rota entre oficinas y queda registro por fecha)
+ * ============================================================ */
+
+export const staffOfficeDay = pgTable(
+  "staff_office_day",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    officeId: text("office_id")
+      .notNull()
+      .references(() => office.id, { onDelete: "cascade" }),
+    /** Fecha local del negocio (America/Argentina/Buenos_Aires), YYYY-MM-DD. */
+    day: text("day").notNull(),
+    selectedAt: timestamp("selected_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("staff_office_day_uq").on(t.organizationId, t.userId, t.day),
+    index("staff_office_day_org_day_idx").on(t.organizationId, t.day),
+  ]
+);
+
+/* ============================================================
  * 022 — Chat interno del equipo (empleados ↔ empleados, con grupos)
  * ============================================================ */
 
@@ -1269,6 +1298,12 @@ export const chatRoomMember = pgTable(
     /** Cutoff de no leídos: el badge cuenta lo posterior a esta marca. */
     lastReadAt: timestamp("last_read_at").notNull().defaultNow(),
     joinedAt: timestamp("joined_at").notNull().defaultNow(),
+    /** 022c — pausa reversible: con fecha, el integrante queda suspendido del grupo. */
+    pausedAt: timestamp("paused_at"),
+    /** Quién lo pausó (informativo, para la ficha del grupo). */
+    pausedBy: text("paused_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
   },
   (t) => [
     uniqueIndex("chat_room_member_uq").on(t.roomId, t.userId),

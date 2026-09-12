@@ -3,6 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { publish } from "@/server/events/bus";
 import { onlineUserIds } from "@/server/events/presence";
+import { artDayKey } from "./office-day";
 
 /**
  * 022 — Chat interno del equipo.
@@ -76,7 +77,13 @@ export function normalizeGroupMembers(
   return Array.from(set);
 }
 
-export type ChatMemberView = { userId: string; name: string; online: boolean };
+export type ChatMemberView = {
+  userId: string;
+  name: string;
+  online: boolean;
+  /** 022c — integrante en pausa (no cuenta como miembro activo ni presencia). */
+  paused: boolean;
+};
 
 export type ChatMessageView = {
   id: string;
@@ -93,11 +100,16 @@ export type ChatRoomSummary = {
   name: string | null;
   displayName: string;
   membersCount: number;
+  /** 022c — integrantes pausados (no cuentan como miembros activos). */
+  pausedCount: number;
   /** 022 — miembros (sin contarme) con conexión viva ahora mismo. */
   onlineCount: number;
   unreadCount: number;
   lastMessage: Omit<ChatMessageView, "roomId"> | null;
   updatedAt: string;
+  createdAt: string;
+  /** Nombre de quien creó la sala (tarjeta del grupo). */
+  createdByName: string | null;
   members: ChatMemberView[];
 };
 
@@ -159,15 +171,18 @@ export async function listRoomsForUser(
     .where(
       and(
         eq(schema.chatRoomMember.organizationId, organizationId),
-        eq(schema.chatRoomMember.userId, meId)
+        eq(schema.chatRoomMember.userId, meId),
+        // 022c — si estoy pausado en una sala, no participo de ella.
+        isNull(schema.chatRoomMember.pausedAt)
       )
     );
   const roomIds = myRows.map((r) => r.roomId);
   if (roomIds.length === 0) return [];
 
   const roomRows = await db
-    .select()
+    .select({ room: schema.chatRoom, createdByName: schema.user.name })
     .from(schema.chatRoom)
+    .leftJoin(schema.user, eq(schema.user.id, schema.chatRoom.createdBy))
     .where(
       and(
         eq(schema.chatRoom.organizationId, organizationId),
@@ -180,6 +195,7 @@ export async function listRoomsForUser(
       roomId: schema.chatRoomMember.roomId,
       userId: schema.chatRoomMember.userId,
       name: schema.user.name,
+      pausedAt: schema.chatRoomMember.pausedAt,
     })
     .from(schema.chatRoomMember)
     .innerJoin(schema.user, eq(schema.user.id, schema.chatRoomMember.userId))
@@ -246,20 +262,27 @@ export async function listRoomsForUser(
   const membersByRoom = new Map<string, ChatMemberView[]>();
   for (const m of memberRows) {
     const list = membersByRoom.get(m.roomId) ?? [];
-    list.push({ userId: m.userId, name: m.name, online: online.has(m.userId) });
+    list.push({
+      userId: m.userId,
+      name: m.name,
+      online: online.has(m.userId) && !m.pausedAt,
+      paused: Boolean(m.pausedAt),
+    });
     membersByRoom.set(m.roomId, list);
   }
 
-  const summaries: ChatRoomSummary[] = roomRows.map((room) => {
+  const summaries: ChatRoomSummary[] = roomRows.map(({ room, createdByName }) => {
     const members = membersByRoom.get(room.id) ?? [];
+    const active = members.filter((m) => !m.paused);
     const last = lastByRoom.get(room.id);
     return {
       id: room.id,
       kind: room.kind === "group" ? "group" : "dm",
       name: room.name,
       displayName: resolveRoomDisplayName(room, members, meId),
-      membersCount: members.length,
-      onlineCount: members.filter((m) => m.userId !== meId && m.online).length,
+      membersCount: active.length,
+      pausedCount: members.length - active.length,
+      onlineCount: active.filter((m) => m.userId !== meId && m.online).length,
       unreadCount: unreadByRoom.get(room.id) ?? 0,
       lastMessage: last
         ? {
@@ -271,6 +294,8 @@ export async function listRoomsForUser(
           }
         : null,
       updatedAt: room.updatedAt.toISOString(),
+      createdAt: room.createdAt.toISOString(),
+      createdByName,
       members,
     };
   });
@@ -425,6 +450,25 @@ export async function postChatMessage(input: {
   await assertMembership(input.organizationId, input.roomId, input.senderId);
 
   const db = getDb();
+  // 022c — un integrante pausado no escribe hasta que lo reactiven.
+  const myMembership = await db
+    .select({ pausedAt: schema.chatRoomMember.pausedAt })
+    .from(schema.chatRoomMember)
+    .where(
+      and(
+        eq(schema.chatRoomMember.organizationId, input.organizationId),
+        eq(schema.chatRoomMember.roomId, input.roomId),
+        eq(schema.chatRoomMember.userId, input.senderId)
+      )
+    )
+    .limit(1);
+  if (myMembership[0]?.pausedAt) {
+    throw new ChatError(
+      403,
+      "paused",
+      "Estás en pausa en este grupo: pedile a un administrador que te reactive"
+    );
+  }
   const id = newId("chatMessage");
   const createdAt = new Date();
   await db.insert(schema.chatMessage).values({
@@ -536,10 +580,16 @@ export async function markRoomRead(
 export async function updateGroupRoom(input: {
   organizationId: string;
   roomId: string;
+  /** Quién administra: la pausa nunca puede caer sobre uno mismo. */
+  actorId: string;
   actorRole: string;
   name?: string;
   addUserIds?: string[];
   removeUserIds?: string[];
+  /** 022c — pausar integrantes (reversible). */
+  pauseUserIds?: string[];
+  /** 022c — reactivar integrantes pausados. */
+  unpauseUserIds?: string[];
 }): Promise<void> {
   if (!canCreateGroup(input.actorRole)) {
     throw new ChatError(403, "forbidden", "Solo el dueño o un administrador pueden administrar grupos");
@@ -599,6 +649,26 @@ export async function updateGroupRoom(input: {
 
   const remove = (input.removeUserIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean);
   if (remove.length > 0) {
+    // El grupo nunca queda sin compañía: siempre ≥ 2 integrantes activos.
+    const activeRows = await db
+      .select({ userId: schema.chatRoomMember.userId })
+      .from(schema.chatRoomMember)
+      .where(
+        and(
+          eq(schema.chatRoomMember.organizationId, input.organizationId),
+          eq(schema.chatRoomMember.roomId, room.id),
+          isNull(schema.chatRoomMember.pausedAt)
+        )
+      );
+    const activeIds = new Set(activeRows.map((r) => r.userId));
+    const removingActive = remove.filter((id) => activeIds.has(id)).length;
+    if (activeIds.size - removingActive < 2) {
+      throw new ChatError(
+        422,
+        "last_member",
+        "El grupo necesita al menos otro integrante"
+      );
+    }
     await db
       .delete(schema.chatRoomMember)
       .where(
@@ -610,21 +680,134 @@ export async function updateGroupRoom(input: {
       );
   }
 
+  // 022c — pausar integrantes: dejan de participar de la sala hasta reactivarlos.
+  const pause = (input.pauseUserIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean);
+  if (pause.length > 0) {
+    if (pause.includes(input.actorId)) {
+      throw new ChatError(422, "self_pause", "No te podés pausar a vos mismo");
+    }
+    const inRoom = await db
+      .select({ userId: schema.chatRoomMember.userId })
+      .from(schema.chatRoomMember)
+      .where(
+        and(
+          eq(schema.chatRoomMember.organizationId, input.organizationId),
+          eq(schema.chatRoomMember.roomId, room.id),
+          inArray(schema.chatRoomMember.userId, pause)
+        )
+      );
+    if (inRoom.length !== pause.length) {
+      throw new ChatError(422, "invalid_members", "Alguno de los elegidos no es parte del grupo");
+    }
+    await db
+      .update(schema.chatRoomMember)
+      .set({ pausedAt: new Date(), pausedBy: input.actorId })
+      .where(
+        and(
+          eq(schema.chatRoomMember.organizationId, input.organizationId),
+          eq(schema.chatRoomMember.roomId, room.id),
+          inArray(schema.chatRoomMember.userId, pause)
+        )
+      );
+  }
+
+  // 022c — reactivar: arranca de cero, sin acumular los no leídos de la pausa.
+  const unpause = (input.unpauseUserIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean);
+  if (unpause.length > 0) {
+    await db
+      .update(schema.chatRoomMember)
+      .set({ pausedAt: null, pausedBy: null, lastReadAt: new Date() })
+      .where(
+        and(
+          eq(schema.chatRoomMember.organizationId, input.organizationId),
+          eq(schema.chatRoomMember.roomId, room.id),
+          inArray(schema.chatRoomMember.userId, unpause)
+        )
+      );
+  }
+
   publish(input.organizationId, { type: "internal.room", data: { roomId: room.id } });
 }
 
-/** Equipo activo para los selectores de "nuevo chat" (sin datos sensibles). */
+/** 022c — Elimina un grupo y toda su historia (solo dueño/administrador). */
+export async function deleteGroupRoom(input: {
+  organizationId: string;
+  roomId: string;
+  actorRole: string;
+}): Promise<void> {
+  if (!canCreateGroup(input.actorRole)) {
+    throw new ChatError(403, "forbidden", "Solo el dueño o un administrador pueden eliminar grupos");
+  }
+  const db = getDb();
+  const rooms = await db
+    .select()
+    .from(schema.chatRoom)
+    .where(
+      and(
+        eq(schema.chatRoom.organizationId, input.organizationId),
+        eq(schema.chatRoom.id, input.roomId)
+      )
+    )
+    .limit(1);
+  const room = rooms[0];
+  if (!room) throw new ChatError(404, "not_found", "Ese grupo no existe");
+  if (room.kind !== "group") {
+    throw new ChatError(422, "not_group", "Un mensaje directo no se elimina");
+  }
+  // Integrantes y mensajes caen por cascade (FK on delete cascade).
+  await db.delete(schema.chatRoom).where(eq(schema.chatRoom.id, room.id));
+  publish(input.organizationId, { type: "internal.room", data: { roomId: room.id } });
+}
+
+export type StaffMemberView = {
+  userId: string;
+  name: string;
+  role: string;
+  online: boolean;
+  email: string | null;
+  employeeCode: string | null;
+  operationalRole: string | null;
+  locality: string | null;
+  /** 023 — sucursal que marcó hoy (si la eligió). */
+  officeName: string | null;
+  officeSince: string | null;
+};
+
+/** Equipo activo para los selectores del chat y la ficha del empleado. */
 export async function listStaff(
   organizationId: string
-): Promise<{ userId: string; name: string; role: string; online: boolean }[]> {
+): Promise<StaffMemberView[]> {
   const rows = await getDb()
     .select({
       userId: schema.member.userId,
       name: schema.user.name,
       role: schema.member.role,
+      email: schema.user.email,
+      employeeCode: schema.staffProfile.employeeCode,
+      operationalRole: schema.staffProfile.operationalRole,
+      locality: schema.staffProfile.locality,
+      officeName: schema.office.name,
+      officeCleanName: schema.office.cleanName,
+      officeSince: schema.staffOfficeDay.selectedAt,
     })
     .from(schema.member)
     .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+    .leftJoin(
+      schema.staffProfile,
+      and(
+        eq(schema.staffProfile.organizationId, schema.member.organizationId),
+        eq(schema.staffProfile.userId, schema.member.userId)
+      )
+    )
+    .leftJoin(
+      schema.staffOfficeDay,
+      and(
+        eq(schema.staffOfficeDay.organizationId, schema.member.organizationId),
+        eq(schema.staffOfficeDay.userId, schema.member.userId),
+        eq(schema.staffOfficeDay.day, artDayKey())
+      )
+    )
+    .leftJoin(schema.office, eq(schema.office.id, schema.staffOfficeDay.officeId))
     .where(
       and(
         eq(schema.member.organizationId, organizationId),
@@ -634,5 +817,16 @@ export async function listStaff(
     .orderBy(asc(schema.user.name));
   // 022 — presencia: el selector muestra quién está en línea ahora mismo.
   const online = new Set(onlineUserIds(organizationId));
-  return rows.map((row) => ({ ...row, online: online.has(row.userId) }));
+  return rows.map((row) => ({
+    userId: row.userId,
+    name: row.name,
+    role: row.role,
+    online: online.has(row.userId),
+    email: row.email,
+    employeeCode: row.employeeCode,
+    operationalRole: row.operationalRole,
+    locality: row.locality,
+    officeName: (row.officeCleanName ?? row.officeName)?.trim() ?? null,
+    officeSince: row.officeSince ? row.officeSince.toISOString() : null,
+  }));
 }
