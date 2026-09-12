@@ -141,6 +141,13 @@
       "when": 1789090612260,
       "tag": "0021_telegram_bot",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789239187977,
+      "tag": "0020_fantastic_morlun",
+      "breakpoints": true
     }
   ]
 }

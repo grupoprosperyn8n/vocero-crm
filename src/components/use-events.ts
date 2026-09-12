@@ -20,6 +20,10 @@ export type EventHandlers = {
   }) => void;
   /** 015 — Algo cambió en la agenda (también cuando agenda la IA). */
   onBookingUpdated?: (data: { bookingId: string }) => void;
+  /** 022 — Chat interno: mensaje nuevo en una sala del equipo. */
+  onInternalMessage?: (data: { roomId: string; message: unknown }) => void;
+  /** 022 — Cambió la lista de salas del chat interno (creada/renombrada/miembros). */
+  onInternalRoom?: (data: { roomId: string }) => void;
   /** Se llama tras RECONECTAR (no en la conexión inicial): catch-up con refetch. */
   onReconnect?: () => void;
 };
@@ -57,6 +61,12 @@ export function useEvents(handlers: EventHandlers): void {
     listen("lab.run", (d) => handlersRef.current.onLabRun?.(d as never));
     listen("booking.updated", (d) =>
       handlersRef.current.onBookingUpdated?.(d as never)
+    );
+    listen("internal.message", (d) =>
+      handlersRef.current.onInternalMessage?.(d as never)
+    );
+    listen("internal.room", (d) =>
+      handlersRef.current.onInternalRoom?.(d as never)
     );
 
     source.onerror = () => {

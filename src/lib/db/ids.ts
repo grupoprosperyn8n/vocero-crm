@@ -36,6 +36,10 @@ const prefixes = {
   // Equipo (sync LOGIN v2) — ficha del empleado + oficinas
   staffProfile: "stf",
   office: "off",
+  // 022 — chat interno del equipo
+  chatRoom: "chtr",
+  chatRoomMember: "chmb",
+  chatMessage: "chms",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

@@ -29,7 +29,11 @@ export type SseEvent =
         progress: { done: number; total: number };
         score?: number | null;
       };
-    };
+    }
+  /** 022 — Chat interno: mensaje nuevo en una sala del equipo. */
+  | { type: "internal.message"; data: { roomId: string; message: unknown } }
+  /** 022 — Cambió la lista de salas (creada, renombrada o miembros): refrescar. */
+  | { type: "internal.room"; data: { roomId: string } };
 
 const globalForBus = globalThis as unknown as { __voceroBus?: EventEmitter };
 

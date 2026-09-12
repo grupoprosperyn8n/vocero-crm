@@ -1227,3 +1227,73 @@ export const office = pgTable(
     index("office_org_active_idx").on(t.organizationId, t.active),
   ]
 );
+
+/* ============================================================
+ * 022 — Chat interno del equipo (empleados ↔ empleados, con grupos)
+ * ============================================================ */
+
+export const chatRoom = pgTable(
+  "chat_room",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** "dm": par de empleados; "group": sala con nombre, creada por dueño/administrador. */
+    kind: text("kind").notNull(),
+    /** Solo en grupos; en un DM el nombre se resuelve con el otro participante. */
+    name: text("name"),
+    /** user_id de quien creó la sala (dueño/administrador cuando es grupo). */
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("chat_room_org_idx").on(t.organizationId)]
+);
+
+export const chatRoomMember = pgTable(
+  "chat_room_member",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    roomId: text("room_id")
+      .notNull()
+      .references(() => chatRoom.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Cutoff de no leídos: el badge cuenta lo posterior a esta marca. */
+    lastReadAt: timestamp("last_read_at").notNull().defaultNow(),
+    joinedAt: timestamp("joined_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("chat_room_member_uq").on(t.roomId, t.userId),
+    index("chat_room_member_org_user_idx").on(t.organizationId, t.userId),
+  ]
+);
+
+export const chatMessage = pgTable(
+  "chat_message",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    roomId: text("room_id")
+      .notNull()
+      .references(() => chatRoom.id, { onDelete: "cascade" }),
+    senderId: text("sender_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("chat_message_org_idx").on(t.organizationId),
+    index("chat_message_room_created_idx").on(t.roomId, t.createdAt),
+  ]
+);

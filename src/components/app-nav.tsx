@@ -9,6 +9,7 @@ import {
   Inbox,
   Kanban,
   LogOut,
+  MessageSquareText,
   Settings,
   Sparkles,
   Users,
@@ -27,13 +28,16 @@ type NavItem = {
   href: string;
   label: string;
   icon: typeof Inbox;
-  badge?: boolean;
+  /** "crm" = no leídos de la Bandeja; "internal" = no leídos del chat interno (022). */
+  badge?: "crm" | "internal";
 };
 
 const NAV: NavItem[] = [
-  { href: "/inbox", label: "Bandeja", icon: Inbox, badge: true },
+  { href: "/inbox", label: "Bandeja", icon: Inbox, badge: "crm" },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
   { href: "/contacts", label: "Contactos", icon: Users },
+  // 022 — Chat interno del equipo: lo ve TODO el equipo (no es de Ajustes).
+  { href: "/chat", label: "Chat interno", icon: MessageSquareText, badge: "internal" },
   { href: "/agent", label: "Agente", icon: Sparkles },
   { href: "/lab", label: "Laboratorio", icon: FlaskConical },
 ];
@@ -90,6 +94,7 @@ export function AppNav({
   const pathname = usePathname();
   const router = useRouter();
   const [unread, setUnread] = useState(0);
+  const [internalUnread, setInternalUnread] = useState(0);
 
   async function refetchUnread() {
     const res = await fetch("/api/conversations").catch(() => null);
@@ -100,13 +105,23 @@ export function AppNav({
     setUnread(data.conversations.reduce((a, c) => a + c.unreadCount, 0));
   }
 
+  async function refetchInternalUnread() {
+    const res = await fetch("/api/internal/rooms").catch(() => null);
+    if (!res?.ok) return;
+    const data = (await res.json()) as { rooms: { unreadCount: number }[] };
+    setInternalUnread(data.rooms.reduce((a, r) => a + r.unreadCount, 0));
+  }
+
   useEffect(() => {
     void refetchUnread();
+    void refetchInternalUnread();
   }, []);
 
   useEvents({
     onMessageNew: () => void refetchUnread(),
     onConversationUpdated: () => void refetchUnread(),
+    onInternalMessage: () => void refetchInternalUnread(),
+    onInternalRoom: () => void refetchInternalUnread(),
   });
 
   const sha = commit || BUILD_COMMIT;
@@ -162,9 +177,14 @@ export function AppNav({
                 strokeWidth={1.8}
               />
               <span className="flex-1">{item.label}</span>
-              {item.badge && unread > 0 && (
+              {item.badge === "crm" && unread > 0 && (
                 <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-bold text-brand-fg">
                   {unread}
+                </span>
+              )}
+              {item.badge === "internal" && internalUnread > 0 && (
+                <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-bold text-brand-fg">
+                  {internalUnread}
                 </span>
               )}
             </Link>
