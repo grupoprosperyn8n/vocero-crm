@@ -24,6 +24,8 @@ export type EventHandlers = {
   onInternalMessage?: (data: { roomId: string; message: unknown }) => void;
   /** 022 — Cambió la lista de salas del chat interno (creada/renombrada/miembros). */
   onInternalRoom?: (data: { roomId: string }) => void;
+  /** 022 — Presencia: alguien del equipo se conectó o se desconectó. */
+  onPresenceUpdated?: (data: { userId: string; online: boolean }) => void;
   /** Se llama tras RECONECTAR (no en la conexión inicial): catch-up con refetch. */
   onReconnect?: () => void;
 };
@@ -67,6 +69,9 @@ export function useEvents(handlers: EventHandlers): void {
     );
     listen("internal.room", (d) =>
       handlersRef.current.onInternalRoom?.(d as never)
+    );
+    listen("presence.updated", (d) =>
+      handlersRef.current.onPresenceUpdated?.(d as never)
     );
 
     source.onerror = () => {

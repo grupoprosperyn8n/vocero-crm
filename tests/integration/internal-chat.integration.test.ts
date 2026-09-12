@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { dropPresence, touchPresence } from "@/server/events/presence";
 
 /**
  * Integración REAL del chat interno contra una copia local de producción
@@ -243,5 +244,37 @@ suite("chat interno — integración con copia de la BD real", () => {
     const staff = await chat.listStaff(orgId);
     expect(staff.some((s) => s.userId === ownerId)).toBe(true);
     expect(staff.some((s) => s.name === outsiderName)).toBe(true);
+  });
+
+  it("presencia: onlineCount y flags de 'en línea' salen de las conexiones SSE", async () => {
+    const room = await chat.createGroupRoom({
+      organizationId: orgId,
+      creatorId: ownerId,
+      creatorRole: "owner",
+      name: "Presencia QA",
+      memberIds: [adminId],
+    });
+
+    // Nadie conectado: el miembro figura desconectado.
+    let rooms = await chat.listRoomsForUser(orgId, ownerId);
+    let found = rooms.find((r) => r.id === room.id);
+    expect(found?.onlineCount).toBe(0);
+    expect(found?.members.find((m) => m.userId === adminId)?.online).toBe(false);
+
+    // El admin abre su SSE → en línea; sala y staff lo reflejan.
+    touchPresence(orgId, adminId);
+    rooms = await chat.listRoomsForUser(orgId, ownerId);
+    found = rooms.find((r) => r.id === room.id);
+    expect(found?.onlineCount).toBe(1);
+    expect(found?.members.find((m) => m.userId === adminId)?.online).toBe(true);
+    const staff = await chat.listStaff(orgId);
+    expect(staff.find((s) => s.userId === adminId)?.online).toBe(true);
+
+    // Y al cerrar la última conexión vuelve a desconectado.
+    dropPresence(orgId, adminId);
+    rooms = await chat.listRoomsForUser(orgId, ownerId);
+    found = rooms.find((r) => r.id === room.id);
+    expect(found?.onlineCount).toBe(0);
+    expect(found?.members.find((m) => m.userId === adminId)?.online).toBe(false);
   });
 });

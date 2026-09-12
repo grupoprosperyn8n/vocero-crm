@@ -33,7 +33,9 @@ export type SseEvent =
   /** 022 — Chat interno: mensaje nuevo en una sala del equipo. */
   | { type: "internal.message"; data: { roomId: string; message: unknown } }
   /** 022 — Cambió la lista de salas (creada, renombrada o miembros): refrescar. */
-  | { type: "internal.room"; data: { roomId: string } };
+  | { type: "internal.room"; data: { roomId: string } }
+  /** 022 — Presencia del equipo: alguien abrió o cerró su conexión SSE. */
+  | { type: "presence.updated"; data: { userId: string; online: boolean } };
 
 const globalForBus = globalThis as unknown as { __voceroBus?: EventEmitter };
 

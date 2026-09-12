@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Check,
   MessageSquareText,
+  Pencil,
   Plus,
   Search,
   Send,
@@ -19,9 +20,13 @@ import { useEvents } from "@/components/use-events";
  *
  * Dos columnas clásicas: la lista de salas (con buscador y no leídos) y el
  * hilo. Mensajes directos para cualquier empleado; los GRUPOS solo los crea
- * el dueño o un administrador (la UI esconde la opción y el servidor
- * revalida). Tiempo real por SSE (`internal.message`); el catch-up es por
- * refetch al reconectar.
+ * y administra el dueño o un administrador (la UI esconde la opción y el
+ * servidor revalida). Tiempo real por SSE (`internal.message`); el catch-up
+ * es por refetch al reconectar.
+ *
+ * 022b — Presencia: conexión SSE viva = empleado en línea (`presence.updated`).
+ * Los puntos verdes aparecen en la lista, en los selectores, en el hilo y en
+ * la tarjeta de miembros de cada grupo (quién está online DENTRO del grupo).
  */
 
 type ChatMessage = {
@@ -39,13 +44,14 @@ type ChatRoom = {
   name: string | null;
   displayName: string;
   membersCount: number;
+  onlineCount: number;
   unreadCount: number;
   lastMessage: Omit<ChatMessage, "roomId"> | null;
   updatedAt: string;
-  members: { userId: string; name: string }[];
+  members: { userId: string; name: string; online: boolean }[];
 };
 
-type StaffMember = { userId: string; name: string; role: string };
+type StaffMember = { userId: string; name: string; role: string; online: boolean };
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("es-AR", {
@@ -92,6 +98,125 @@ function sortRooms(rooms: ChatRoom[]): ChatRoom[] {
   });
 }
 
+/** Punto de presencia: verde = conexión viva, gris = desconectado. */
+function PresenceDot({
+  online,
+  size = 10,
+  className,
+}: {
+  online: boolean;
+  size?: 8 | 10;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-label={online ? "En línea" : "Desconectado"}
+      title={online ? "En línea" : "Desconectado"}
+      className={cn(
+        "inline-block shrink-0 rounded-full",
+        size === 8 ? "h-2 w-2 ring-1" : "h-2.5 w-2.5 ring-2",
+        online ? "bg-emerald-500" : "bg-zinc-300",
+        className
+      )}
+    />
+  );
+}
+
+/** Avatar con iniciales (o ícono de grupo) y punto de presencia opcional. */
+function Avatar({
+  name,
+  online,
+  group = false,
+  size = "md",
+}: {
+  name: string;
+  online?: boolean;
+  group?: boolean;
+  size?: "sm" | "md" | "lg";
+}) {
+  const box =
+    size === "sm"
+      ? "h-8 w-8 text-[11px]"
+      : size === "lg"
+        ? "h-11 w-11 text-[14px]"
+        : "h-9 w-9 text-[12px]";
+  return (
+    <span className="relative inline-flex shrink-0">
+      <span
+        className={cn(
+          "flex items-center justify-center rounded-full",
+          box,
+          group
+            ? "bg-brand-soft text-brand-text"
+            : "border bg-subtle text-text-2",
+          "font-bold"
+        )}
+      >
+        {group ? (
+          <Users className={size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"} strokeWidth={1.8} />
+        ) : (
+          initials(name)
+        )}
+      </span>
+      {online !== undefined && (
+        <PresenceDot
+          online={online}
+          size={size === "lg" ? 10 : 8}
+          className={cn(
+            "absolute -bottom-0.5 -right-0.5",
+            size === "sm" && "bottom-0 right-0"
+          )}
+        />
+      )}
+    </span>
+  );
+}
+
+/** Pila de avatares de los otros miembros, cada uno con su punto. */
+function MemberStack({
+  members,
+  meId,
+  isOnline,
+  max = 4,
+}: {
+  members: { userId: string; name: string }[];
+  meId: string;
+  isOnline: (userId: string) => boolean;
+  max?: number;
+}) {
+  const others = members.filter((m) => m.userId !== meId);
+  const shown = others.slice(0, max);
+  const rest = others.length - shown.length;
+  return (
+    <span className="flex items-center -space-x-1.5">
+      {shown.map((m) => {
+        const on = isOnline(m.userId);
+        return (
+          <span
+            key={m.userId}
+            className="relative inline-flex"
+            title={`${m.name} · ${on ? "en línea" : "desconectado"}`}
+          >
+            <span className="flex h-5 w-5 items-center justify-center rounded-full border bg-background text-[8.5px] font-bold text-text-2">
+              {initials(m.name)}
+            </span>
+            <PresenceDot
+              online={on}
+              size={8}
+              className="absolute -bottom-px -right-px"
+            />
+          </span>
+        );
+      })}
+      {rest > 0 && (
+        <span className="relative inline-flex h-5 w-5 items-center justify-center rounded-full border bg-subtle text-[8.5px] font-bold text-text-3">
+          +{rest}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const canGroup = role === "owner" || role === "admin";
 
@@ -100,9 +225,15 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [roomMeta, setRoomMeta] = useState<ChatRoom | null>(null);
   const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
   const [modal, setModal] = useState<null | "dm" | "group">(null);
+  const [manage, setManage] = useState<{ name: string; sel: Set<string> } | null>(
+    null
+  );
+  const [savingManage, setSavingManage] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupSel, setGroupSel] = useState<Set<string>>(new Set());
   const [dmQuery, setDmQuery] = useState("");
@@ -113,27 +244,58 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
 
   const activeIdRef = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const nearBottomRef = useRef(true);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const isOnline = useCallback(
+    (userId: string) => onlineIds.has(userId),
+    [onlineIds]
+  );
+
+  const mergeOnline = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setOnlineIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, []);
 
   const loadRooms = useCallback(async () => {
     const res = await fetch("/api/internal/rooms").catch(() => null);
     if (!res?.ok) return;
     const data = (await res.json()) as { rooms: ChatRoom[] };
     setRooms(sortRooms(data.rooms));
+    mergeOnline(
+      data.rooms.flatMap((r) =>
+        r.members.filter((m) => m.online).map((m) => m.userId)
+      )
+    );
     setLoading(false);
-  }, []);
+  }, [mergeOnline]);
 
   const loadStaff = useCallback(async () => {
     const res = await fetch("/api/internal/staff").catch(() => null);
     if (!res?.ok) return;
     const data = (await res.json()) as { staff: StaffMember[] };
     setStaff(data.staff);
-  }, []);
+    mergeOnline(data.staff.filter((s) => s.online).map((s) => s.userId));
+  }, [mergeOnline]);
 
   const openRoom = useCallback(
     async (roomId: string) => {
       activeIdRef.current = roomId;
       setActiveId(roomId);
       setFormError(null);
+      setMembersOpen(false);
+      nearBottomRef.current = true;
       const res = await fetch(`/api/internal/rooms/${roomId}/messages`).catch(
         () => null
       );
@@ -141,20 +303,25 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
       const data = (await res.json()) as { room: ChatRoom; messages: ChatMessage[] };
       setRoomMeta(data.room);
       setMessages(data.messages);
+      mergeOnline(
+        data.room.members.filter((m) => m.online).map((m) => m.userId)
+      );
       setRooms((prev) =>
         sortRooms(prev.map((r) => (r.id === roomId ? { ...r, unreadCount: 0 } : r)))
       );
       void fetch(`/api/internal/rooms/${roomId}/read`, { method: "POST" }).catch(
         () => null
       );
+      requestAnimationFrame(() => inputRef.current?.focus());
     },
-    []
+    [mergeOnline]
   );
 
   const backToList = useCallback(() => {
     activeIdRef.current = null;
     setActiveId(null);
     setRoomMeta(null);
+    setMembersOpen(false);
     setMessages([]);
   }, []);
 
@@ -199,15 +366,38 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
     onInternalRoom: () => {
       void loadRooms();
     },
+    onPresenceUpdated: (data) => {
+      setOnlineIds((prev) => {
+        const next = new Set(prev);
+        if (data.online) next.add(data.userId);
+        else next.delete(data.userId);
+        return next;
+      });
+    },
     onReconnect: () => {
       void loadRooms();
+      void loadStaff();
       if (activeIdRef.current) void openRoom(activeIdRef.current);
     },
   });
 
+  // Auto-scroll: siempre si el mensaje es mío; si llegó uno ajeno, solo si
+  // ya estaba abajo (leer historial no te tira al final).
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const last = messages.length > 0 ? messages[messages.length - 1] : null;
+    if (!last) return;
+    if (last.senderId === meId || nearBottomRef.current) {
+      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length]);
+
+  function onListScroll() {
+    const el = listRef.current;
+    if (!el) return;
+    nearBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+  }
 
   async function sendMessage() {
     const body = text.trim();
@@ -244,6 +434,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
         )
       );
       setText("");
+      inputRef.current?.focus();
     } finally {
       setSending(false);
     }
@@ -276,6 +467,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
     const room = await createRoom({ kind: "dm", userId });
     if (room) {
       setModal(null);
+      setMembersOpen(false);
       setDmQuery("");
       void openRoom(room.id);
     }
@@ -304,26 +496,115 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
     }
   }
 
+  function openManage() {
+    if (roomMeta?.kind !== "group") return;
+    setFormError(null);
+    setMembersOpen(false);
+    setManage({
+      name: roomMeta.name ?? roomMeta.displayName,
+      sel: new Set(roomMeta.members.map((m) => m.userId)),
+    });
+  }
+
+  async function saveManage() {
+    if (!manage || !roomMeta || savingManage) return;
+    const orig = new Set(roomMeta.members.map((m) => m.userId));
+    const name = manage.name.trim();
+    if (!name) {
+      setFormError("Poné un nombre para el grupo");
+      return;
+    }
+    if (manage.sel.size < 2) {
+      setFormError("El grupo necesita al menos otro integrante");
+      return;
+    }
+    const add = [...manage.sel].filter((id) => !orig.has(id));
+    const remove = [...orig].filter(
+      (id) => !manage.sel.has(id) && id !== meId
+    );
+    const patch: Record<string, unknown> = {};
+    if (name !== (roomMeta.name ?? "")) patch.name = name;
+    if (add.length > 0) patch.addUserIds = add;
+    if (remove.length > 0) patch.removeUserIds = remove;
+    if (Object.keys(patch).length === 0) {
+      setManage(null);
+      return;
+    }
+    setSavingManage(true);
+    try {
+      const res = await fetch(`/api/internal/rooms/${roomMeta.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      }).catch(() => null);
+      if (!res) {
+        setFormError("Sin conexión con el servidor");
+        return;
+      }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as
+          | { error?: { message?: string } }
+          | null;
+        setFormError(data?.error?.message ?? "No se pudo guardar el grupo");
+        return;
+      }
+      setManage(null);
+      await loadRooms();
+      if (activeIdRef.current) await openRoom(activeIdRef.current);
+    } finally {
+      setSavingManage(false);
+    }
+  }
+
   const filteredRooms = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return rooms;
     return rooms.filter(
       (r) =>
         r.displayName.toLowerCase().includes(q) ||
-        (r.lastMessage?.body ?? "").toLowerCase().includes(q)
+        (r.lastMessage?.body ?? "").toLowerCase().includes(q) ||
+        r.members.some(
+          (m) => m.userId !== meId && m.name.toLowerCase().includes(q)
+        )
     );
-  }, [rooms, query]);
+  }, [rooms, query, meId]);
 
-  const staffForPicker = useMemo(
-    () => staff.filter((s) => s.userId !== meId),
-    [staff, meId]
-  );
+  // Selectores: todos menos yo; primero los que están en línea, y por nombre.
+  const staffForPicker = useMemo(() => {
+    return staff
+      .filter((s) => s.userId !== meId)
+      .sort((a, b) => {
+        if (a.online !== b.online) return a.online ? -1 : 1;
+        return a.name.localeCompare(b.name, "es");
+      });
+  }, [staff, meId]);
 
   const dmStaff = useMemo(() => {
     const q = dmQuery.trim().toLowerCase();
     if (!q) return staffForPicker;
     return staffForPicker.filter((s) => s.name.toLowerCase().includes(q));
   }, [staffForPicker, dmQuery]);
+
+  const teamOnline = useMemo(
+    () => staffForPicker.filter((s) => isOnline(s.userId)).length,
+    [staffForPicker, isOnline]
+  );
+
+  const groupSelOnline = useMemo(
+    () => [...groupSel].filter((id) => isOnline(id)).length,
+    [groupSel, isOnline]
+  );
+
+  // Encabezado del hilo: presencia del otro (DM) o del grupo.
+  const peer =
+    roomMeta?.kind === "dm"
+      ? roomMeta.members.find((m) => m.userId !== meId) ?? null
+      : null;
+  const peerOnline = peer ? isOnline(peer.userId) : false;
+  const groupOnline = roomMeta?.kind === "group"
+    ? roomMeta.members.filter((m) => m.userId !== meId && isOnline(m.userId))
+        .length
+    : 0;
 
   return (
     <div className="flex h-full">
@@ -400,20 +681,36 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
             <p className="px-4 py-6 text-[13px] text-text-3">Cargando…</p>
           )}
           {!loading && filteredRooms.length === 0 && (
-            <div className="px-4 py-8 text-center">
-              <p className="text-[13.5px] font-semibold">No hay conversaciones</p>
-              <p className="mt-1 text-[12.5px] text-text-3">
-                {query
-                  ? "Nada coincide con la búsqueda"
-                  : canGroup
+            <div className="flex flex-col items-center px-4 py-10 text-center">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-subtle">
+                {query ? (
+                  <Search className="h-5 w-5 text-text-3" strokeWidth={1.6} />
+                ) : (
+                  <MessageSquareText className="h-5 w-5 text-text-3" strokeWidth={1.6} />
+                )}
+              </span>
+              <p className="mt-2.5 text-[13.5px] font-semibold">
+                {query ? "Nada coincide con la búsqueda" : "No hay conversaciones"}
+              </p>
+              {!query && (
+                <p className="mt-1 text-[12.5px] text-text-3">
+                  {canGroup
                     ? "Empezá un mensaje directo o creá un grupo"
                     : "Empezá un mensaje directo con un compañero"}
-              </p>
+                </p>
+              )}
             </div>
           )}
           {filteredRooms.map((room) => {
             const active = room.id === activeId;
             const last = room.lastMessage;
+            const peerRow =
+              room.kind === "dm"
+                ? room.members.find((m) => m.userId !== meId) ?? null
+                : null;
+            const onlineCount = room.members.filter(
+              (m) => m.userId !== meId && isOnline(m.userId)
+            ).length;
             return (
               <button
                 key={room.id}
@@ -423,19 +720,16 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                   active ? "bg-brand-tint" : "hover:bg-accent"
                 )}
               >
-                <span
-                  className={cn(
-                    "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-bold",
-                    room.kind === "group"
-                      ? "bg-brand-soft text-brand-text"
-                      : "bg-subtle text-text-2 border"
-                  )}
-                >
-                  {room.kind === "group" ? (
-                    <Users className="h-4 w-4" strokeWidth={1.8} />
-                  ) : (
-                    initials(room.displayName)
-                  )}
+                <span className="mt-0.5">
+                  <Avatar
+                    name={room.displayName}
+                    group={room.kind === "group"}
+                    online={
+                      room.kind === "dm" && peerRow
+                        ? isOnline(peerRow.userId)
+                        : undefined
+                    }
+                  />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
@@ -460,24 +754,62 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                       </span>
                     )}
                   </span>
+                  {room.kind === "group" && (
+                    <span className="mt-1 flex items-center gap-2">
+                      <MemberStack
+                        members={room.members}
+                        meId={meId}
+                        isOnline={isOnline}
+                      />
+                      <span
+                        className={cn(
+                          "text-[11px]",
+                          onlineCount > 0
+                            ? "font-semibold text-emerald-600"
+                            : "text-text-3"
+                        )}
+                      >
+                        {onlineCount > 0
+                          ? `${onlineCount} en línea`
+                          : "Nadie en línea"}
+                      </span>
+                    </span>
+                  )}
                 </span>
               </button>
             );
           })}
+        </div>
+
+        <div className="flex items-center gap-1.5 border-t px-3 py-1.5 text-[11.5px]">
+          {teamOnline > 0 ? (
+            <>
+              <PresenceDot online size={8} />
+              <span className="font-semibold text-emerald-600">
+                {teamOnline} del equipo en línea
+              </span>
+            </>
+          ) : (
+            <span className="text-text-3">Nadie más en línea ahora</span>
+          )}
         </div>
       </aside>
 
       {/* Hilo */}
       <section
         className={cn(
-          "min-w-0 flex-1 flex-col",
+          "relative min-w-0 flex-1 flex-col",
           activeId ? "flex" : "hidden lg:flex"
         )}
       >
         {!activeId && (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-            <MessageSquareText className="h-8 w-8 text-text-3" strokeWidth={1.6} />
-            <p className="text-[14px] font-semibold">Chat interno del equipo</p>
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-subtle">
+              <MessageSquareText className="h-6 w-6 text-text-3" strokeWidth={1.6} />
+            </span>
+            <p className="mt-1 text-[14px] font-semibold">
+              Chat interno del equipo
+            </p>
             <p className="max-w-sm text-[13px] text-text-3">
               Elegí una conversación de la izquierda, abrí un mensaje directo o
               {canGroup ? " creá un grupo." : " escribile a un compañero."}
@@ -495,33 +827,128 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
               >
                 <ArrowLeft className="h-[18px] w-[18px]" strokeWidth={1.8} />
               </button>
-              <span
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11.5px] font-bold",
-                  roomMeta?.kind === "group"
-                    ? "bg-brand-soft text-brand-text"
-                    : "border bg-subtle text-text-2"
-                )}
-              >
-                {roomMeta?.kind === "group" ? (
-                  <Users className="h-4 w-4" strokeWidth={1.8} />
-                ) : (
-                  initials(roomMeta?.displayName ?? "")
-                )}
-              </span>
+              <Avatar
+                name={roomMeta?.displayName ?? ""}
+                group={roomMeta?.kind === "group"}
+                online={roomMeta?.kind === "dm" ? peerOnline : undefined}
+                size="md"
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[14px] font-bold">
                   {roomMeta?.displayName ?? ""}
                 </p>
-                <p className="text-[11.5px] text-text-3">
-                  {roomMeta?.kind === "group"
-                    ? `Grupo · ${roomMeta.membersCount} miembros`
-                    : "Mensaje directo"}
+                <p className="text-[11.5px]">
+                  {roomMeta?.kind === "group" ? (
+                    <>
+                      <span className="text-text-3">
+                        {roomMeta.membersCount} miembros
+                      </span>
+                      <span className="text-text-3"> · </span>
+                      <span
+                        className={cn(
+                          groupOnline > 0
+                            ? "font-semibold text-emerald-600"
+                            : "text-text-3"
+                        )}
+                      >
+                        {groupOnline > 0
+                          ? `${groupOnline} en línea`
+                          : "nadie en línea"}
+                      </span>
+                    </>
+                  ) : peerOnline ? (
+                    <span className="font-semibold text-emerald-600">
+                      En línea
+                    </span>
+                  ) : (
+                    <span className="text-text-3">Desconectado</span>
+                  )}
                 </p>
               </div>
+              {roomMeta?.kind === "group" && (
+                <div className="relative">
+                  <button
+                    onClick={() => setMembersOpen((v) => !v)}
+                    className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12.5px] font-semibold text-text-2 hover:bg-accent"
+                    aria-label="Miembros del grupo"
+                  >
+                    <Users className="h-4 w-4" strokeWidth={1.8} />
+                    {roomMeta.membersCount}
+                  </button>
+                </div>
+              )}
             </header>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5">
+            {/* Tarjeta de miembros: quién está online DENTRO del grupo */}
+            {membersOpen && roomMeta?.kind === "group" && (
+              <>
+                <button
+                  aria-label="Cerrar miembros"
+                  tabIndex={-1}
+                  className="fixed inset-0 z-40 cursor-default"
+                  onClick={() => setMembersOpen(false)}
+                />
+                <div className="absolute right-3 top-[52px] z-50 w-72 overflow-hidden rounded-md border bg-background shadow-pop">
+                  <div className="flex items-center justify-between border-b px-3 py-2">
+                    <p className="text-[11.5px] font-bold uppercase tracking-wide text-text-3">
+                      Miembros ({roomMeta.membersCount})
+                    </p>
+                    {canGroup && (
+                      <button
+                        onClick={openManage}
+                        className="flex items-center gap-1 text-[12px] font-semibold text-brand-text hover:underline"
+                      >
+                        <Pencil className="h-3 w-3" strokeWidth={2} />
+                        Editar grupo
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-72 overflow-y-auto py-1">
+                    {roomMeta.members.map((mem) => {
+                      const on = isOnline(mem.userId);
+                      const me = mem.userId === meId;
+                      return (
+                        <button
+                          key={mem.userId}
+                          disabled={me}
+                          onClick={() => {
+                            if (!me) void startDm(mem.userId);
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-2.5 px-3 py-1.5 text-left",
+                            me ? "cursor-default" : "hover:bg-accent"
+                          )}
+                        >
+                          <Avatar name={mem.name} online={on} size="sm" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13px] font-semibold">
+                              {mem.name}
+                              {me ? " (vos)" : ""}
+                            </span>
+                            <span
+                              className={cn(
+                                "block text-[11px]",
+                                on
+                                  ? "font-semibold text-emerald-600"
+                                  : "text-text-3"
+                              )}
+                            >
+                              {on ? "En línea" : "Desconectado"}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div
+              ref={listRef}
+              onScroll={onListScroll}
+              className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5"
+            >
               {messages.length === 0 && (
                 <p className="py-10 text-center text-[13px] text-text-3">
                   Todavía no hay mensajes — escribí el primero.
@@ -550,9 +977,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                       <div
                         className={cn(
                           "max-w-[85%] rounded-md border px-3 py-2 sm:max-w-[70%]",
-                          mine
-                            ? "border-brand bg-brand-tint"
-                            : "bg-subtle"
+                          mine ? "border-brand bg-brand-tint" : "bg-subtle"
                         )}
                       >
                         {!mine && roomMeta?.kind === "group" && (
@@ -593,6 +1018,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                 }}
               >
                 <textarea
+                  ref={inputRef}
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => {
@@ -664,25 +1090,31 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                   Sin resultados
                 </p>
               )}
-              {dmStaff.map((s) => (
-                <button
-                  key={s.userId}
-                  onClick={() => void startDm(s.userId)}
-                  className="flex w-full items-center gap-2.5 px-4 py-2 text-left hover:bg-accent"
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-subtle text-[11.5px] font-bold text-text-2">
-                    {initials(s.name)}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13.5px] font-semibold">
-                      {s.name}
+              {dmStaff.map((s) => {
+                const on = isOnline(s.userId);
+                return (
+                  <button
+                    key={s.userId}
+                    onClick={() => void startDm(s.userId)}
+                    className="flex w-full items-center gap-2.5 px-4 py-2 text-left hover:bg-accent"
+                  >
+                    <Avatar name={s.name} online={on} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13.5px] font-semibold">
+                        {s.name}
+                      </span>
+                      <span className="block text-[11.5px] text-text-3">
+                        {roleLabel(s.role)}
+                      </span>
                     </span>
-                    <span className="block text-[11.5px] text-text-3">
-                      {roleLabel(s.role)}
-                    </span>
-                  </span>
-                </button>
-              ))}
+                    {on && (
+                      <span className="shrink-0 text-[11px] font-semibold text-emerald-600">
+                        En línea
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -715,8 +1147,13 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                 className="w-full rounded-md border bg-background px-3 py-2 text-[13.5px] outline-none placeholder:text-text-3 focus:border-brand"
               />
             </div>
-            <p className="px-4 pt-3 text-[12.5px] font-semibold text-text-2">
+            <p className="flex items-center gap-1.5 px-4 pt-3 text-[12.5px] font-semibold text-text-2">
               Integrantes ({groupSel.size + 1})
+              {groupSelOnline > 0 && (
+                <span className="inline-flex items-center gap-1 font-normal text-emerald-600">
+                  · {groupSelOnline} en línea
+                </span>
+              )}
             </p>
             {formError && (
               <p className="px-4 pt-1 text-[12px] font-semibold text-red-600">
@@ -726,6 +1163,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
             <div className="min-h-0 flex-1 overflow-y-auto py-1">
               {staffForPicker.map((s) => {
                 const checked = groupSel.has(s.userId);
+                const on = isOnline(s.userId);
                 return (
                   <button
                     key={s.userId}
@@ -749,6 +1187,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                     >
                       {checked && <Check className="h-3 w-3" strokeWidth={3} />}
                     </span>
+                    <Avatar name={s.name} online={on} size="sm" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13.5px] font-semibold">
                         {s.name}
@@ -757,6 +1196,11 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                         {roleLabel(s.role)}
                       </span>
                     </span>
+                    {on && (
+                      <span className="shrink-0 text-[11px] font-semibold text-emerald-600">
+                        En línea
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -774,6 +1218,101 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                 className="rounded-md bg-brand px-3 py-2 text-[13px] font-semibold text-brand-fg hover:opacity-90 disabled:opacity-40"
               >
                 Crear grupo
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: gestionar grupo (dueño/admin) */}
+      {manage && roomMeta?.kind === "group" && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay p-4">
+          <div className="flex max-h-[80vh] w-full max-w-md flex-col rounded-md border bg-background shadow-pop">
+            <header className="flex items-center justify-between border-b px-4 py-3">
+              <h3 className="text-[15px] font-bold">Gestionar grupo</h3>
+              <button
+                onClick={() => setManage(null)}
+                className="rounded-md p-1 text-text-3 hover:bg-accent"
+                aria-label="Cerrar"
+              >
+                <X className="h-4 w-4" strokeWidth={1.8} />
+              </button>
+            </header>
+            <div className="border-b px-4 py-3">
+              <label className="mb-1 block text-[12.5px] font-semibold text-text-2">
+                Nombre del grupo
+              </label>
+              <input
+                value={manage.name}
+                onChange={(e) =>
+                  setManage((m) => (m ? { ...m, name: e.target.value } : m))
+                }
+                maxLength={80}
+                className="w-full rounded-md border bg-background px-3 py-2 text-[13.5px] outline-none placeholder:text-text-3 focus:border-brand"
+              />
+            </div>
+            <p className="px-4 pt-3 text-[12.5px] font-semibold text-text-2">
+              Integrantes ({manage.sel.size})
+            </p>
+            {formError && (
+              <p className="px-4 pt-1 text-[12px] font-semibold text-red-600">
+                {formError}
+              </p>
+            )}
+            <div className="min-h-0 flex-1 overflow-y-auto py-1">
+              {staffForPicker.map((s) => {
+                const checked = manage.sel.has(s.userId);
+                const on = isOnline(s.userId);
+                return (
+                  <button
+                    key={s.userId}
+                    onClick={() =>
+                      setManage((m) => {
+                        if (!m) return m;
+                        const next = new Set(m.sel);
+                        if (next.has(s.userId)) next.delete(s.userId);
+                        else next.add(s.userId);
+                        return { ...m, sel: next };
+                      })
+                    }
+                    className="flex w-full items-center gap-2.5 px-4 py-2 text-left hover:bg-accent"
+                  >
+                    <span
+                      className={cn(
+                        "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded border",
+                        checked
+                          ? "border-brand bg-brand text-brand-fg"
+                          : "bg-background"
+                      )}
+                    >
+                      {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+                    </span>
+                    <Avatar name={s.name} online={on} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13.5px] font-semibold">
+                        {s.name}
+                      </span>
+                      <span className="block text-[11.5px] text-text-3">
+                        {roleLabel(s.role)}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <footer className="flex justify-end gap-2 border-t px-4 py-3">
+              <button
+                onClick={() => setManage(null)}
+                className="rounded-md border px-3 py-2 text-[13px] font-semibold text-text-2 hover:bg-accent"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => void saveManage()}
+                disabled={savingManage}
+                className="rounded-md bg-brand px-3 py-2 text-[13px] font-semibold text-brand-fg hover:opacity-90 disabled:opacity-40"
+              >
+                {savingManage ? "Guardando…" : "Guardar cambios"}
               </button>
             </footer>
           </div>

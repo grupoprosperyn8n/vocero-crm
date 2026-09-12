@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, gt, inArray, isNull, ne } from "drizzle-orm"
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { publish } from "@/server/events/bus";
+import { onlineUserIds } from "@/server/events/presence";
 
 /**
  * 022 — Chat interno del equipo.
@@ -75,7 +76,7 @@ export function normalizeGroupMembers(
   return Array.from(set);
 }
 
-export type ChatMemberView = { userId: string; name: string };
+export type ChatMemberView = { userId: string; name: string; online: boolean };
 
 export type ChatMessageView = {
   id: string;
@@ -92,6 +93,8 @@ export type ChatRoomSummary = {
   name: string | null;
   displayName: string;
   membersCount: number;
+  /** 022 — miembros (sin contarme) con conexión viva ahora mismo. */
+  onlineCount: number;
   unreadCount: number;
   lastMessage: Omit<ChatMessageView, "roomId"> | null;
   updatedAt: string;
@@ -238,10 +241,12 @@ export async function listRoomsForUser(
     unreadRows.map((r) => [r.roomId, Number(r.n)])
   );
 
+  // 022 — presencia: conexión SSE viva = en línea (in-process).
+  const online = new Set(onlineUserIds(organizationId));
   const membersByRoom = new Map<string, ChatMemberView[]>();
   for (const m of memberRows) {
     const list = membersByRoom.get(m.roomId) ?? [];
-    list.push({ userId: m.userId, name: m.name });
+    list.push({ userId: m.userId, name: m.name, online: online.has(m.userId) });
     membersByRoom.set(m.roomId, list);
   }
 
@@ -254,6 +259,7 @@ export async function listRoomsForUser(
       name: room.name,
       displayName: resolveRoomDisplayName(room, members, meId),
       membersCount: members.length,
+      onlineCount: members.filter((m) => m.userId !== meId && m.online).length,
       unreadCount: unreadByRoom.get(room.id) ?? 0,
       lastMessage: last
         ? {
@@ -610,8 +616,8 @@ export async function updateGroupRoom(input: {
 /** Equipo activo para los selectores de "nuevo chat" (sin datos sensibles). */
 export async function listStaff(
   organizationId: string
-): Promise<{ userId: string; name: string; role: string }[]> {
-  return getDb()
+): Promise<{ userId: string; name: string; role: string; online: boolean }[]> {
+  const rows = await getDb()
     .select({
       userId: schema.member.userId,
       name: schema.user.name,
@@ -626,4 +632,7 @@ export async function listStaff(
       )
     )
     .orderBy(asc(schema.user.name));
+  // 022 — presencia: el selector muestra quién está en línea ahora mismo.
+  const online = new Set(onlineUserIds(organizationId));
+  return rows.map((row) => ({ ...row, online: online.has(row.userId) }));
 }
