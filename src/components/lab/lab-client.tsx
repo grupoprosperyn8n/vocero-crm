@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -14,6 +14,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEvents } from "@/components/use-events";
+import { BusinessForm } from "@/components/lab/business-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -62,6 +63,7 @@ export function LabClient() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"eval" | "datos">("eval");
 
   const refetchRuns = useCallback(async () => {
     const res = await fetch("/api/lab/runs").catch(() => null);
@@ -116,10 +118,37 @@ export function LabClient() {
     void refetchRuns();
   }
 
-  if (!aiConfigured) {
-    return (
-      <div className="flex h-full flex-col">
-        <Header running={false} launching={false} onLaunch={() => {}} disabled />
+  const running = runs.some((r) => r.status === "running");
+
+  return (
+    <div className="flex h-full flex-col overflow-y-auto">
+      <Header
+        running={running}
+        launching={launching}
+        onLaunch={() => void launch()}
+        disabled={!aiConfigured}
+      />
+      {error && <p className="px-4 pt-3 text-sm text-destructive sm:px-6">{error}</p>}
+
+      <div className="flex gap-2 px-4 pt-3 sm:px-6">
+        <TabButton active={tab === "eval"} onClick={() => setTab("eval")}>
+          Evaluación
+        </TabButton>
+        <TabButton active={tab === "datos"} onClick={() => setTab("datos")}>
+          Datos del negocio
+        </TabButton>
+      </div>
+
+      {tab === "datos" && (
+        <BusinessForm
+          onRunLab={() => {
+            setTab("eval");
+            void launch();
+          }}
+        />
+      )}
+
+      {!aiConfigured && tab === "eval" && (
         <div className="m-6 rounded-lg border border-brand-soft bg-brand-tint p-8 text-center">
           <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
           <p className="font-medium">
@@ -131,23 +160,9 @@ export function LabClient() {
             instancia y vuelve aquí.
           </p>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  const running = runs.some((r) => r.status === "running");
-
-  return (
-    <div className="flex h-full flex-col overflow-y-auto">
-      <Header
-        running={running}
-        launching={launching}
-        onLaunch={() => void launch()}
-        disabled={false}
-      />
-      {error && <p className="px-4 pt-3 text-sm text-destructive sm:px-6">{error}</p>}
-
-      {running && progress && (
+      {aiConfigured && tab === "eval" && running && progress && (
         <div className="mx-6 mt-4 rounded-lg border bg-card p-4">
           <div className="mb-2 flex items-center justify-between text-sm">
             <span className="font-medium">Evaluando personas…</span>
@@ -164,6 +179,7 @@ export function LabClient() {
         </div>
       )}
 
+      {aiConfigured && tab === "eval" ? (
       <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-[280px_1fr]">
         <HistoryList
           runs={runs}
@@ -180,7 +196,31 @@ export function LabClient() {
           </div>
         )}
       </div>
+      ) : null}
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+        active
+          ? "border-brand bg-brand-tint font-medium"
+          : "border-border-strong bg-card hover:bg-accent"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
