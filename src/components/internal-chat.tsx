@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
-  BadgeCheck,
   Briefcase,
   Building2,
   Check,
@@ -1753,15 +1752,6 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                         strokeWidth={1.7}
                       />
                       <span className="truncate">{peerStaff.email}</span>
-                    </p>
-                  )}
-                  {peerStaff?.employeeCode && (
-                    <p className="flex items-center gap-2 border-b py-2 text-[13px] last:border-b-0">
-                      <BadgeCheck
-                        className="h-4 w-4 shrink-0 text-text-3"
-                        strokeWidth={1.7}
-                      />
-                      Código de empleado: {peerStaff.employeeCode}
                     </p>
                   )}
                   {peerStaff?.operationalRole && (
