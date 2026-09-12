@@ -21,8 +21,26 @@ const bodySchema = z.object({
   externalId: z.string().trim().min(1).max(200),
   /** Nombre visible del cliente (perfil de la plataforma), si se conoce. */
   profileName: z.string().trim().min(1).max(120).optional(),
-  /** Texto del mensaje. Solo texto por ahora; adjuntos en una versión futura. */
+  /** Texto del mensaje. */
   text: z.string().trim().min(1).max(4096),
+  /**
+   * Adjuntos del mensaje (canal web): base64 crudo, SIN prefijo `data:`.
+   * Cada uno se guarda como un mensaje propio del tipo que le corresponde
+   * (image/audio/video/document) con su archivo en disco.
+   */
+  attachments: z
+    .array(
+      z
+        .object({
+          fileName: z.string().trim().max(200).optional(),
+          mimeType: z.string().trim().max(120).optional(),
+          caption: z.string().trim().max(1024).optional(),
+          dataBase64: z.string().min(8).max(12 * 1024 * 1024),
+        })
+        .strict()
+    )
+    .max(8)
+    .optional(),
   /**
    * Id del mensaje en la herramienta emisora. Idempotencia dura: si se
    * reenvía el mismo eventId (reintento de un webhook), no se duplica nada.
@@ -58,7 +76,7 @@ const bodySchema = z.object({
  * (header `x-api-key`).
  *
  * Respuesta 200:
- *   { ok, conversationId, contactId, messageId, deduplicated, handoff }
+ *   { ok, conversationId, contactId, messageId, deduplicated, attachments, handoff }
  * `conversationId` es el asa para responder por /api/bot/messages.
  */
 export async function POST(req: Request) {
@@ -90,6 +108,7 @@ export async function POST(req: Request) {
     text: body.data.text,
     eventId: body.data.eventId ?? null,
     timestamp: body.data.timestamp,
+    attachments: body.data.attachments ?? null,
     handoff,
   });
 

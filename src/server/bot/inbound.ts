@@ -7,6 +7,7 @@ import { publish } from "@/server/events/bus";
 import { toHandoffReason } from "@/server/bot/handoff";
 import { assignConversation } from "@/server/router/assign";
 import { ingestInboundMessage } from "@/server/inbox/ingest";
+import { kindFromMime } from "@/server/whatsapp/media";
 import {
   BSUID_PREFIX,
   FB_PREFIX,
@@ -30,6 +31,10 @@ import {
  * herramienta responde después por /api/bot/messages (salida) sin volver a
  * preguntar nada.
  *
+ * Adjuntos (canal web): si el emisor ya tiene el binario (el widget manda
+ * base64 sin prefijo `data:`), lo trae en `attachments` y acá se guarda como
+ * mensaje propio del hilo con su archivo en disco (sin pasar por Graph).
+ *
  * Por diseño NO dispara el agente interno (scheduleAgent=false): el emisor es
  * el cerebro; si algún día el CRM contesta solo a un canal, se invierte ahí.
  */
@@ -39,12 +44,22 @@ export type ExternalHandoff = {
   topic?: string;
 };
 
+/** Adjunto ya recibido (canal web): base64 crudo, sin prefijo data:. */
+export type ExternalInboundAttachment = {
+  fileName?: string | null;
+  mimeType?: string | null;
+  caption?: string | null;
+  dataBase64: string;
+};
+
 export type ExternalInboundResult = {
   /** true = el eventId ya se había ingerido: sin efectos (idempotencia). */
   deduplicated: boolean;
   conversationId: string;
   contactId: string;
   messageId: string;
+  /** Adjuntos guardados como mensajes propios (canal web). */
+  attachments: number;
   /** Estado de la derivación pedida (null = no se pidió). */
   handoff: {
     applied: boolean;
@@ -86,6 +101,68 @@ function toEpochTimestamp(input?: string): string {
   const d = new Date(input);
   if (!Number.isNaN(d.getTime())) return String(Math.floor(d.getTime() / 1000));
   return String(Math.floor(Date.now() / 1000));
+}
+
+/** Tope de adjuntos por mensaje, y de base64 individual (~9 MB crudos). */
+const MAX_EXTERNAL_ATTACHMENTS = 8;
+const MAX_ATTACHMENT_B64_CHARS = 12 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 9 * 1024 * 1024;
+
+/**
+ * Guarda los adjuntos ya recibidos (base64) como mensajes propios del hilo:
+ * cada uno con su asset en disco y su evento SSE (misma ingesta común que el
+ * texto: dedup, unread, bandeja). Un adjunto inválido se descarta solo —
+ * jamás tumba el mensaje de texto que lo acompaña.
+ */
+async function ingestExternalAttachments(input: {
+  organizationId: string;
+  identity: ResolvedIdentity;
+  baseEventId: string;
+  timestamp: string;
+  attachments: ExternalInboundAttachment[];
+}): Promise<number> {
+  let count = 0;
+  const list = input.attachments.slice(0, MAX_EXTERNAL_ATTACHMENTS);
+  for (let i = 0; i < list.length; i++) {
+    const att = list[i];
+    if (!att) continue;
+    try {
+      const b64 = String(att.dataBase64 || "");
+      if (!b64 || b64.length > MAX_ATTACHMENT_B64_CHARS) continue;
+      const data = Buffer.from(b64, "base64");
+      if (!data.length || data.length > MAX_ATTACHMENT_BYTES) continue;
+      const mimeType =
+        String(att.mimeType || "").trim() || "application/octet-stream";
+      const kind = kindFromMime(mimeType);
+      const caption = String(att.caption || "").trim().slice(0, 1024) || null;
+      await ingestInboundMessage({
+        organizationId: input.organizationId,
+        identity: input.identity,
+        waMessageId: `${input.baseEventId}:adj:${i}`,
+        type: kind,
+        text: caption,
+        timestamp: input.timestamp,
+        media: {
+          kind,
+          waMediaId: null,
+          mimeType,
+          fileName: String(att.fileName || "").trim().slice(0, 200) || null,
+          caption,
+          payload: null,
+          fetchStatus: "available",
+          data,
+        },
+        scheduleAgent: false,
+      });
+      count += 1;
+    } catch (err) {
+      console.warn(
+        `[bot/inbound] adjunto ${i} descartado:`,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+  return count;
 }
 
 async function assigneeName(userId: string): Promise<{ id: string; name: string } | null> {
@@ -164,6 +241,8 @@ export async function ingestExternalInbound(input: {
   text: string;
   eventId?: string | null;
   timestamp?: string;
+  /** Adjuntos ya recibidos (canal web): base64, se guardan como mensajes. */
+  attachments?: ExternalInboundAttachment[] | null;
   handoff?: ExternalHandoff | null;
 }): Promise<ExternalInboundResult> {
   const { organizationId, channel } = input;
@@ -199,11 +278,21 @@ export async function ingestExternalInbound(input: {
       conversationId: existing.conversationId,
       contactId: existing.contactId,
       messageId: "",
+      attachments: 0,
       handoff: null,
     };
   }
 
   const { contact, conversation, message } = ingested;
+
+  const attachmentCount = await ingestExternalAttachments({
+    organizationId,
+    identity,
+    baseEventId: input.eventId?.trim() || message.id,
+    timestamp: toEpochTimestamp(input.timestamp),
+    attachments: input.attachments ?? [],
+  });
+
   const handoff = input.handoff
     ? await applyExternalHandoff(organizationId, conversation.id, input.handoff)
     : null;
@@ -213,6 +302,7 @@ export async function ingestExternalInbound(input: {
     conversationId: conversation.id,
     contactId: contact.id,
     messageId: message.id,
+    attachments: attachmentCount,
     handoff,
   };
 }

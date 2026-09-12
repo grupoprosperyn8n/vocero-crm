@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody } from "@/lib/api";
+import { webCorsPreflight, withWebCors } from "@/lib/web-cors";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
   channelDisabledResponse,
@@ -59,7 +60,7 @@ function validatePost(data: z.infer<typeof postSchema>): string | null {
  * que ya mostró) más el estado de la conversación (handoffAt/topic), para
  * que el chat.js sepa cuándo el hilo pasó a un humano.
  */
-export async function POST(req: Request) {
+async function handlePost(req: Request) {
   if (!isChannelEnabled("web")) return channelDisabledResponse();
 
   const ip = clientIp(req);
@@ -103,7 +104,7 @@ export async function POST(req: Request) {
   return Response.json({ ok: true });
 }
 
-export async function GET(req: Request) {
+async function handleGet(req: Request) {
   if (!isChannelEnabled("web")) return channelDisabledResponse();
 
   const url = new URL(req.url);
@@ -133,4 +134,17 @@ export async function GET(req: Request) {
 
   const result = await webMessages(organizationId, sessionId, after);
   return Response.json(result);
+}
+
+/* Superficies públicas del widget: CORS abierto (ver @/lib/web-cors). */
+export async function POST(req: Request): Promise<Response> {
+  return withWebCors(await handlePost(req));
+}
+
+export async function GET(req: Request): Promise<Response> {
+  return withWebCors(await handleGet(req));
+}
+
+export function OPTIONS(): Response {
+  return webCorsPreflight();
 }

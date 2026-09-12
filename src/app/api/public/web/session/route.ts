@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { apiError } from "@/lib/api";
+import { webCorsPreflight, withWebCors } from "@/lib/web-cors";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
   channelDisabledResponse,
@@ -21,7 +22,7 @@ function clientIp(req: Request): string {
  * escribir en ese hilo. Rate limit por IP: un visitante genera pocas
  * sesiones; un bot de spam, muchas.
  */
-export async function POST(req: Request) {
+async function handlePost(req: Request) {
   if (!isChannelEnabled("web")) return channelDisabledResponse();
 
   const ip = clientIp(req);
@@ -35,4 +36,13 @@ export async function POST(req: Request) {
 
   const sessionId = randomBytes(24).toString("base64url");
   return Response.json({ sessionId });
+}
+
+/* Superficies públicas del widget: CORS abierto (ver @/lib/web-cors). */
+export async function POST(req: Request): Promise<Response> {
+  return withWebCors(await handlePost(req));
+}
+
+export function OPTIONS(): Response {
+  return webCorsPreflight();
 }

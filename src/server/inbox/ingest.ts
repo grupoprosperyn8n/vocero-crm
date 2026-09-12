@@ -5,6 +5,7 @@ import { normalizeMx } from "@/lib/meta/client";
 import { publish } from "@/server/events/bus";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
 import { ensureAssetDownload } from "@/server/media/download";
+import { saveMediaFile } from "@/server/whatsapp/media";
 import type { Channel } from "@/lib/channels";
 import type {
   WebhookMediaPayload,
@@ -52,6 +53,12 @@ export type MediaInput = {
   caption: string | null;
   payload: unknown;
   fetchStatus: "available" | "pending";
+  /**
+   * Canal web: el emisor YA tiene el binario (base64 del widget) — se
+   * persiste directo en disco, sin pasar por Graph. Transitorio: no se
+   * guarda en la base.
+   */
+  data?: Buffer | Uint8Array | null;
 };
 
 /**
@@ -116,17 +123,26 @@ async function attachMediaAsset(
 ): Promise<typeof schema.mediaAsset.$inferSelect | null> {
   try {
     const db = getDb();
+    const assetId = newId("mediaAsset");
+    // Canal web: el binario vino con el mensaje — a disco antes del registro,
+    // así el asset nace "available" y servible (sin pasar por Graph).
+    let storagePath: string | null = null;
+    if (media.data && media.fetchStatus === "available") {
+      storagePath = await saveMediaFile(organizationId, assetId, media.data);
+    }
     const inserted = await db
       .insert(schema.mediaAsset)
       .values({
-        id: newId("mediaAsset"),
+        id: assetId,
         organizationId,
         kind: media.kind,
         waMediaId: media.waMediaId,
         mimeType: media.mimeType,
         fileName: media.fileName,
+        fileSize: media.data ? media.data.length : null,
         caption: media.caption,
         payload: media.payload ?? null,
+        storagePath,
         fetchStatus: media.fetchStatus,
       })
       .returning();
