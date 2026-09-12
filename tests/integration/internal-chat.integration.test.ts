@@ -406,4 +406,44 @@ suite("chat interno — integración con copia de la BD real", () => {
       })
     ).rejects.toMatchObject({ status: 422 });
   });
+
+  it("022c — salir del grupo: el dueño/admin puede eliminarse a sí mismo (guard ≥2 activos)", async () => {
+    // Con 3 integrantes: el dueño se va y el grupo sigue para los demás.
+    const room = await chat.createGroupRoom({
+      organizationId: orgId,
+      creatorId: ownerId,
+      creatorRole: "owner",
+      name: "Salida QA",
+      memberIds: [memberId, adminId],
+    });
+    await chat.updateGroupRoom({
+      organizationId: orgId,
+      roomId: room.id,
+      actorId: ownerId,
+      actorRole: "owner",
+      removeUserIds: [ownerId],
+    });
+    const mineGone = await chat.listRoomsForUser(orgId, ownerId);
+    expect(mineGone.find((r) => r.id === room.id)).toBeUndefined();
+    const forMember = await chat.listRoomsForUser(orgId, memberId);
+    expect(forMember.find((r) => r.id === room.id)).toBeDefined();
+
+    // Con 2 integrantes: irse dejaría el grupo con 1 → bloqueado.
+    const small = await chat.createGroupRoom({
+      organizationId: orgId,
+      creatorId: ownerId,
+      creatorRole: "owner",
+      name: "Salida QA chico",
+      memberIds: [memberId],
+    });
+    await expect(
+      chat.updateGroupRoom({
+        organizationId: orgId,
+        roomId: small.id,
+        actorId: ownerId,
+        actorRole: "owner",
+        removeUserIds: [ownerId],
+      })
+    ).rejects.toMatchObject({ status: 422 });
+  });
 });

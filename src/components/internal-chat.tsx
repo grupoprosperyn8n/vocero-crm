@@ -7,6 +7,7 @@ import {
   Briefcase,
   Building2,
   Check,
+  LogOut,
   Mail,
   MapPin,
   MessageSquareText,
@@ -279,6 +280,8 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const [savingName, setSavingName] = useState(false);
   const [pausedBusy, setPausedBusy] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  /** 022c — salir del grupo (eliminarse a sí mismo): dueño/administrador. */
+  const [leaving, setLeaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -620,6 +623,39 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
     }
     setConfirmRemoveId(null);
     await patchRoom({ removeUserIds: [userId] });
+  }
+
+  // 022c — "Salir del grupo": el dueño/administrador también puede eliminarse
+  // a sí mismo del grupo (permanente, con doble toque de confirmación).
+  async function leaveGroup() {
+    if (!roomMeta || leaving) return;
+    if (confirmRemoveId !== meId) {
+      setConfirmRemoveId(meId);
+      return;
+    }
+    setConfirmRemoveId(null);
+    setLeaving(true);
+    try {
+      const res = await fetch(`/api/internal/rooms/${roomMeta.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ removeUserIds: [meId] }),
+      }).catch(() => null);
+      if (!res || !res.ok) {
+        const data = res
+          ? ((await res.json().catch(() => null)) as {
+              error?: { message?: string };
+            } | null)
+          : null;
+        setFormError(data?.error?.message ?? "No se pudo salir del grupo");
+        return;
+      }
+      setProfileOpen(false);
+      backToList();
+      await loadRooms();
+    } finally {
+      setLeaving(false);
+    }
   }
 
   async function addMember(userId: string) {
@@ -1516,7 +1552,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                                     ? "border-red-300 bg-red-50 text-red-700"
                                     : "text-text-2 hover:bg-accent"
                                 )}
-                                title="Sacar del grupo"
+                                title="Sacar del grupo (permanente)"
                               >
                                 <UserMinus
                                   className="h-3.5 w-3.5"
@@ -1525,6 +1561,26 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                                 {confirming ? "¿Sacar?" : "Sacar"}
                               </button>
                             </span>
+                          )}
+                          {canGroup && me && (
+                            <button
+                              onClick={() => void leaveGroup()}
+                              disabled={leaving}
+                              className={cn(
+                                "flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11.5px] font-semibold",
+                                confirmRemoveId === mem.userId
+                                  ? "border-red-300 bg-red-50 text-red-700"
+                                  : "text-text-2 hover:bg-accent"
+                              )}
+                              title="Salir del grupo (te elimina permanentemente)"
+                            >
+                              <LogOut className="h-3.5 w-3.5" strokeWidth={1.8} />
+                              {leaving
+                                ? "…"
+                                : confirmRemoveId === mem.userId
+                                  ? "¿Salir?"
+                                  : "Salir"}
+                            </button>
                           )}
                         </div>
                       );
