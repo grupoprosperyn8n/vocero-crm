@@ -6,12 +6,14 @@ import { useRouter } from "next/navigation";
 import {
   Archive,
   ArchiveRestore,
+  Building2,
+  Loader2,
   MessageSquareText,
   Search,
   Send,
   UserPlus,
 } from "lucide-react";
-import type { ContactDto } from "@/lib/types";
+import type { ContactDto, SystemClientSearchResultDto } from "@/lib/types";
 import { formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +25,7 @@ import { priorityRank } from "@/server/leads/priority";
 import { PriorityBadge } from "@/components/pipeline/priority-picker";
 import { NewContactDialog } from "./new-contact-dialog";
 import { StartConversation } from "./start-conversation";
+import { CHANNEL_LABEL, ContactCard, SystemClientCard } from "./client-card";
 
 export function ContactsClient() {
   const router = useRouter();
@@ -34,6 +37,12 @@ export function ContactsClient() {
   const [editing, setEditing] = useState<ContactDto | null>(null);
   const [creando, setCreando] = useState(false);
   const [escribiendo, setEscribiendo] = useState<ContactDto | null>(null);
+  const [sysQuery, setSysQuery] = useState("");
+  const [sysResults, setSysResults] = useState<SystemClientSearchResultDto[] | null>(null);
+  const [sysLoading, setSysLoading] = useState(false);
+  const [sysError, setSysError] = useState<string | null>(null);
+  const [sysCard, setSysCard] = useState<SystemClientSearchResultDto | null>(null);
+  const [contactCard, setContactCard] = useState<ContactDto | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Mismo rescate que en la Bandeja: lo tecleado antes de que hidrate el JS
@@ -74,6 +83,41 @@ export function ContactsClient() {
     const t = setTimeout(() => void refetch(), 250);
     return () => clearTimeout(t);
   }, [refetch]);
+
+  // Buscador del sistema de seguros (backend SGSA): con 2+ caracteres busca
+  // solo, con un retardo corto para no disparar una consulta por tecla.
+  useEffect(() => {
+    const q = sysQuery.trim();
+    if (q.length < 2) {
+      setSysResults(null);
+      setSysError(null);
+      setSysLoading(false);
+      return;
+    }
+    setSysLoading(true);
+    const t = setTimeout(() => {
+      void (async () => {
+        const res = await fetch(
+          `/api/clients/search?q=${encodeURIComponent(q)}`
+        ).catch(() => null);
+        const data = (await res?.json().catch(() => null)) as
+          | {
+              results?: SystemClientSearchResultDto[];
+              error?: { message?: string };
+            }
+          | null;
+        setSysLoading(false);
+        if (!res?.ok) {
+          setSysResults(null);
+          setSysError(data?.error?.message ?? "No se pudo buscar en el sistema");
+          return;
+        }
+        setSysError(null);
+        setSysResults(data?.results ?? []);
+      })();
+    }, 350);
+    return () => clearTimeout(t);
+  }, [sysQuery]);
 
   async function patch(id: string, body: Record<string, unknown>) {
     await fetch(`/api/contacts/${id}`, {
@@ -133,6 +177,79 @@ export function ContactsClient() {
         </div>
       </header>
 
+      <div className="border-b bg-subtle px-4 py-3 sm:px-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <Building2 className="h-4 w-4 text-muted-foreground" strokeWidth={1.8} />
+          <p className="text-sm font-medium">
+            Buscar cliente en el sistema de seguros
+          </p>
+          <span className="text-[11px] text-muted-foreground">
+            por nombre, DNI o teléfono · solo lectura
+          </span>
+        </div>
+        <div className="relative mt-2 max-w-xl">
+          {sysLoading ? (
+            <Loader2 className="absolute left-2.5 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
+          ) : (
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          )}
+          <Input
+            value={sysQuery}
+            onChange={(e) => setSysQuery(e.target.value)}
+            placeholder="Ej: PEREZ · 3415617096 · 30123456…"
+            aria-label="Buscar cliente en el sistema de seguros"
+            className="w-full pl-8"
+          />
+        </div>
+        {sysError && <p className="mt-2 text-xs text-destructive">{sysError}</p>}
+        {sysResults && sysResults.length === 0 && !sysLoading && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Sin resultados en el sistema para «{sysQuery.trim()}».
+          </p>
+        )}
+        {sysResults && sysResults.length > 0 && (
+          <ul className="mt-2 max-w-3xl divide-y rounded-md border bg-card">
+            {sysResults.map((r) => (
+              <li key={r.client.recordId}>
+                <button
+                  type="button"
+                  onClick={() => setSysCard(r)}
+                  title="Ver la tarjeta del cliente"
+                  className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-subtle"
+                >
+                  <ContactAvatar
+                    name={`${r.client.nombre} ${r.client.apellido}`.trim() || "Cliente"}
+                    seed={r.client.recordId}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {r.client.nombre} {r.client.apellido}
+                      {r.client.estado ? (
+                        <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                          {r.client.estado}
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {r.client.dni ? `DNI ${r.client.dni} · ` : ""}
+                      {r.client.telefono
+                        ? formatPhone(r.client.telefono)
+                        : "sin teléfono"}
+                      {r.client.oficina ? ` · ${r.client.oficina}` : ""}
+                    </p>
+                  </div>
+                  {r.crm ? (
+                    <Badge variant="secondary">En el CRM</Badge>
+                  ) : (
+                    <Badge variant="outline">No está en el CRM</Badge>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         {contacts.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
@@ -166,11 +283,29 @@ export function ContactsClient() {
                 <ContactAvatar name={c.name} seed={c.id} />
                 {/* El 60% mínimo es lo que empuja los botones a su propio
                     renglón en el teléfono en vez de exprimir el nombre. */}
-                <div className="min-w-[60%] flex-1 sm:min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setContactCard(c)}
+                  title="Ver la tarjeta del contacto"
+                  className="min-w-[60%] flex-1 rounded-md text-left sm:min-w-0"
+                >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-sm font-medium">
                       {c.name}
                     </span>
+                    {c.isTest && (
+                      <Badge
+                        variant="secondary"
+                        title="Dato de prueba: marcado para limpieza"
+                      >
+                        Prueba
+                      </Badge>
+                    )}
+                    {c.channel && (
+                      <Badge variant="outline">
+                        {CHANNEL_LABEL[c.channel] ?? c.channel}
+                      </Badge>
+                    )}
                     {c.priority && <PriorityBadge value={c.priority} />}
                     {c.stageName && (
                       <Badge variant="outline">{c.stageName}</Badge>
@@ -191,7 +326,7 @@ export function ContactsClient() {
                     {formatPhone(c.phone)}
                     {c.notes ? ` · ${c.notes.slice(0, 60)}` : ""}
                   </p>
-                </div>
+                </button>
                 <div className="ml-auto flex shrink-0 items-center gap-1.5">
                   <Button
                     variant="ghost"
@@ -286,6 +421,32 @@ export function ContactsClient() {
           onOpenExisting={(contactId) => {
             setCreando(false);
             router.push(`/inbox?contact=${contactId}`);
+          }}
+        />
+      )}
+
+      {sysCard && (
+        <SystemClientCard
+          result={sysCard}
+          onClose={() => setSysCard(null)}
+          onOpenConversation={(contactId) => {
+            setSysCard(null);
+            router.push(`/inbox?contact=${contactId}`);
+          }}
+        />
+      )}
+
+      {contactCard && (
+        <ContactCard
+          contact={contactCard}
+          onClose={() => setContactCard(null)}
+          onOpenConversation={(contactId) => {
+            setContactCard(null);
+            router.push(`/inbox?contact=${contactId}`);
+          }}
+          onEdit={() => {
+            setEditing(contactCard);
+            setContactCard(null);
           }}
         />
       )}

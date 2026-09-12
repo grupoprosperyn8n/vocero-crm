@@ -162,6 +162,20 @@
       "when": 1789244068124,
       "tag": "0022_staff_office_day",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1789250000000,
+      "tag": "0023_contact_is_test",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1789251000000,
+      "tag": "0024_contact_external_ref",
+      "breakpoints": true
     }
   ]
 }

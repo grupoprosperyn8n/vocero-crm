@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
@@ -19,8 +19,40 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
   const contact = await getContactById(session.organizationId, id);
   if (!contact) return apiError(404, "not_found", "Contacto no encontrado");
   const stageRow = await getContactStage(session.organizationId, id);
+  const db = getDb();
+  // Tarjeta del contacto: además de los datos, sus conversaciones por canal
+  // (para poder abrir el chat desde ahí, pedido Diego 2026-09-12).
+  const conversations = await db
+    .select({
+      id: schema.conversation.id,
+      channel: schema.conversation.channel,
+      isTest: schema.conversation.isTest,
+      closedAt: schema.conversation.closedAt,
+      lastMessageAt: schema.conversation.lastMessageAt,
+    })
+    .from(schema.conversation)
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        session.organizationId,
+        eq(schema.conversation.contactId, id)
+      )
+    )
+    .orderBy(
+      desc(
+        sql`coalesce(${schema.conversation.lastMessageAt}, ${schema.conversation.createdAt})`
+      )
+    )
+    .limit(10);
   return Response.json({
     contact: serializeContact(contact),
+    conversations: conversations.map((c) => ({
+      id: c.id,
+      channel: c.channel,
+      isTest: c.isTest,
+      closed: Boolean(c.closedAt),
+      lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
+    })),
     stage: stageRow
       ? {
           id: stageRow.stage.id,

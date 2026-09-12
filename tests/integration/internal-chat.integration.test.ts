@@ -185,7 +185,7 @@ suite("chat interno — integración con copia de la BD real", () => {
       name: "Equipo renombrado",
       addUserIds: [outsiderId],
     });
-    let mine = (await chat.listRoomsForUser(orgId, memberId)).find(
+    const mine = (await chat.listRoomsForUser(orgId, memberId)).find(
       (r) => r.id === groupId
     );
     expect(mine?.displayName).toBe("Equipo renombrado");

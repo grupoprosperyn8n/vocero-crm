@@ -108,6 +108,67 @@ export type ContactDto = {
   priority?: PriorityValue | null;
   /** Lo que se sabe del lead. `{}` mientras nadie haya calificado. */
   ficha?: FichaDto;
+  /** Canal por el que vive el contacto (014). */
+  channel?: string;
+  /** 0023: dato de prueba/demo marcado para limpieza posterior. */
+  isTest?: boolean;
+  /** Alta del contacto en el CRM (ISO). */
+  createdAt?: string;
+};
+
+/* ============================================================
+ * Clientes del sistema de gestión (SGSA / seguros) — matching backend↔CRM
+ * ============================================================ */
+
+export type SystemClientPolizasDto = {
+  total: number | null;
+  activas: number | null;
+  anuladas: number | null;
+  enTramite: number | null;
+  vence7: number | null;
+  vence30: number | null;
+};
+
+/** Cliente leído del sistema de gestión (Airtable) — solo lectura. */
+export type SystemClientDto = {
+  recordId: string;
+  nombre: string;
+  apellido: string;
+  dni: string | null;
+  /** Dígitos del teléfono, como los guarda el sistema. */
+  telefono: string | null;
+  telefonoRaw: string | null;
+  email: string | null;
+  estado: string | null;
+  oficina: string | null;
+  idUnico: string | null;
+  fechaAlta: string | null;
+  perfilRiesgo: string | null;
+  polizas: SystemClientPolizasDto;
+};
+
+export type ClientConversationDto = {
+  id: string;
+  channel: string;
+  closed: boolean;
+  isTest: boolean;
+  lastMessageAt: string | null;
+};
+
+/** Cómo está este cliente del sistema dentro del CRM (si ya existe). */
+export type ClientCrmMatchDto = {
+  contactId: string;
+  name: string;
+  phone: string | null;
+  channel: string;
+  isTest: boolean;
+  archivedAt: string | null;
+  conversations: ClientConversationDto[];
+};
+
+export type SystemClientSearchResultDto = {
+  client: SystemClientDto;
+  crm: ClientCrmMatchDto | null;
 };
 
 /* ============================================================

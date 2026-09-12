@@ -181,6 +181,17 @@ export const contact = pgTable(
       enum: ["anuncio", "organico", "referido", "conocido", "otro"],
     }),
     archivedAt: timestamp("archived_at"),
+    /**
+     * 0023: marca de dato NO real (demo/POC/tests). Permite filtrar y limpiar
+     * más adelante sin adivinar por nombre o fecha (pedido Diego 2026-09-12).
+     */
+    isTest: boolean("is_test").notNull().default(false),
+    /**
+     * 0024: vínculo con el registro del cliente en el sistema de gestión
+     * externo (Airtable SGSA). Formato `sgsa:<recordId>`; es la llave del
+     * matching backend↔CRM.
+     */
+    externalRef: text("external_ref"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
