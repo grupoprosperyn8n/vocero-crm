@@ -219,37 +219,20 @@ export function SystemClientDetails({
       )}
 
       <div className="mt-4 rounded-md border bg-subtle p-3">
-        {crm ? (
+        {crm && crm.conversations.length > 0 ? (
           <>
-            <p className="text-xs font-medium">
-              En el CRM: {crm.name}
-              {crm.isTest && (
-                <Badge variant="secondary" className="ml-1.5">
-                  Prueba
-                </Badge>
-              )}
-              {crm.archivedAt && (
-                <Badge variant="secondary" className="ml-1.5">
-                  Archivado
-                </Badge>
-              )}
-            </p>
-            {crm.conversations.length > 0 ? (
-              <ConvList
-                conversations={crm.conversations}
-                contactId={crm.contactId}
-                onOpenConversation={onOpenConversation}
-              />
-            ) : (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Todavía no hay conversaciones: abrí el chat para iniciar.
-              </p>
-            )}
+            <p className="text-xs font-medium">Conversaciones en la Bandeja</p>
+            <ConvList
+              conversations={crm.conversations}
+              contactId={crm.contactId}
+              onOpenConversation={onOpenConversation}
+            />
           </>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Todavía no está en el CRM. Al abrir el chat se vincula por teléfono
-            y queda guardado el enlace con el sistema.
+            {crm
+              ? "Sin conversaciones todavía: abrí el chat para iniciar."
+              : "Sin conversaciones. Al abrir el chat queda el hilo en la Bandeja: los clientes del sistema no se mezclan con los contactos del CRM."}
           </p>
         )}
       </div>

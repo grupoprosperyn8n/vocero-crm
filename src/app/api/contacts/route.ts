@@ -82,6 +82,12 @@ export const GET = withAuth(async (session, req: Request) => {
         schema.contact.organizationId,
         session.organizationId,
         search,
+        // Los clientes del sistema (`external_ref` = `sgsa:<recordId>`) NO son
+        // contactos del CRM: viven en su propio segmento de búsqueda. Pedido
+        // Diego 2026-09-13: "no se tiene que unir, son dos canales distintos:
+        // el del CRM son los nuevos prospectos y el del backend es el del
+        // sistema".
+        sql`(${schema.contact.externalRef} is null or ${schema.contact.externalRef} not like 'sgsa:%')`,
         stageContactIds ? inArray(schema.contact.id, stageContactIds) : undefined
       )
     )

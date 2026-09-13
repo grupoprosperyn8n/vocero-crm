@@ -184,7 +184,8 @@ export function NewConversationDialog({
       return;
     }
     // Cliente del sistema: mismo camino que su tarjeta del buscador —
-    // vincula por teléfono (o reusa el contacto) y devuelve el hilo.
+    // crea o reusa el hilo en la Bandeja (el contacto queda del lado del
+    // sistema: no aparece en la lista de contactos del CRM).
     const { client } = picked.result;
     if (!client.telefono) {
       setOpenError("El cliente no tiene teléfono en el sistema");
@@ -378,7 +379,12 @@ export function NewConversationDialog({
             {r.client.estado && (
               <Badge variant="outline">{r.client.estado}</Badge>
             )}
-            {r.crm && <Badge variant="secondary">Ya en el CRM</Badge>}
+            {r.crm &&
+              (r.crm.conversations.some((c) => !c.closed && !c.isTest) ? (
+                <Badge variant="secondary">Hilo abierto</Badge>
+              ) : r.crm.conversations.length > 0 ? (
+                <Badge variant="secondary">Con historial</Badge>
+              ) : null)}
           </span>
           <span className="block truncate text-[11.5px] text-text-3">
             {formatPhone(r.client.telefono) || "Sin teléfono"}
@@ -654,8 +660,9 @@ export function NewConversationDialog({
                 )}
               </div>
               <p className="mt-1.5 text-[11px] leading-snug text-text-3">
-                Los clientes del sistema son los del backoffice; al abrir el chat se
-                vinculan solos por teléfono.
+                Los clientes del sistema viven en el backoffice: no se mezclan con
+                los contactos del CRM. Al abrir el chat, la conversación queda en la
+                Bandeja.
               </p>
             </section>
           </div>

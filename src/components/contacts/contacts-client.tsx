@@ -238,10 +238,13 @@ export function ContactsClient() {
                       {r.client.oficina ? ` · ${r.client.oficina}` : ""}
                     </p>
                   </div>
-                  {r.crm ? (
-                    <Badge variant="secondary">En el CRM</Badge>
+                  {r.crm &&
+                  r.crm.conversations.some((c) => !c.closed && !c.isTest) ? (
+                    <Badge variant="secondary">Hilo abierto</Badge>
+                  ) : r.crm ? (
+                    <Badge variant="secondary">Con historial</Badge>
                   ) : (
-                    <Badge variant="outline">No está en el CRM</Badge>
+                    <Badge variant="outline">Sin conversación</Badge>
                   )}
                 </button>
               </li>
