@@ -174,6 +174,36 @@ export type SystemClientSearchResultDto = {
 };
 
 /* ============================================================
+ * 027 — Alertas del sistema de seguros (backend SGSA)
+ * ============================================================ */
+
+/**
+ * Alerta operativa normalizada desde el backend de seguros. El estado del
+ * ciclo de vida (leída / en progreso / concluida…) vive en el sistema de
+ * origen: acá solo viaja la foto para mostrarla y accionar.
+ */
+export type SgsaAlertDto = {
+  /** Id del store del backend (string numérico) — el que usan ack/status. */
+  id: string;
+  /** Record de la tabla ALERTAS (Airtable), si ya está persistida. */
+  airtableRecordId: string | null;
+  tipo: string;
+  prioridad: string;
+  urgencia: 0 | 1 | 2 | 3;
+  urgenciaLabel: string;
+  titulo: string;
+  cuerpo: string;
+  detalle: string;
+  linkRegistro: string | null;
+  estado: string;
+  leida: boolean;
+  fecha: string | null;
+  fechaVisto: string | null;
+  clienteNombre: string | null;
+  empleadoLeido: string | null;
+};
+
+/* ============================================================
  * Bitácora de etapas
  * ============================================================ */
 

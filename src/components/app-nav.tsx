@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { OfficeTodayPicker } from "@/components/office-today";
 import {
+  Bell,
   CalendarDays,
   FlaskConical,
   Inbox,
@@ -29,12 +30,16 @@ type NavItem = {
   href: string;
   label: string;
   icon: typeof Inbox;
-  /** "crm" = no leídos de la Bandeja; "internal" = no leídos del chat interno (022). */
-  badge?: "crm" | "internal";
+  /** "crm" = no leídos de la Bandeja; "internal" = no leídos del chat interno (022);
+   *  "alerts" = alertas pendientes del sistema (027). */
+  badge?: "crm" | "internal" | "alerts";
 };
 
 const NAV: NavItem[] = [
   { href: "/inbox", label: "Bandeja", icon: Inbox, badge: "crm" },
+  // 027 — Alertas del sistema de seguros (misma cola que la PWA). Solo existe
+  // en instancias con backend de alertas configurado.
+  { href: "/alerts", label: "Alertas", icon: Bell, badge: "alerts" },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
   { href: "/contacts", label: "Contactos", icon: Users },
   // 022 — Chat interno del equipo: lo ve TODO el equipo (no es de Ajustes).
@@ -70,6 +75,7 @@ export function AppNav({
   theme,
   commit,
   agenda = false,
+  alerts = false,
   open = false,
   onClose,
 }: {
@@ -88,6 +94,8 @@ export function AppNav({
    * todavía debe ver la entrada igual.
    */
   agenda?: boolean;
+  /** 027 — ¿hay sistema de alertas configurado en esta instancia? */
+  alerts?: boolean;
   /** Solo aplica por debajo de `lg`: en escritorio el lateral es fijo. */
   open?: boolean;
   onClose?: () => void;
@@ -96,6 +104,7 @@ export function AppNav({
   const router = useRouter();
   const [unread, setUnread] = useState(0);
   const [internalUnread, setInternalUnread] = useState(0);
+  const [alertsPending, setAlertsPending] = useState(0);
 
   async function refetchUnread() {
     const res = await fetch("/api/conversations").catch(() => null);
@@ -113,10 +122,31 @@ export function AppNav({
     setInternalUnread(data.rooms.reduce((a, r) => a + r.unreadCount, 0));
   }
 
+  // 027 — Contador de alertas pendientes (la cola la mueven la PWA y el
+  // backend; el CRM lo refresca cada minuto).
+  async function refetchAlertsPending() {
+    const res = await fetch("/api/alerts/count").catch(() => null);
+    if (!res?.ok) return;
+    const data = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      pendientes?: number;
+    } | null;
+    setAlertsPending(data?.ok ? (data.pendientes ?? 0) : 0);
+  }
+
   useEffect(() => {
     void refetchUnread();
     void refetchInternalUnread();
+    if (alerts) void refetchAlertsPending();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!alerts) return;
+    const t = setInterval(() => void refetchAlertsPending(), 60_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alerts]);
 
   useEvents({
     onMessageNew: () => void refetchUnread(),
@@ -129,8 +159,9 @@ export function AppNav({
   const settingsActive = pathname.startsWith("/settings");
   // 021 — La configuración del CRM es del propietario: "Agente" (perfil y
   // conocimiento del bot) se esconde para el resto; el administrador entra a
-  // Ajustes solo por Equipo.
-  const nav = role === "owner" ? NAV : NAV.filter((i) => i.href !== "/agent");
+  // Ajustes solo por Equipo. 027 — "Alertas" solo en instancias configuradas.
+  let nav = role === "owner" ? NAV : NAV.filter((i) => i.href !== "/agent");
+  if (!alerts) nav = nav.filter((i) => i.href !== "/alerts");
   // Citas va después de Pipeline: es el paso siguiente de un trato, no una
   // sección aparte.
   const items = agenda
@@ -186,6 +217,11 @@ export function AppNav({
               {item.badge === "internal" && internalUnread > 0 && (
                 <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-bold text-brand-fg">
                   {internalUnread}
+                </span>
+              )}
+              {item.badge === "alerts" && alertsPending > 0 && (
+                <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-bold text-brand-fg">
+                  {alertsPending}
                 </span>
               )}
             </Link>

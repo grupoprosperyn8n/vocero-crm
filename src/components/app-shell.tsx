@@ -27,6 +27,7 @@ export function AppShell({
   theme,
   commit,
   agenda = false,
+  alerts: alertsEnabled = false,
   children,
 }: {
   branding: Branding;
@@ -37,6 +38,8 @@ export function AppShell({
   commit?: string;
   /** 015 — ¿esta instancia tiene agenda? Lo decide el servidor. */
   agenda?: boolean;
+  /** 027 — ¿esta instancia tiene el sistema de alertas configurado? */
+  alerts?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -75,6 +78,7 @@ export function AppShell({
         role={role}
         theme={theme}
         agenda={agenda}
+        alerts={alertsEnabled}
         open={navOpen}
         onClose={() => setNavOpen(false)}
       />
