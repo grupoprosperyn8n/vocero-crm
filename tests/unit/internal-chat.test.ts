@@ -6,6 +6,7 @@ import {
   normalizeGroupMembers,
   resolveRoomDisplayName,
   sanitizeChatBody,
+  sanitizeContactShare,
   sanitizeRoomName,
 } from "@/server/internal/chat";
 
@@ -100,5 +101,73 @@ describe("chat interno — nombre visible de la sala", () => {
     expect(
       resolveRoomDisplayName({ kind: "dm", name: null }, [{ userId: "me", name: "Diego" }], "me")
     ).toBe("Empleado");
+  });
+});
+
+describe("chat interno — contacto compartido (025)", () => {
+  it("CRM: normaliza el nombre y exige id ct_*", () => {
+    expect(
+      sanitizeContactShare({
+        source: "crm",
+        contactId: "ct_abc123def4",
+        name: "  Ana   Gómez ",
+        phone: " 341 555 0000 ",
+        channel: "whatsapp",
+      })
+    ).toEqual({
+      source: "crm",
+      contactId: "ct_abc123def4",
+      name: "Ana Gómez",
+      phone: "341 555 0000",
+      channel: "whatsapp",
+    });
+    expect(
+      sanitizeContactShare({ source: "crm", contactId: "mal", name: "Ana" })
+    ).toBeNull();
+    expect(sanitizeContactShare({ source: "crm", name: "Ana" })).toBeNull();
+  });
+
+  it("sistema: exige recordId rec* y sanea las pólizas", () => {
+    expect(
+      sanitizeContactShare({
+        source: "system",
+        recordId: "rechYRnw7FzaGj",
+        name: "IA TEST",
+        phone: "3417035515",
+        policies: 3.9,
+      })
+    ).toEqual({
+      source: "system",
+      recordId: "rechYRnw7FzaGj",
+      name: "IA TEST",
+      phone: "3417035515",
+      policies: 3,
+    });
+    expect(
+      sanitizeContactShare({ source: "system", recordId: "nope", name: "X" })
+    ).toBeNull();
+    expect(
+      sanitizeContactShare({
+        source: "system",
+        recordId: "rechYRnw7FzaGj",
+        name: "X",
+        policies: -2,
+      })?.policies
+    ).toBeNull();
+  });
+
+  it("rechaza formatos inválidos y topa el nombre en 120", () => {
+    expect(sanitizeContactShare(null)).toBeNull();
+    expect(sanitizeContactShare("hola")).toBeNull();
+    expect(sanitizeContactShare({ source: "web", name: "X" })).toBeNull();
+    expect(
+      sanitizeContactShare({ source: "crm", contactId: "ct_x", name: "" })
+    ).toBeNull();
+    const long = sanitizeContactShare({
+      source: "crm",
+      contactId: "ct_abcd1234",
+      name: "x".repeat(300),
+    });
+    expect(long?.name.length).toBe(120);
   });
 });

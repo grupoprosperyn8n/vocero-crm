@@ -7,6 +7,8 @@ import {
   Building2,
   Check,
   ChevronRight,
+  ExternalLink,
+  Loader2,
   LogOut,
   Mail,
   MapPin,
@@ -17,6 +19,7 @@ import {
   Plus,
   Search,
   Send,
+  Share2,
   Trash2,
   UserMinus,
   UserPlus,
@@ -24,6 +27,9 @@ import {
   X,
 } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
+import { CHANNEL_LABEL, isChannel } from "@/lib/channels";
+import { ShareContactDialog } from "@/components/contacts/share-contact-dialog";
+import type { ChatContactShareDto } from "@/lib/types";
 import { useEvents } from "@/components/use-events";
 
 /**
@@ -46,6 +52,10 @@ type ChatMessage = {
   senderId: string;
   senderName: string;
   body: string;
+  /** 025 — `text` o `contact` (contacto compartido). */
+  kind: "text" | "contact";
+  /** 025 — snapshot del contacto compartido; null en los textos. */
+  payload: ChatContactShareDto | null;
   createdAt: string;
 };
 
@@ -261,6 +271,143 @@ function MemberStack({
   );
 }
 
+/** 025 — par base/interface del backoffice (el mismo que usa client-card). */
+const AIRTABLE_BASE = "appuhslj3GFf60Tea";
+const AIRTABLE_INTERFACE_CLIENTES = "pagloDiKehe3EMnT4";
+
+/**
+ * 025 — Tarjeta del contacto compartido: se dibuja dentro del mensaje, con el
+ * snapshot (nombre, teléfono, canal/pólizas) y los botones para EJECUTAR algo
+ * con ese cliente — abrir su ficha (CRM / interface del sistema) y abrir la
+ * conversación en la Bandeja (crea/reusa/reabre el hilo).
+ */
+function ContactShareCard({ payload }: { payload: ChatContactShareDto }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const isCrm = payload.source === "crm";
+  const channelLabel =
+    payload.channel && isChannel(payload.channel)
+      ? CHANNEL_LABEL[payload.channel]
+      : payload.channel;
+  const sub = [
+    payload.phone ?? "sin teléfono",
+    isCrm
+      ? channelLabel
+      : payload.policies != null
+        ? `Pólizas: ${payload.policies}`
+        : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  async function abrirConversacion() {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      if (isCrm) {
+        if (!payload.contactId) {
+          setErr("Falta el identificador del contacto");
+          return;
+        }
+        const channel = payload.channel === "telegram" ? "telegram" : "whatsapp";
+        const res = await fetch("/api/conversations/open", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ contactId: payload.contactId, channel }),
+        }).catch(() => null);
+        const data = (await res?.json().catch(() => null)) as
+          | { conversationId?: string; error?: { message?: string } }
+          | null;
+        if (!res?.ok || !data?.conversationId) {
+          setErr(data?.error?.message ?? "No se pudo abrir la conversación");
+          return;
+        }
+        window.location.assign(
+          `/inbox?contact=${encodeURIComponent(payload.contactId)}`
+        );
+        return;
+      }
+      if (!payload.recordId) {
+        setErr("Falta el identificador del cliente");
+        return;
+      }
+      if (!payload.phone) {
+        setErr("El cliente no tiene teléfono en el sistema");
+        return;
+      }
+      const res = await fetch("/api/clients/link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recordId: payload.recordId,
+          name: payload.name,
+          phone: payload.phone,
+        }),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as
+        | { contactId?: string; error?: { message?: string } }
+        | null;
+      if (!res?.ok || !data?.contactId) {
+        setErr(data?.error?.message ?? "No se pudo abrir la conversación");
+        return;
+      }
+      window.location.assign(
+        `/inbox?contact=${encodeURIComponent(data.contactId)}`
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-1.5 rounded-md border bg-background/80 px-2.5 py-2">
+      <p className="text-[10.5px] font-bold uppercase tracking-wide text-text-3">
+        {isCrm ? "Contacto del CRM" : "Cliente del sistema"}
+      </p>
+      <p className="mt-0.5 text-[13.5px] font-semibold leading-tight">
+        {payload.name}
+      </p>
+      {sub && <p className="text-[11.5px] text-text-3">{sub}</p>}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {isCrm ? (
+          payload.contactId ? (
+            <a
+              href={`/contacts?contact=${encodeURIComponent(payload.contactId)}`}
+              className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[12px] font-medium hover:bg-subtle"
+            >
+              Abrir ficha
+            </a>
+          ) : null
+        ) : payload.recordId ? (
+          <a
+            href={`https://airtable.com/${AIRTABLE_BASE}/${AIRTABLE_INTERFACE_CLIENTES}/${payload.recordId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[12px] font-medium hover:bg-subtle"
+            title="Abrir el registro en la interface del sistema"
+          >
+            <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
+            Interface
+          </a>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void abrirConversacion()}
+          disabled={busy}
+          className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[12px] font-medium hover:bg-subtle disabled:opacity-40"
+        >
+          {busy && <Loader2 className="h-3 w-3 animate-spin" />}
+          {isCrm ? "Abrir conversación" : "Abrir chat"}
+        </button>
+      </div>
+      {err && (
+        <p className="mt-1 text-[11px] font-semibold text-red-600">{err}</p>
+      )}
+    </div>
+  );
+}
+
 export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const canGroup = role === "owner" || role === "admin";
 
@@ -290,6 +437,8 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const [dmQuery, setDmQuery] = useState("");
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  /** 025 — diálogo «compartir un contacto» abierto. */
+  const [shareOpen, setShareOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -491,6 +640,55 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
       inputRef.current?.focus();
     } finally {
       setSending(false);
+    }
+  }
+
+  /**
+   * 025 — Comparte un contacto (CRM o sistema) en la sala activa. La tarjeta
+   * viaja como `kind: "contact"` + `payload`; la nota es opcional (si viene
+   * vacía, el servidor pone el texto por defecto).
+   */
+  async function shareContact(
+    payload: ChatContactShareDto,
+    note: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!activeIdRef.current) {
+      return { ok: false, error: "Elegí una conversación primero" };
+    }
+    try {
+      const res = await fetch(
+        `/api/internal/rooms/${activeIdRef.current}/messages`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body: note, contact: payload }),
+        }
+      );
+      const data = (await res.json().catch(() => null)) as
+        | { message?: ChatMessage; error?: { message?: string } }
+        | null;
+      if (!res.ok || !data?.message) {
+        return {
+          ok: false,
+          error: data?.error?.message ?? "No se pudo compartir el contacto",
+        };
+      }
+      const msg = data.message;
+      setMessages((prev) =>
+        prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
+      );
+      setRooms((prev) =>
+        sortRooms(
+          prev.map((r) =>
+            r.id === msg.roomId
+              ? { ...r, lastMessage: { ...msg }, unreadCount: 0 }
+              : r
+          )
+        )
+      );
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "No se pudo compartir el contacto" };
     }
   }
 
@@ -1186,6 +1384,9 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                         <p className="whitespace-pre-wrap break-words text-[13.5px] leading-snug">
                           {m.body}
                         </p>
+                        {m.kind === "contact" && m.payload && (
+                          <ContactShareCard payload={m.payload} />
+                        )}
                         <p
                           className={cn(
                             "mt-0.5 text-right text-[10.5px]",
@@ -1215,6 +1416,15 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                   void sendMessage();
                 }}
               >
+                <button
+                  type="button"
+                  onClick={() => setShareOpen(true)}
+                  className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-md border text-text-2 hover:bg-subtle"
+                  aria-label="Compartir un contacto"
+                  title="Compartir un contacto"
+                >
+                  <Share2 className="h-4 w-4" strokeWidth={1.8} />
+                </button>
                 <textarea
                   ref={inputRef}
                   value={text}
@@ -1805,6 +2015,12 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
             )}
           </div>
         </div>
+      )}
+      {shareOpen && (
+        <ShareContactDialog
+          onClose={() => setShareOpen(false)}
+          onShare={shareContact}
+        />
       )}
     </div>
   );

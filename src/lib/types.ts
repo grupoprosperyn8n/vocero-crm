@@ -221,3 +221,20 @@ export type SourceDto = {
 
 /** La fija el dueño; NULL = nadie la ha decidido (no es "media"). */
 export type PriorityValue = "alta" | "media" | "baja";
+
+/* ============================================================
+ * Chat interno — contacto compartido (025)
+ * ============================================================ */
+
+/** Snapshot de un contacto (del CRM o del sistema) compartido en el chat interno. */
+export type ChatContactShareDto = {
+  source: "crm" | "system";
+  name: string;
+  phone: string | null;
+  /** CRM: id del contacto y canal por el que vive (whatsapp/telegram/web). */
+  contactId?: string | null;
+  channel?: string | null;
+  /** Sistema: record id de Airtable + pólizas totales (contexto). */
+  recordId?: string | null;
+  policies?: number | null;
+};

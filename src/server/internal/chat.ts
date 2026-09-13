@@ -4,6 +4,7 @@ import { newId } from "@/lib/db/ids";
 import { publish } from "@/server/events/bus";
 import { onlineUserIds } from "@/server/events/presence";
 import { artDayKey } from "./office-day";
+import type { ChatContactShareDto } from "@/lib/types";
 
 /**
  * 022 — Chat interno del equipo.
@@ -23,6 +24,8 @@ import { artDayKey } from "./office-day";
 
 export const CHAT_BODY_MAX = 4000;
 export const CHAT_NAME_MAX = 80;
+/** 025 — tope del nombre en un contacto compartido. */
+export const CHAT_CONTACT_NAME_MAX = 120;
 /** Tope de mensajes que devuelve una sala (el historial completo no se pagina: el chat interno es chico). */
 export const CHAT_PAGE = 200;
 
@@ -58,6 +61,43 @@ export function sanitizeRoomName(raw: unknown): string | null {
   return name.length > CHAT_NAME_MAX ? name.slice(0, CHAT_NAME_MAX) : name;
 }
 
+/**
+ * 025 — Contacto compartido (del CRM o del sistema): valida forma y topes,
+ * normaliza espacios y devuelve el snapshot listo para guardar. Cualquier
+ * cosa rara (source desconocido, id con formato inesperado, sin nombre) → null
+ * y el endpoint responde 422 claro. Nada de datos anidados: campos planos.
+ */
+export function sanitizeContactShare(raw: unknown): ChatContactShareDto | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const source = o.source === "crm" || o.source === "system" ? o.source : null;
+  if (!source) return null;
+  const name = String(o.name ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, CHAT_CONTACT_NAME_MAX);
+  if (!name) return null;
+  const str = (v: unknown, max: number): string | null => {
+    const s = String(v ?? "").trim();
+    return s ? s.slice(0, max) : null;
+  };
+  const phone = str(o.phone, 40);
+  if (source === "crm") {
+    const contactId = str(o.contactId, 64);
+    if (!contactId || !/^ct_[a-z0-9]{6,40}$/i.test(contactId)) return null;
+    return { source, contactId, name, phone, channel: str(o.channel, 20) };
+  }
+  const recordId = str(o.recordId, 64);
+  if (!recordId || !/^rec[a-z0-9]{10,20}$/i.test(recordId)) return null;
+  const policies =
+    typeof o.policies === "number" &&
+    Number.isFinite(o.policies) &&
+    o.policies >= 0
+      ? Math.min(Math.floor(o.policies), 100000)
+      : null;
+  return { source, recordId, name, phone, policies };
+}
+
 /** Un DM es entre dos personas distintas. */
 export function dmPairOk(a: string, b: string): boolean {
   return Boolean(a) && Boolean(b) && a !== b;
@@ -91,6 +131,10 @@ export type ChatMessageView = {
   senderId: string;
   senderName: string;
   body: string;
+  /** 025 — `text` (normal) o `contact` (contacto compartido). */
+  kind: "text" | "contact";
+  /** 025 — snapshot del contacto compartido; null en los mensajes de texto. */
+  payload: ChatContactShareDto | null;
   createdAt: string;
 };
 
@@ -214,6 +258,8 @@ export async function listRoomsForUser(
       roomId: schema.chatMessage.roomId,
       senderId: schema.chatMessage.senderId,
       body: schema.chatMessage.body,
+      kind: schema.chatMessage.kind,
+      payload: schema.chatMessage.payload,
       createdAt: schema.chatMessage.createdAt,
       senderName: schema.user.name,
     })
@@ -290,6 +336,8 @@ export async function listRoomsForUser(
             senderId: last.senderId,
             senderName: last.senderName,
             body: last.body,
+            kind: last.kind === "contact" ? ("contact" as const) : ("text" as const),
+            payload: last.payload ?? null,
             createdAt: last.createdAt.toISOString(),
           }
         : null,
@@ -436,14 +484,34 @@ export async function createGroupRoom(input: {
   return getRoomSummary(input.organizationId, roomId, input.creatorId);
 }
 
-/** Publica un mensaje en una sala (solo miembros) y avisa por SSE. */
+/**
+ * Publica un mensaje en una sala (solo miembros) y avisa por SSE.
+ * 025 — si viene `contact`, el mensaje es un CONTACTO COMPARTIDO (del CRM o
+ * del sistema): el texto pasa a ser la nota opcional del que comparte.
+ */
 export async function postChatMessage(input: {
   organizationId: string;
   roomId: string;
   senderId: string;
   body: string;
+  /** 025 — contacto a compartir (opcional). */
+  contact?: unknown;
 }): Promise<ChatMessageView> {
-  const body = sanitizeChatBody(input.body);
+  let kind: "text" | "contact" = "text";
+  let payload: ChatContactShareDto | null = null;
+  let body = sanitizeChatBody(input.body);
+  if (input.contact !== undefined && input.contact !== null) {
+    payload = sanitizeContactShare(input.contact);
+    if (!payload) {
+      throw new ChatError(422, "invalid_contact", "El contacto compartido no es válido");
+    }
+    kind = "contact";
+    body =
+      body ??
+      (payload.source === "crm"
+        ? "Te comparto este contacto del CRM."
+        : "Te comparto este cliente del sistema.");
+  }
   if (!body) {
     throw new ChatError(422, "empty", "El mensaje está vacío");
   }
@@ -477,6 +545,8 @@ export async function postChatMessage(input: {
     roomId: input.roomId,
     senderId: input.senderId,
     body,
+    kind,
+    payload,
     createdAt,
   });
   await db
@@ -501,6 +571,8 @@ export async function postChatMessage(input: {
     senderId: input.senderId,
     senderName: senderRows[0]?.name ?? "Empleado",
     body,
+    kind,
+    payload,
     createdAt: createdAt.toISOString(),
   };
   publish(input.organizationId, {
@@ -523,6 +595,8 @@ export async function listChatMessages(input: {
       roomId: schema.chatMessage.roomId,
       senderId: schema.chatMessage.senderId,
       body: schema.chatMessage.body,
+      kind: schema.chatMessage.kind,
+      payload: schema.chatMessage.payload,
       createdAt: schema.chatMessage.createdAt,
       senderName: schema.user.name,
     })
@@ -547,6 +621,8 @@ export async function listChatMessages(input: {
       senderId: m.senderId,
       senderName: m.senderName,
       body: m.body,
+      kind: m.kind === "contact" ? ("contact" as const) : ("text" as const),
+      payload: m.payload ?? null,
       createdAt: m.createdAt.toISOString(),
     })),
   };

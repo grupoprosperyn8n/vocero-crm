@@ -45,6 +45,27 @@ export function ContactsClient() {
   const [contactCard, setContactCard] = useState<ContactDto | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // 025 — Deep link del chat interno: `/contacts?contact=<id>` abre la tarjeta
+  // de ese contacto (así lo usa "Abrir ficha" en un contacto compartido).
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("contact");
+    if (!id) return;
+    let alive = true;
+    void (async () => {
+      const res = await fetch(
+        `/api/contacts/${encodeURIComponent(id)}`
+      ).catch(() => null);
+      if (!res?.ok || !alive) return;
+      const data = (await res.json().catch(() => null)) as
+        | { contact?: ContactDto }
+        | null;
+      if (alive && data?.contact) setContactCard(data.contact);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // Mismo rescate que en la Bandeja: lo tecleado antes de que hidrate el JS
   // se perdía en silencio. Ver conversation-list.tsx.
   useEffect(() => {

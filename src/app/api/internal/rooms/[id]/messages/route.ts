@@ -21,7 +21,7 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
   }
 });
 
-/** 022 — Mandar un mensaje (solo miembros). */
+/** 022 — Mandar un mensaje (solo miembros). 025 — también compartir un contacto. */
 export const POST = withAuth(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   let raw: unknown;
@@ -31,12 +31,14 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
     return apiError(422, "invalid_body", "El body debe ser JSON válido");
   }
   const body = (raw as { body?: unknown })?.body;
+  const contact = (raw as { contact?: unknown })?.contact;
   try {
     const message = await postChatMessage({
       organizationId: session.organizationId,
       roomId: id,
       senderId: session.userId,
       body: typeof body === "string" ? body : "",
+      contact,
     });
     return Response.json({ message }, { status: 201 });
   } catch (err) {

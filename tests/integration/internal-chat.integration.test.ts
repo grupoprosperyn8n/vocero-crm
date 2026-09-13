@@ -446,4 +446,71 @@ suite("chat interno — integración con copia de la BD real", () => {
       })
     ).rejects.toMatchObject({ status: 422 });
   });
+
+  it("025 — compartir contacto: CRM y sistema viajan como kind/payload (y validan)", async () => {
+    const shared = await chat.postChatMessage({
+      organizationId: orgId,
+      roomId: groupId,
+      senderId: ownerId,
+      body: "Pasale el dato a esta clienta",
+      contact: {
+        source: "crm",
+        contactId: "ct_abc123def4",
+        name: "  Ana  Gómez ",
+        phone: "341 555 0000",
+        channel: "whatsapp",
+      },
+    });
+    expect(shared.kind).toBe("contact");
+    expect(shared.payload).toEqual({
+      source: "crm",
+      contactId: "ct_abc123def4",
+      name: "Ana Gómez",
+      phone: "341 555 0000",
+      channel: "whatsapp",
+    });
+
+    const sys = await chat.postChatMessage({
+      organizationId: orgId,
+      roomId: groupId,
+      senderId: memberId,
+      body: "",
+      contact: {
+        source: "system",
+        recordId: "rechYRnw7FzaGj",
+        name: "IA TEST",
+        phone: "3417035515",
+        policies: 2,
+      },
+    });
+    expect(sys.kind).toBe("contact");
+    // Nota vacía → texto por defecto del sistema.
+    expect(sys.body).toBe("Te comparto este cliente del sistema.");
+    expect(sys.payload?.source).toBe("system");
+
+    // El historial y el resumen de la sala conservan kind/payload.
+    const { messages } = await chat.listChatMessages({
+      organizationId: orgId,
+      roomId: groupId,
+      meId: memberId,
+    });
+    const lastShare = messages.filter((m) => m.kind === "contact").at(-1);
+    expect(lastShare?.payload?.recordId).toBe("rechYRnw7FzaGj");
+
+    const room = (await chat.listRoomsForUser(orgId, memberId)).find(
+      (r) => r.id === groupId
+    );
+    expect(room?.lastMessage?.kind).toBe("contact");
+
+    // Payload inválido → 422: no entra nada roto al hilo.
+    await expect(
+      chat.postChatMessage({
+        organizationId: orgId,
+        roomId: groupId,
+        senderId: ownerId,
+        body: "mira esto",
+        contact: { source: "crm", contactId: "no-es-id", name: "X" },
+      })
+    ).rejects.toMatchObject({ status: 422 });
+  });
 });
