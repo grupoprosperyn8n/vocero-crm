@@ -3,9 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 /**
  * 026 — Integración REAL de la bandeja por usuario contra la copia local de
  * producción (INTEGRATION_DATABASE_URL). Verifica el pedido de Diego:
- *   - un miembro ve SOLO sus comunicaciones (asignadas a él) + la cola sin
- *     dueño; gerente/administrador/propietario ven TODAS y filtran por
- *     cualquier empleado;
+ *   - un miembro ve SOLO sus comunicaciones (asignadas a él); gerente/
+ *     administrador/propietario ven TODAS y filtran por cualquier empleado;
  *   - archivar una conversación es PERSONAL (sale de mi bandeja, no de la de
  *     los demás) y persistente; la pestaña «Archivadas» la trae de vuelta;
  *   - el chat interno: archivar la sala SOLO para mí, sin tocar al otro
@@ -132,17 +131,18 @@ suite("026 — bandeja por usuario (alcance, archivo personal, chat)", () => {
   const viewerM = () => ({ userId: uids.mgr, role: "manager" });
   const viewerO = () => ({ userId: ownerId, role: "owner" });
 
-  it("cola viva: el miembro ve lo suyo + la cola sin dueño; gerente y propietario ven todo", async () => {
+  it("cola viva: el miembro ve SOLO lo suyo; gerente y propietario ven todo", async () => {
     const a = await queries.listConversations(orgId, undefined, "open", viewerA());
     const idsA = a.map((c) => c.id);
     expect(idsA).toContain(conv.a);
-    expect(idsA).toContain(conv.pool);
     expect(idsA).not.toContain(conv.b);
+    expect(idsA).not.toContain(conv.pool);
 
     const b = await queries.listConversations(orgId, undefined, "open", viewerB());
     const idsB = b.map((c) => c.id);
     expect(idsB).toContain(conv.b);
     expect(idsB).not.toContain(conv.a);
+    expect(idsB).not.toContain(conv.pool);
 
     const m = await queries.listConversations(orgId, undefined, "open", viewerM());
     expect(m.map((c) => c.id)).toEqual(
@@ -207,7 +207,7 @@ suite("026 — bandeja por usuario (alcance, archivo personal, chat)", () => {
       "archived",
       viewerA()
     );
-    expect(openCount).toBeGreaterThanOrEqual(1); // la cola sin dueño
+    expect(openCount).toBe(0); // estricto: sin conv.a (archivada) no le queda nada
     expect(archCount).toBe(1);
 
     const back = await queries.setConversationArchived({

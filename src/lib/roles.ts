@@ -4,7 +4,7 @@
  * administrador lo mismo, y propietario igual».
  *
  * Jerarquía: propietario / administrador / gerente ven toda la bandeja;
- * un miembro (empleado) ve lo suyo (asignado a él) más la cola sin dueño.
+ * un miembro (empleado) ve SOLO lo suyo (lo asignado a él).
  */
 export function canSeeAllInbox(role: string): boolean {
   return role === "owner" || role === "admin" || role === "manager";

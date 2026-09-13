@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
@@ -20,8 +20,8 @@ export type InboxAssigneeFilter = string | "none" | undefined;
  * que tener su bandeja de entrada y ver solo sus comunicaciones... los
  * gerentes pueden ver todas las conversaciones y filtrar por las suyas o de
  * cualquier empleado, y administrador lo mismo y propietario igual»):
- *  - alcance por rol: gerente/admin/propietario ven todo; un miembro ve lo
- *    asignado a él más la cola sin dueño (la puede tomar cualquiera);
+ *  - alcance por rol: gerente/admin/propietario ven todo; un miembro ve SOLO
+ *    lo asignado a él (estricto, pedido Diego: «ver solo sus comunicaciones»);
  *  - archivo PERSONAL: «abiertas» excluye las que YO archivé; la pestaña
  *    «Archivadas (mías)» muestra exactamente esas (siempre abiertas);
  *  - filtro por empleado a cargo (el caller solo lo pasa si puede ver todo).
@@ -44,10 +44,7 @@ function inboxConds(
       ? isNotNull(schema.conversation.closedAt)
       : isNull(schema.conversation.closedAt),
     viewer && !canSeeAllInbox(viewer.role)
-      ? or(
-          eq(schema.conversation.assigneeId, viewer.userId),
-          isNull(schema.conversation.assigneeId)
-        )
+      ? eq(schema.conversation.assigneeId, viewer.userId)
       : undefined,
     personalArchive,
     assigneeFilter === "none"

@@ -10,10 +10,10 @@ import {
 export const dynamic = "force-dynamic";
 
 /**
- * 026 — La bandeja es POR USUARIO (pedido Diego 13Sep): un miembro ve lo suyo
- * (asignado a él) más la cola sin dueño; gerente/administrador/propietario ven
- * todo y pueden filtrar por cualquier empleado (`assignee`). El archivo
- * personal (tab «Archivadas») es de cada uno.
+ * 026 — La bandeja es POR USUARIO (pedido Diego 13Sep): un miembro ve SOLO lo
+ * suyo (asignado a él); gerente/administrador/propietario ven todo y pueden
+ * filtrar por cualquier empleado (`assignee`). El archivo personal (tab
+ * «Archivadas») es de cada uno.
  */
 export const GET = withAuth(async (session, req: Request) => {
   const url = new URL(req.url);
