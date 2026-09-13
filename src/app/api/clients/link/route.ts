@@ -24,6 +24,8 @@ export const POST = withAuth(async (session, req: Request) => {
       recordId: body.data.recordId,
       name: body.data.name,
       phone: body.data.phone ?? null,
+      // 026 — quien abre el chat queda a cargo si no había dueño.
+      userId: session.userId,
     });
     return Response.json(result);
   } catch (err) {

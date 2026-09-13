@@ -3,6 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { getOrCreateConversation } from "@/server/inbox/ingest";
+import { assignIfFree } from "@/server/conversations/open";
 import { updateConversation } from "@/server/inbox/queries";
 import type { ClientConversationDto, ClientCrmMatchDto } from "@/lib/types";
 import { phoneDigits, phoneKey } from "@/server/clients/phone";
@@ -145,6 +146,8 @@ export async function resolveOrLinkClient(input: {
   recordId: string;
   name: string;
   phone: string | null;
+  /** 026 — quien abre el chat queda a cargo si la conversación no tenía dueño. */
+  userId?: string;
 }): Promise<ResolveClientResult> {
   const digits = phoneDigits(input.phone);
   if (digits.length < 8) {
@@ -245,6 +248,9 @@ export async function resolveOrLinkClient(input: {
     const conv = await getOrCreateConversation(input.organizationId, contactId);
     conversationId = conv.id;
   }
+
+  // 026 — si la conversación no tenía empleado a cargo, queda para quien abrió.
+  await assignIfFree(input.organizationId, conversationId, input.userId);
 
   return { contactId, conversationId, created, reopened };
 }

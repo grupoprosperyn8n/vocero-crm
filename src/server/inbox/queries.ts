@@ -1,16 +1,69 @@
-import { and, desc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb, schema } from "@/lib/db";
+import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { canSeeAllInbox } from "@/lib/roles";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
 import type { ConversationDto } from "@/lib/types";
 
-export type ConversationStatus = "open" | "closed";
+export type ConversationStatus = "open" | "closed" | "archived";
+
+/** 026 — quién mira la bandeja; el rol decide el alcance. */
+export type InboxViewer = { userId: string; role: string };
+
+/** 026 — filtro por empleado a cargo (solo gerente/admin/propietario). */
+export type InboxAssigneeFilter = string | "none" | undefined;
+
+/**
+ * 026 — Condiciones comunes de la bandeja (pedido Diego: «cada usuario tiene
+ * que tener su bandeja de entrada y ver solo sus comunicaciones... los
+ * gerentes pueden ver todas las conversaciones y filtrar por las suyas o de
+ * cualquier empleado, y administrador lo mismo y propietario igual»):
+ *  - alcance por rol: gerente/admin/propietario ven todo; un miembro ve lo
+ *    asignado a él más la cola sin dueño (la puede tomar cualquiera);
+ *  - archivo PERSONAL: «abiertas» excluye las que YO archivé; la pestaña
+ *    «Archivadas (mías)» muestra exactamente esas (siempre abiertas);
+ *  - filtro por empleado a cargo (el caller solo lo pasa si puede ver todo).
+ */
+function inboxConds(
+  viewer: InboxViewer | undefined,
+  status: ConversationStatus,
+  assigneeFilter: InboxAssigneeFilter
+) {
+  const personalArchive = viewer
+    ? status === "archived"
+      ? sql`exists (select 1 from conversation_archive ca where ca.conversation_id = ${schema.conversation.id} and ca.user_id = ${viewer.userId})`
+      : sql`not exists (select 1 from conversation_archive ca where ca.conversation_id = ${schema.conversation.id} and ca.user_id = ${viewer.userId})`
+    : undefined;
+  return [
+    eq(schema.conversation.isTest, false),
+    // 1F: la cola viva y «Archivadas (mías)» son abiertas; el archivo global
+    // («Cerradas») es el cierre 1F con su resumen.
+    status === "closed"
+      ? isNotNull(schema.conversation.closedAt)
+      : isNull(schema.conversation.closedAt),
+    viewer && !canSeeAllInbox(viewer.role)
+      ? or(
+          eq(schema.conversation.assigneeId, viewer.userId),
+          isNull(schema.conversation.assigneeId)
+        )
+      : undefined,
+    personalArchive,
+    assigneeFilter === "none"
+      ? isNull(schema.conversation.assigneeId)
+      : assigneeFilter
+        ? eq(schema.conversation.assigneeId, assigneeFilter)
+        : undefined,
+  ];
+}
 
 export async function listConversations(
   organizationId: string,
   since?: Date,
-  status: ConversationStatus = "open"
+  status: ConversationStatus = "open",
+  viewer?: InboxViewer,
+  assigneeFilter: InboxAssigneeFilter = undefined
 ): Promise<ConversationDto[]> {
   const db = getDb();
   const previewSql = sql<string | null>`(
@@ -61,12 +114,8 @@ export async function listConversations(
         organizationId,
         // 1F: la bandeja muestra la cola viva; 2A: la pestaña Cerradas
         // muestra las archivadas (con su resumen), por fecha de cierre.
-        and(
-          eq(schema.conversation.isTest, false),
-          status === "closed"
-            ? isNotNull(schema.conversation.closedAt)
-            : isNull(schema.conversation.closedAt)
-        ),
+        // 026: alcance por rol + archivo personal + filtro por empleado.
+        and(...inboxConds(viewer, status, assigneeFilter)),
         since ? gt(schema.conversation.updatedAt, since) : undefined
       )
     )
@@ -94,7 +143,8 @@ export async function listConversations(
 /** 2A: total de conversaciones en un estado, para los contadores de las tabs. */
 export async function countConversations(
   organizationId: string,
-  status: ConversationStatus
+  status: ConversationStatus,
+  viewer?: InboxViewer
 ): Promise<number> {
   const db = getDb();
   const rows = await db
@@ -104,10 +154,8 @@ export async function countConversations(
       scoped(
         schema.conversation.organizationId,
         organizationId,
-        eq(schema.conversation.isTest, false),
-        status === "closed"
-          ? isNotNull(schema.conversation.closedAt)
-          : isNull(schema.conversation.closedAt)
+        // 026: el contador respeta el alcance por rol y el archivo personal.
+        and(...inboxConds(viewer, status, undefined))
       )
     );
   return rows[0]?.n ?? 0;
@@ -233,4 +281,53 @@ export async function updateConversation(
     )
     .returning();
   return updated[0] ?? null;
+}
+
+/**
+ * 026 — Archiva/desarchiva una conversación SOLO para mí (bandeja personal
+ * persistente; pedido Diego: «cada empleado pueda guardar persistentemente su
+ * bandeja de entrada»). El cierre global (1F) es otra cosa y no se toca acá.
+ * Devuelve null si la conversación no existe en la organización.
+ */
+export async function setConversationArchived(input: {
+  organizationId: string;
+  conversationId: string;
+  userId: string;
+  archived: boolean;
+}): Promise<{ archived: boolean } | null> {
+  const db = getDb();
+  const conv = await db
+    .select({ id: schema.conversation.id })
+    .from(schema.conversation)
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        input.organizationId,
+        eq(schema.conversation.id, input.conversationId)
+      )
+    )
+    .limit(1);
+  if (!conv[0]) return null;
+  if (input.archived) {
+    await db
+      .insert(schema.conversationArchive)
+      .values({
+        id: newId("conversationArchive"),
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        userId: input.userId,
+      })
+      .onConflictDoNothing();
+  } else {
+    await db
+      .delete(schema.conversationArchive)
+      .where(
+        and(
+          eq(schema.conversationArchive.organizationId, input.organizationId),
+          eq(schema.conversationArchive.conversationId, input.conversationId),
+          eq(schema.conversationArchive.userId, input.userId)
+        )
+      );
+  }
+  return { archived: input.archived };
 }

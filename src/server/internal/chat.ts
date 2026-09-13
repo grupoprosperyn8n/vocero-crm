@@ -154,6 +154,8 @@ export type ChatRoomSummary = {
   createdAt: string;
   /** Nombre de quien creó la sala (tarjeta del grupo). */
   createdByName: string | null;
+  /** 026 — archivada SOLO para mí (bandeja personal); a los demás no los toca. */
+  archived: boolean;
   members: ChatMemberView[];
 };
 
@@ -210,7 +212,10 @@ export async function listRoomsForUser(
 ): Promise<ChatRoomSummary[]> {
   const db = getDb();
   const myRows = await db
-    .select({ roomId: schema.chatRoomMember.roomId })
+    .select({
+      roomId: schema.chatRoomMember.roomId,
+      archivedAt: schema.chatRoomMember.archivedAt,
+    })
     .from(schema.chatRoomMember)
     .where(
       and(
@@ -222,6 +227,10 @@ export async function listRoomsForUser(
     );
   const roomIds = myRows.map((r) => r.roomId);
   if (roomIds.length === 0) return [];
+  // 026 — archivo personal: mi fila de membresía guarda si la archivé.
+  const archivedByRoom = new Map(
+    myRows.map((r) => [r.roomId, Boolean(r.archivedAt)])
+  );
 
   const roomRows = await db
     .select({ room: schema.chatRoom, createdByName: schema.user.name })
@@ -344,6 +353,7 @@ export async function listRoomsForUser(
       updatedAt: room.updatedAt.toISOString(),
       createdAt: room.createdAt.toISOString(),
       createdByName,
+      archived: archivedByRoom.get(room.id) ?? false,
       members,
     };
   });
@@ -647,6 +657,41 @@ export async function markRoomRead(
       )
     );
   return now.toISOString();
+}
+
+/**
+ * 026 — Archiva la sala SOLO para mí (pedido Diego: «los chat individual
+ * también se tiene que poder archivar de la bandeja de entrada»). Es una
+ * preferencia personal persistente: no la ven los demás integrantes y no toca
+ * la sala en sí. `archived=false` la devuelve a mi lista.
+ */
+export async function setRoomArchivedForUser(input: {
+  organizationId: string;
+  roomId: string;
+  userId: string;
+  archived: boolean;
+}): Promise<{ archived: boolean }> {
+  const db = getDb();
+  const rows = await db
+    .select({ id: schema.chatRoomMember.id })
+    .from(schema.chatRoomMember)
+    .where(
+      and(
+        eq(schema.chatRoomMember.organizationId, input.organizationId),
+        eq(schema.chatRoomMember.roomId, input.roomId),
+        eq(schema.chatRoomMember.userId, input.userId)
+      )
+    )
+    .limit(1);
+  const mine = rows[0];
+  if (!mine) {
+    throw new ChatError(404, "not_found", "No participás de esta sala");
+  }
+  await db
+    .update(schema.chatRoomMember)
+    .set({ archivedAt: input.archived ? new Date() : null })
+    .where(eq(schema.chatRoomMember.id, mine.id));
+  return { archived: input.archived };
 }
 
 /**

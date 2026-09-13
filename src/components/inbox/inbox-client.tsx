@@ -10,6 +10,7 @@ import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
 import { ChannelBadge } from "@/components/channel-badge";
 import { useEvents } from "@/components/use-events";
 import { ConversationList } from "./conversation-list";
+import { canSeeAllInbox } from "@/lib/roles";
 import { MessageThread } from "./message-thread";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
@@ -37,17 +38,30 @@ const PANEL_MEDIA_QUERY = "(min-width: 1280px)";
 const isWideEnoughForPanel = () =>
   typeof window !== "undefined" && window.matchMedia(PANEL_MEDIA_QUERY).matches;
 
-export function InboxClient({ channels }: { channels: readonly Channel[] }) {
+export function InboxClient({
+  channels,
+  viewerRole,
+}: {
+  channels: readonly Channel[];
+  /** 026 — rol del usuario: decide el filtro por empleado (ver todo). */
+  viewerRole: string;
+}) {
   const multiChannel = channels.length > 1;
-  // 2A: qué lista muestra la bandeja: la cola viva (En curso) o el archivo
-  // (Cerradas, con su resumen de gestión).
-  const [view, setView] = useState<"open" | "closed">("open");
+  // 2A/026: qué lista muestra la bandeja: la cola viva (En curso), el archivo
+  // global (Cerradas) o MI archivo personal (Archivadas).
+  const [view, setView] = useState<"open" | "closed" | "archived">("open");
   const [conversations, setConversations] = useState<ConversationDto[] | null>(
     null
   );
-  // 2A: contadores de las dos pestañas (los devuelve el mismo GET).
+  // 2A/026: contadores de las tres pestañas (los devuelve el mismo GET).
   const [openTotal, setOpenTotal] = useState(0);
   const [closedTotal, setClosedTotal] = useState(0);
+  const [archivedTotal, setArchivedTotal] = useState(0);
+  // 026 — filtro por empleado a cargo (solo gerente/administrador/propietario)
+  // y equipo para poblar el selector.
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [staff, setStaff] = useState<{ userId: string; name: string }[]>([]);
+  const canSeeAll = canSeeAllInbox(viewerRole);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageDto[]>([]);
   const [pending, setPending] = useState<PendingOut[]>([]);
@@ -91,33 +105,71 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
   const sendQueue = useRef<Promise<unknown>>(Promise.resolve());
 
   const refetchConversations = useCallback(
-    async (status?: "open" | "closed") => {
+    async (status?: "open" | "closed" | "archived") => {
       const st = status ?? view;
+      // 026 — el filtro por empleado solo viaja si puedo ver toda la bandeja
+      // (el servidor lo ignora para los demás rol).
+      const params = new URLSearchParams();
+      if (st !== "open") params.set("status", st);
+      if (canSeeAll && assigneeFilter !== "all")
+        params.set("assignee", assigneeFilter);
+      const qs = params.toString();
       const res = await fetch(
-        `/api/conversations${st === "closed" ? "?status=closed" : ""}`
+        `/api/conversations${qs ? `?${qs}` : ""}`
       ).catch(() => null);
       if (!res?.ok) return;
       const data = (await res.json()) as {
         conversations: ConversationDto[];
         openTotal: number;
         closedTotal: number;
+        archivedTotal: number;
       };
       setConversations(data.conversations);
       setOpenTotal(data.openTotal);
       setClosedTotal(data.closedTotal);
+      setArchivedTotal(data.archivedTotal);
       lastFetchRef.current = new Date().toISOString();
     },
-    [view]
+    [view, canSeeAll, assigneeFilter]
   );
 
-  /** 2A: cambiar de pestaña (cola viva ↔ archivo) con selección limpia. */
+  /** 2A/026: cambiar de pestaña (cola viva ↔ archivo global ↔ MI archivo). */
   const changeView = useCallback(
-    (v: "open" | "closed") => {
+    (v: "open" | "closed" | "archived") => {
       setView(v);
       setSelectedId(null);
       setMessages([]);
       setClosureNotice(null);
       void refetchConversations(v);
+    },
+    [refetchConversations]
+  );
+
+  /**
+   * 026 — Archiva/desarchiva la conversación SOLO para mí (bandeja personal
+   * persistente; pedido Diego: «se puede archivar conversaciones»... «cada
+   * empleado pueda guardar persistentemente su bandeja de entrada»).
+   */
+  const archiveConversation = useCallback(
+    async (id: string, archived: boolean) => {
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ archived }),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as
+        | { ok?: boolean }
+        | null;
+      if (!res?.ok || !data?.ok) {
+        setClosureNotice({
+          kind: "failed",
+          text: archived
+            ? "No se pudo archivar la conversación"
+            : "No se pudo desarchivar la conversación",
+        });
+        return;
+      }
+      void refetchConversations();
     },
     [refetchConversations]
   );
@@ -134,6 +186,21 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
   useEffect(() => {
     void refetchConversations();
   }, [refetchConversations]);
+
+  // 026 — equipo para el filtro «Empleado a cargo» (solo quien ve todo).
+  useEffect(() => {
+    if (!canSeeAll) return;
+    void (async () => {
+      const res = await fetch("/api/internal/staff").catch(() => null);
+      if (!res?.ok) return;
+      const data = (await res.json()) as {
+        staff: { userId: string; name: string }[];
+      };
+      setStaff(
+        data.staff.map((s) => ({ userId: s.userId, name: s.name }))
+      );
+    })();
+  }, [canSeeAll]);
 
   const select = useCallback(
     (id: string) => {
@@ -438,6 +505,12 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
           onViewChange={changeView}
           openTotal={openTotal}
           closedTotal={closedTotal}
+          archivedTotal={archivedTotal}
+          canSeeAll={canSeeAll}
+          staff={staff}
+          assigneeFilter={assigneeFilter}
+          onAssigneeFilterChange={setAssigneeFilter}
+          onArchive={(id, archived) => void archiveConversation(id, archived)}
         />
       </section>
 

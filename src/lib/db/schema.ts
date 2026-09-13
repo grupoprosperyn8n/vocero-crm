@@ -1316,10 +1316,38 @@ export const chatRoomMember = pgTable(
     pausedBy: text("paused_by").references(() => user.id, {
       onDelete: "set null",
     }),
+    /** 026 — archivo PERSONAL de la sala: me la saco de mi lista sin salir. */
+    archivedAt: timestamp("archived_at"),
   },
   (t) => [
     uniqueIndex("chat_room_member_uq").on(t.roomId, t.userId),
     index("chat_room_member_org_user_idx").on(t.organizationId, t.userId),
+  ]
+);
+
+/**
+ * 026 — archivo PERSONAL de una conversación del CRM (pedido Diego: «cada
+ * empleado pueda guardar persistentemente su bandeja de entrada»). El cierre
+ * (1F) sigue siendo global; esto solo saca la conversación de MI bandeja.
+ */
+export const conversationArchive = pgTable(
+  "conversation_archive",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    archivedAt: timestamp("archived_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("conversation_archive_uq").on(t.conversationId, t.userId),
+    index("conversation_archive_user_idx").on(t.organizationId, t.userId),
   ]
 );
 

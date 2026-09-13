@@ -117,15 +117,20 @@ export const POST = withAuth(async (session, req: Request) => {
 
 const offlineSchema = z.object({
   memberId: z.string().trim().min(1),
-  offline: z.boolean(),
+  /** 020 — dejar fuera de línea / poner online. */
+  offline: z.boolean().optional(),
+  /** 026 — cambiar el rol: Gerente (ve toda la bandeja), Miembro o Admin. */
+  role: z.enum(["admin", "manager", "member"]).optional(),
 });
 
 /**
  * 020 — "Dejar offline" / "Poner online" desde la pestaña Equipo.
+ * 026 — Cambiar el rol (Gerente ↔ Miembro; «Administrador» solo lo toca el
+ * propietario).
  *
- * Lo decide el propietario o un administrador (pedido de Diego, 2026-09-10):
- *   - el propietario maneja a miembros y administradores;
- *   - un administrador solo maneja miembros (no a otros administradores);
+ * Reglas de quién maneja a quién (pedido de Diego, 2026-09-10 + 13):
+ *   - el propietario maneja a miembros, gerentes y administradores;
+ *   - un administrador maneja a miembros y gerentes (no a otros administradores);
  *   - nadie se cambia a sí mismo y al propietario no se lo toca.
  * La membresía QUEDA (ficha e historial intactos): el corte es de ACCESO —
  * se invalidan las sesiones del miembro y requireSession lo frena en cada
@@ -137,11 +142,14 @@ export const PATCH = withAuth(async (session, req: Request) => {
     return apiError(
       403,
       "forbidden",
-      "Solo el propietario o un administrador pueden dejar fuera de línea a un miembro"
+      "Solo el propietario o un administrador pueden cambiar al equipo"
     );
   }
   const body = await parseBody(req, offlineSchema);
   if (!body.ok) return body.response;
+  if (body.data.offline === undefined && body.data.role === undefined) {
+    return apiError(422, "invalid", "No hay nada para cambiar");
+  }
 
   const db = getDb();
   const rows = await db
@@ -162,24 +170,43 @@ export const PATCH = withAuth(async (session, req: Request) => {
   if (!target) return apiError(404, "not_found", "Ese miembro no existe");
 
   if (target.userId === session.userId) {
-    return apiError(409, "self", "No podés cambiar tu propio estado");
+    return apiError(
+      409,
+      "self",
+      body.data.role !== undefined
+        ? "No podés cambiar tu propio rol"
+        : "No podés cambiar tu propio estado"
+    );
   }
   if (target.role === "owner") {
     return apiError(
       409,
       "owner",
-      "Al propietario no se lo puede dejar fuera de línea"
+      "Al propietario no se lo puede tocar desde acá"
     );
   }
-  if (session.role === "admin" && target.role !== "member") {
+  // 026 — un administrador no toca a administradores ni reparte ese rol.
+  if (
+    session.role === "admin" &&
+    (target.role === "admin" || body.data.role === "admin")
+  ) {
     return apiError(
       403,
       "forbidden",
-      "Un administrador solo puede manejar a los miembros"
+      "Un administrador no puede tocar a un administrador"
     );
   }
 
-  const { offline } = body.data;
+  // 026 — cambio de rol (Gerente/Miembro/Administrador según quién manda).
+  if (body.data.role !== undefined) {
+    await db
+      .update(schema.member)
+      .set({ role: body.data.role })
+      .where(eq(schema.member.id, target.id));
+    return Response.json({ ok: true, memberId: target.id, role: body.data.role });
+  }
+
+  const offline = body.data.offline === true;
   await db
     .update(schema.member)
     .set({

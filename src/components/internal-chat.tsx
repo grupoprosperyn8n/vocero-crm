@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   Briefcase,
   Building2,
@@ -73,6 +75,8 @@ type ChatRoom = {
   updatedAt: string;
   createdAt: string;
   createdByName: string | null;
+  /** 026 — archivada SOLO para mí (bandeja personal persistente). */
+  archived: boolean;
   members: {
     userId: string;
     name: string;
@@ -412,6 +416,8 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const canGroup = role === "owner" || role === "admin";
 
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
+  /** 026 — ver activas o archivadas (mi bandeja personal). */
+  const [showArchived, setShowArchived] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [roomMeta, setRoomMeta] = useState<ChatRoom | null>(null);
@@ -901,6 +907,41 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
     );
   }, [rooms, query, meId]);
 
+  // 026 — activas vs archivadas: la sala archivada sale de MI lista (a los
+  // demás no los toca) y se recupera desde la pestaña «Archivadas».
+  const visibleRooms = useMemo(
+    () => filteredRooms.filter((r) => (showArchived ? r.archived : !r.archived)),
+    [filteredRooms, showArchived]
+  );
+  const archivedCount = useMemo(
+    () => rooms.filter((r) => r.archived).length,
+    [rooms]
+  );
+
+  /**
+   * 026 — Archiva/desarchiva la sala SOLO para mí (pedido Diego: «los chat
+   * individual también se tiene que poder archivar de la bandeja de entrada»).
+   */
+  const archiveRoom = useCallback(async (roomId: string, archived: boolean) => {
+    const res = await fetch(`/api/internal/rooms/${roomId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived }),
+    }).catch(() => null);
+    const data = (await res?.json().catch(() => null)) as
+      | { ok?: boolean; error?: { message?: string } }
+      | null;
+    if (!res?.ok || !data?.ok) {
+      setFormError(
+        data?.error?.message ?? "No se pudo archivar la conversación"
+      );
+      return;
+    }
+    setRooms((prev) =>
+      prev.map((r) => (r.id === roomId ? { ...r, archived } : r))
+    );
+  }, []);
+
   // Selectores: todos menos yo; primero los que están en línea, y por nombre.
   const staffForPicker = useMemo(() => {
     return staff
@@ -1024,32 +1065,73 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
           </div>
         </div>
 
+        {/* 026 — pestañas de MI bandeja: activas / archivadas (persistente) */}
+        <div className="flex items-center gap-1 border-b px-3 py-2">
+          <button
+            onClick={() => setShowArchived(false)}
+            className={cn(
+              "rounded-md px-2.5 py-1 text-[12px] font-semibold transition-colors",
+              !showArchived
+                ? "bg-brand-tint text-text-1"
+                : "text-text-3 hover:bg-accent"
+            )}
+          >
+            Activas
+          </button>
+          <button
+            onClick={() => setShowArchived(true)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-semibold transition-colors",
+              showArchived
+                ? "bg-brand-tint text-text-1"
+                : "text-text-3 hover:bg-accent"
+            )}
+            title="Conversaciones que archivaste (solo para vos)"
+          >
+            <Archive className="h-3.5 w-3.5" strokeWidth={1.8} />
+            Archivadas
+            {archivedCount > 0 && (
+              <span className="text-[11px] font-bold text-text-2">
+                {archivedCount}
+              </span>
+            )}
+          </button>
+        </div>
+
         <div className="min-h-0 flex-1 overflow-y-auto">
           {loading && (
             <p className="px-4 py-6 text-[13px] text-text-3">Cargando…</p>
           )}
-          {!loading && filteredRooms.length === 0 && (
+          {!loading && visibleRooms.length === 0 && (
             <div className="flex flex-col items-center px-4 py-10 text-center">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-subtle">
                 {query ? (
                   <Search className="h-5 w-5 text-text-3" strokeWidth={1.6} />
+                ) : showArchived ? (
+                  <Archive className="h-5 w-5 text-text-3" strokeWidth={1.6} />
                 ) : (
                   <MessageSquareText className="h-5 w-5 text-text-3" strokeWidth={1.6} />
                 )}
               </span>
               <p className="mt-2.5 text-[13.5px] font-semibold">
-                {query ? "Nada coincide con la búsqueda" : "No hay conversaciones"}
+                {query
+                  ? "Nada coincide con la búsqueda"
+                  : showArchived
+                    ? "No tenés conversaciones archivadas"
+                    : "No hay conversaciones"}
               </p>
               {!query && (
                 <p className="mt-1 text-[12.5px] text-text-3">
-                  {canGroup
-                    ? "Empezá un mensaje directo o creá un grupo"
-                    : "Empezá un mensaje directo con un compañero"}
+                  {showArchived
+                    ? "Las que archives van a quedar acá, solo para vos"
+                    : canGroup
+                      ? "Empezá un mensaje directo o creá un grupo"
+                      : "Empezá un mensaje directo con un compañero"}
                 </p>
               )}
             </div>
           )}
-          {filteredRooms.map((room) => {
+          {visibleRooms.map((room) => {
             const active = room.id === activeId;
             const last = room.lastMessage;
             const peerRow =
@@ -1064,7 +1146,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                 key={room.id}
                 onClick={() => void openRoom(room.id)}
                 className={cn(
-                  "flex w-full items-start gap-2.5 border-b px-3 py-2.5 text-left transition-colors",
+                  "group/row flex w-full items-start gap-2.5 border-b px-3 py-2.5 text-left transition-colors",
                   active ? "bg-brand-tint" : "hover:bg-accent"
                 )}
               >
@@ -1084,11 +1166,38 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                     <span className="truncate text-[13.5px] font-semibold">
                       {room.displayName}
                     </span>
-                    {last && (
-                      <span className="shrink-0 text-[11px] text-text-3">
-                        {fmtListTime(last.createdAt)}
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      {last && (
+                        <span className="text-[11px] text-text-3">
+                          {fmtListTime(last.createdAt)}
+                        </span>
+                      )}
+                      {/* 026 — archivar/desarchivar SOLO para mí */}
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        title={room.archived ? "Desarchivar" : "Archivar"}
+                        aria-label={room.archived ? "Desarchivar" : "Archivar"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void archiveRoom(room.id, !room.archived);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void archiveRoom(room.id, !room.archived);
+                          }
+                        }}
+                        className="rounded p-0.5 text-text-3 opacity-0 transition-opacity hover:bg-accent hover:text-text-1 focus:opacity-100 group-hover/row:opacity-100"
+                      >
+                        {room.archived ? (
+                          <ArchiveRestore className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        ) : (
+                          <Archive className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        )}
                       </span>
-                    )}
+                    </span>
                   </span>
                   <span className="mt-0.5 flex items-center justify-between gap-2">
                     <span className="truncate text-[12.5px] text-text-2">

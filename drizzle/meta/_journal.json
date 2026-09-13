@@ -183,6 +183,13 @@
       "when": 1789328800000,
       "tag": "0025_chat_message_contact",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1789415200000,
+      "tag": "0026_inbox_por_usuario",
+      "breakpoints": true
     }
   ]
 }

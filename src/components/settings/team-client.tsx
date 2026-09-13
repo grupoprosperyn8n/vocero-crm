@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { roleLabel } from "@/lib/roles";
 
 type Viewer = { userId: string; role: string };
 
@@ -28,23 +29,16 @@ type Member = {
   createdAt: string;
 };
 
-function roleLabel(role: string): string {
-  if (role === "owner") return "Propietario";
-  if (role === "admin") return "Administrador";
-  return "Miembro";
-}
-
 /**
- * Espejo EXACTO de las reglas del servidor (PATCH /api/settings/team), para
- * no mostrar botones que van a rebotar: propietario → maneja miembros y
- * administradores; administrador → solo miembros; nadie a sí mismo; al
- * propietario no se lo toca.
+ * Espejo EXACTO de las reglas del servidor (PATCH /api/settings/team):
+ * propietario → maneja miembros, gerentes y administradores; administrador →
+ * solo miembros y gerentes; nadie a sí mismo; al propietario no se lo toca.
  */
-function canToggle(viewer: Viewer | null, m: Member): boolean {
+function canManageMember(viewer: Viewer | null, m: Member): boolean {
   if (!viewer) return false;
   if (m.userId === viewer.userId || m.role === "owner") return false;
   if (viewer.role === "owner") return true;
-  if (viewer.role === "admin") return m.role === "member";
+  if (viewer.role === "admin") return m.role !== "admin";
   return false;
 }
 
@@ -120,6 +114,26 @@ export function TeamClient() {
         error?: { message?: string };
       } | null;
       setActionError(data?.error?.message ?? "No se pudo cambiar el estado");
+      return;
+    }
+    void refetch();
+  }
+
+  /** 026 — cambiar el rol: Gerente ve toda la bandeja; Miembro solo lo suyo. */
+  async function setRole(m: Member, role: string) {
+    setBusyId(m.id);
+    setActionError(null);
+    const res = await fetch("/api/settings/team", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ memberId: m.id, role }),
+    }).catch(() => null);
+    setBusyId(null);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setActionError(data?.error?.message ?? "No se pudo cambiar el rol");
       return;
     }
     void refetch();
@@ -206,6 +220,9 @@ export function TeamClient() {
           <p className="text-xs text-muted-foreground">
             Dejar offline corta el acceso sin borrar nada: la cuenta conserva
             su ficha y su historial, y podés ponerla online cuando quieras.
+            El rol decide qué ve cada uno en la bandeja: un gerente ve todas
+            las conversaciones (y puede filtrar por empleado); un miembro, solo
+            las suyas.
           </p>
         )}
         {actionError && (
@@ -239,10 +256,29 @@ export function TeamClient() {
             </div>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
               {m.offlineAt && <Badge variant="warning">Offline</Badge>}
-              <Badge variant={m.role === "owner" ? "default" : "secondary"}>
-                {roleLabel(m.role)}
-              </Badge>
-              {canToggle(viewer, m) && (
+              {/* 026 — el rol se elige en el lugar (espejo de las reglas del
+                  server): Gerente ve toda la bandeja; Administrador solo lo
+                  reparte el propietario. */}
+              {canManageMember(viewer, m) ? (
+                <select
+                  value={m.role}
+                  onChange={(e) => void setRole(m, e.target.value)}
+                  disabled={busyId === m.id}
+                  aria-label={`Rol de ${m.name}`}
+                  className="rounded-md border bg-background px-2 py-1 text-xs font-medium"
+                >
+                  <option value="member">Miembro</option>
+                  <option value="manager">Gerente</option>
+                  {viewer?.role === "owner" && (
+                    <option value="admin">Administrador</option>
+                  )}
+                </select>
+              ) : (
+                <Badge variant={m.role === "owner" ? "default" : "secondary"}>
+                  {roleLabel(m.role)}
+                </Badge>
+              )}
+              {canManageMember(viewer, m) && (
                 <Button
                   variant={m.offlineAt ? "secondary" : "outline"}
                   size="sm"

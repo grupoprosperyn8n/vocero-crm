@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCheck, Plus, Search, Sparkles, UserRound, X } from "lucide-react";
+import { Archive, ArchiveRestore, CheckCheck, Plus, Search, Sparkles, UserRound, X } from "lucide-react";
 import type { ConversationDto } from "@/lib/types";
 import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
 import { ChannelBadge } from "@/components/channel-badge";
@@ -84,6 +84,12 @@ export function ConversationList({
   onViewChange,
   openTotal,
   closedTotal,
+  archivedTotal,
+  canSeeAll,
+  staff,
+  assigneeFilter,
+  onAssigneeFilterChange,
+  onArchive,
 }: {
   conversations: ConversationDto[] | null;
   /** Canales encendidos en esta instancia (ADR-001). */
@@ -93,11 +99,20 @@ export function ConversationList({
   onSeeded: () => void;
   /** 2026-09-13: "Nueva conversación" — el hilo abierto se selecciona solo. */
   onNewConversation: (contactId: string) => void;
-  /** 2A: qué lista se muestra: la cola viva (En curso) o el archivo (Cerradas). */
-  view: "open" | "closed";
-  onViewChange: (view: "open" | "closed") => void;
+  /** 2A/026: cola viva (En curso), archivo global (Cerradas) o MI archivo. */
+  view: "open" | "closed" | "archived";
+  onViewChange: (view: "open" | "closed" | "archived") => void;
   openTotal: number;
   closedTotal: number;
+  archivedTotal: number;
+  /** 026 — quién ve toda la bandeja (gerente/administrador/propietario). */
+  canSeeAll: boolean;
+  /** 026 — equipo para el filtro «Empleado a cargo». */
+  staff: { userId: string; name: string }[];
+  assigneeFilter: string;
+  onAssigneeFilterChange: (v: string) => void;
+  /** 026 — archivar/desarchivar MI vista de una conversación. */
+  onArchive: (id: string, archived: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "unread">("all");
@@ -124,10 +139,12 @@ export function ConversationList({
 
   const loading = conversationsProp === null;
   const conversations = conversationsProp ?? [];
-  // 2A: en el archivo (Cerradas) no aplican los filtros de cola — ni
-  // "Todas/No leídas" ni etapa del embudo: quedan la búsqueda y los chips
-  // de cada tarjeta. En la cola viva, todo como antes.
+  // 2A/026: en el archivo (Cerradas) y en MI archivo (Archivadas) no aplican
+  // los filtros de cola — ni "Todas/No leídas" ni etapa del embudo: quedan la
+  // búsqueda y los chips de cada tarjeta. En la cola viva, todo como antes.
   const closed = view === "closed";
+  const archivedView = view === "archived";
+  const liveQueue = view === "open";
   // Solo NOMBRE y TELÉFONO, como cualquier filtro de contactos. Antes también
   // miraba el preview, y como el agente nombra al dueño en sus propios
   // mensajes, buscar ese nombre devolvía media bandeja. Encima era una
@@ -138,7 +155,7 @@ export function ConversationList({
         text: [c.contact.name],
         phone: c.contact.phone,
       }) &&
-      (stage === "all" || c.stageName === stage) &&
+      (stage === "all" || !liveQueue || c.stageName === stage) &&
       (topic === "all" ||
         (topic === "untagged" ? !c.topic : c.topic === topic))
   );
@@ -149,9 +166,9 @@ export function ConversationList({
   const inboxCount = (ch: Channel) =>
     searched.filter((c) => c.channel === ch).length;
   const unreadCount = inInbox.filter((c) => c.unreadCount > 0).length;
-  // 2A: el filtro "No leídas" es de la cola viva; en el archivo no aplica.
+  // 2A/026: el filtro "No leídas" es de la cola viva; en los archivos no aplica.
   const visible =
-    !closed && filter === "unread"
+    liveQueue && filter === "unread"
       ? inInbox.filter((c) => c.unreadCount > 0)
       : inInbox;
   // Con un solo canal encendido no hay bandejas que distinguir: ni marca en
@@ -183,7 +200,7 @@ export function ConversationList({
     <div className="flex h-full flex-col">
       <header className="border-b px-4 pb-3 pt-3">
         {/* 2A: estado de la lista — cola viva vs archivadas. */}
-        <div className="mb-3 grid grid-cols-2 gap-1 rounded-full border border-border-strong bg-secondary/70 p-1">
+        <div className="mb-3 grid grid-cols-3 gap-1 rounded-full border border-border-strong bg-secondary/70 p-1">
           <button
             type="button"
             onClick={() => onViewChange("open")}
@@ -226,10 +243,34 @@ export function ConversationList({
               {closedTotal}
             </span>
           </button>
+          {/* 026 — MI archivo personal: lo que archivé desde la bandeja
+              (persistente por usuario; a los demás no los toca). */}
+          <button
+            type="button"
+            onClick={() => onViewChange("archived")}
+            aria-pressed={view === "archived"}
+            title="Las conversaciones que archivé (solo para mí)"
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-full py-[6px] text-[12.5px] font-semibold transition-colors",
+              view === "archived"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-text-3 hover:text-foreground"
+            )}
+          >
+            Archivadas
+            <span
+              className={cn(
+                "rounded-full px-1.5 font-mono text-[10.5px]",
+                view === "archived" ? "bg-brand-veil text-brand" : "bg-secondary"
+              )}
+            >
+              {archivedTotal}
+            </span>
+          </button>
         </div>
         <div className="mb-3 flex items-center gap-2">
           <h2 className="text-[17px] font-bold tracking-tight">
-            {closed ? "Archivo" : "Bandeja"}
+            {closed ? "Archivo" : archivedView ? "Archivadas" : "Bandeja"}
           </h2>
           <span className="font-mono text-[12px] text-text-3">{conversations.length}</span>
           {multiChannel && !closed && (
@@ -302,11 +343,12 @@ export function ConversationList({
         </div>
       </header>
 
-      {(!closed || hasTopicFilter) && (
+      {(liveQueue || hasTopicFilter) && (
         <div className="flex items-center gap-1.5 border-b px-4 py-2.5">
-        {/* 2B: en el archivo (Cerradas) la barra existe solo para el filtro
-            por etiqueta; Todas/No leídas y etapa son de la cola viva. */}
-        {!closed &&
+        {/* 2B/026: en los archivos (Cerradas/Archivadas) la barra existe solo
+            para el filtro por etiqueta; Todas/No leídas y etapa son de la cola
+            viva. El filtro por empleado (026) aplica a las tres vistas. */}
+        {liveQueue &&
         (
           [
             { id: "all", label: "Todas", count: inInbox.length },
@@ -335,9 +377,32 @@ export function ConversationList({
           </button>
         ))}
 
-        {(stages.length > 0 || hasTopicFilter) && (
+        {(stages.length > 0 || hasTopicFilter || canSeeAll) && (
           <div className="ml-auto flex min-w-0 items-center gap-1.5">
-            {!closed && stages.length > 0 && (
+            {/* 026 — filtro por empleado a cargo: solo para quien ve toda la
+                bandeja (gerente, administrador o propietario). */}
+            {canSeeAll && (
+              <select
+                value={assigneeFilter}
+                onChange={(e) => onAssigneeFilterChange(e.target.value)}
+                aria-label="Filtrar por empleado a cargo"
+                className={cn(
+                  "min-w-0 flex-1 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
+                  assigneeFilter === "all"
+                    ? "border-border-strong bg-background text-text-2 hover:border-text-3"
+                    : "border-brand bg-brand text-brand-fg"
+                )}
+              >
+                <option value="all">Todo el equipo</option>
+                <option value="none">Sin asignar</option>
+                {staff.map((s) => (
+                  <option key={s.userId} value={s.userId}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {liveQueue && stages.length > 0 && (
               <select
                 value={stage}
                 onChange={(e) => setStage(e.target.value)}
@@ -409,6 +474,18 @@ export function ConversationList({
                 </p>
               </div>
             </div>
+          ) : archivedView ? (
+            <div className="flex h-full items-center justify-center p-6 text-center">
+              <div>
+                <p className="font-serif text-[20px] italic leading-tight text-foreground">
+                  Sin conversaciones archivadas
+                </p>
+                <p className="mt-1 text-xs text-text-3">
+                  Las conversaciones que archives desde la bandeja quedan acá,
+                  solo para vos.
+                </p>
+              </div>
+            </div>
           ) : (
             <EmptyState onSeeded={onSeeded} onNew={() => setNova(true)} />
           )
@@ -419,9 +496,11 @@ export function ConversationList({
         ) : (
           <ul>
             {visible.map((c) => {
-              // 2A: en el archivo no hay no-leídas ni ventana: la tarjeta
-              // muestra la fecha de cierre y el resumen de la gestión.
-              const unread = !closed && c.unreadCount > 0;
+              // 2A/026: en los archivos no hay no-leídas: Cerradas muestra la
+              // fecha de cierre y el resumen de la gestión; Archivadas se ve
+              // como la cola viva (es una conversación abierta, solo escondida
+              // de MI bandeja).
+              const unread = liveQueue && c.unreadCount > 0;
               const active = selectedId === c.id;
               return (
                 <li key={c.id} className="relative border-b border-border">
@@ -431,7 +510,7 @@ export function ConversationList({
                   <button
                     onClick={() => onSelect(c.id)}
                     className={cn(
-                      "flex w-full items-start gap-[11px] px-4 py-[var(--row-py)] text-left transition-colors",
+                      "group/row flex w-full items-start gap-[11px] px-4 py-[var(--row-py)] text-left transition-colors",
                       active ? "bg-[var(--bg-active)]" : "hover:bg-subtle"
                     )}
                   >
@@ -454,19 +533,66 @@ export function ConversationList({
                             {c.contact.name}
                           </span>
                         </span>
-                        <span
-                          className={cn(
-                            "shrink-0 font-mono text-[10.5px] tracking-[0.02em]",
-                            unread
-                              ? "font-semibold text-brand"
-                              : closed
-                                ? "font-semibold text-text-2"
-                                : "text-text-3"
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          <span
+                            className={cn(
+                              "shrink-0 font-mono text-[10.5px] tracking-[0.02em]",
+                              unread
+                                ? "font-semibold text-brand"
+                                : closed
+                                  ? "font-semibold text-text-2"
+                                  : "text-text-3"
+                            )}
+                          >
+                            {closed
+                              ? `Cerrada ${formatTime(c.closedAt)}`
+                              : formatTime(c.lastMessageAt)}
+                          </span>
+                          {/* 026 — archivar/desarchivar SOLO para mí (la
+                              conversación sigue viva para el resto). */}
+                          {!closed && (
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              title={
+                                archivedView
+                                  ? "Desarchivar (vuelve a mi bandeja)"
+                                  : "Archivar (solo para mí)"
+                              }
+                              aria-label={
+                                archivedView ? "Desarchivar" : "Archivar"
+                              }
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onArchive(c.id, !archivedView);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  onArchive(c.id, !archivedView);
+                                }
+                              }}
+                              className={cn(
+                                "rounded p-0.5 text-text-3 transition-opacity hover:bg-accent hover:text-foreground focus:opacity-100",
+                                archivedView
+                                  ? "opacity-70 hover:opacity-100"
+                                  : "opacity-0 group-hover/row:opacity-100"
+                              )}
+                            >
+                              {archivedView ? (
+                                <ArchiveRestore
+                                  className="h-3.5 w-3.5"
+                                  strokeWidth={1.8}
+                                />
+                              ) : (
+                                <Archive
+                                  className="h-3.5 w-3.5"
+                                  strokeWidth={1.8}
+                                />
+                              )}
+                            </span>
                           )}
-                        >
-                          {closed
-                            ? `Cerrada ${formatTime(c.closedAt)}`
-                            : formatTime(c.lastMessageAt)}
                         </span>
                       </span>
                       <span className="mt-0.5 flex items-center justify-between gap-2">

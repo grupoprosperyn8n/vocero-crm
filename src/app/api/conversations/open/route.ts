@@ -26,6 +26,8 @@ export const POST = withAuth(async (session, req: Request) => {
       organizationId: session.organizationId,
       contactId: body.data.contactId,
       channel: body.data.channel,
+      // 026 — quien abre la conversación queda a cargo si no tenía empleado.
+      userId: session.userId,
     });
     return Response.json(result);
   } catch (err) {

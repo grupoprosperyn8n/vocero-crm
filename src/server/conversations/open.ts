@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
@@ -42,6 +42,8 @@ export async function openConversationForContact(input: {
   organizationId: string;
   contactId: string;
   channel?: OpenableChannel;
+  /** 026 — quien abre queda a cargo si la conversación no tenía empleado. */
+  userId?: string;
 }): Promise<OpenConversationResult> {
   const db = getDb();
   const contacts = await db
@@ -78,6 +80,7 @@ export async function openConversationForContact(input: {
     .select({
       id: schema.conversation.id,
       closedAt: schema.conversation.closedAt,
+      assigneeId: schema.conversation.assigneeId,
     })
     .from(schema.conversation)
     .where(
@@ -101,6 +104,10 @@ export async function openConversationForContact(input: {
       });
       reopened = true;
     }
+    // 026 — si nadie la tenía a cargo, queda para quien la abre.
+    if (!conv.assigneeId) {
+      await assignIfFree(input.organizationId, conv.id, input.userId);
+    }
     return { conversationId: conv.id, channel: own, created: false, reopened };
   }
 
@@ -109,10 +116,35 @@ export async function openConversationForContact(input: {
     contact.id,
     { channel: contact.channel }
   );
+  // 026 — hilo nuevo: queda a cargo de quien lo abre.
+  await assignIfFree(input.organizationId, created.id, input.userId);
   return {
     conversationId: created.id,
     channel: own,
     created: true,
     reopened: false,
   };
+}
+
+/**
+ * 026 — Asigna la conversación a `userId` SOLO si sigue sin dueño (no roba
+ * una conversación que ya atiende otro empleado). La usan «Nueva conversación»
+ * (open) y «Abrir chat» de un cliente del sistema (link).
+ */
+export async function assignIfFree(
+  organizationId: string,
+  conversationId: string,
+  userId?: string
+): Promise<void> {
+  if (!userId) return;
+  await getDb()
+    .update(schema.conversation)
+    .set({ assigneeId: userId, assignedAt: new Date() })
+    .where(
+      and(
+        eq(schema.conversation.organizationId, organizationId),
+        eq(schema.conversation.id, conversationId),
+        isNull(schema.conversation.assigneeId)
+      )
+    );
 }
