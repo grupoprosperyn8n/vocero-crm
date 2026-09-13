@@ -1,19 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, ExternalLink, Loader2, Search, X } from "lucide-react";
+import { ArrowLeft, Loader2, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ContactAvatar } from "@/components/avatar";
 import { ChannelBadge } from "@/components/channel-badge";
+import {
+  ContactDetails,
+  SystemClientDetails,
+} from "@/components/contacts/client-card";
 import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
-import type { ContactDto, SystemClientSearchResultDto } from "@/lib/types";
+import type {
+  ClientConversationDto,
+  ContactDto,
+  SystemClientSearchResultDto,
+} from "@/lib/types";
 import { cn, formatPhone } from "@/lib/utils";
-
-const AIRTABLE_BASE = "appuhslj3GFf60Tea";
-const AIRTABLE_TABLE = "tblVAcMxNTLYXbLfT";
-
-type Source = "crm" | "system";
 
 type Picked =
   | { kind: "crm"; contact: ContactDto }
@@ -24,8 +27,11 @@ const labelOf = (c: string) => CHANNEL_LABEL[c as Channel] ?? c;
 /**
  * "Nueva conversación" (pedido Diego, 2026-09-13): abrir un chat desde el CRM
  * eligiendo entre los contactos del CRM (los prospectos) y los clientes del
- * sistema de seguros, y eligiendo la plataforma — WhatsApp o Telegram — por
- * la que se va a escribir. Al abrir, la Bandeja selecciona el hilo.
+ * sistema de seguros. Los dos segmentos se ven a la vez, cada uno con su
+ * propia búsqueda; al elegir una persona se abre su tarjeta (con el enlace a
+ * la interface si viene del sistema) y se elige la plataforma — WhatsApp o
+ * Telegram — por la que se va a escribir. Al abrir, la Bandeja selecciona el
+ * hilo.
  */
 export function NewConversationDialog({
   channels,
@@ -37,66 +43,119 @@ export function NewConversationDialog({
   onClose: () => void;
   onOpened: (contactId: string) => void;
 }) {
-  const [source, setSource] = useState<Source>("crm");
-  const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [searched, setSearched] = useState(false);
-  const [crmResults, setCrmResults] = useState<ContactDto[]>([]);
-  const [sysResults, setSysResults] = useState<SystemClientSearchResultDto[]>([]);
+  const [crmQuery, setCrmQuery] = useState("");
+  const [crmResults, setCrmResults] = useState<ContactDto[] | null>(null);
+  const [crmSearching, setCrmSearching] = useState(false);
+  const [crmError, setCrmError] = useState<string | null>(null);
+  const [sysQuery, setSysQuery] = useState("");
+  const [sysResults, setSysResults] = useState<SystemClientSearchResultDto[] | null>(
+    null
+  );
+  const [sysSearching, setSysSearching] = useState(false);
+  const [sysError, setSysError] = useState<string | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [pickedConvs, setPickedConvs] = useState<ClientConversationDto[] | null>(
+    null
+  );
   const [busy, setBusy] = useState<"whatsapp" | "telegram" | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
 
-  // Búsqueda con respiro: 300 ms tras la última tecla. Menos de 2 letras no
-  // busca (el buscador del sistema tampoco acepta menos y sería una consulta
-  // por tecla al aire).
+  // Segmento CRM: los más recientes al abrir, y búsqueda con respiro
+  // (300 ms tras la última tecla; con menos de 2 letras se vuelve a la lista).
   useEffect(() => {
     if (picked) return;
-    const q = query.trim();
+    const q = crmQuery.trim();
+    let cancelled = false;
+    const t = setTimeout(
+      () => {
+        void (async () => {
+          setCrmSearching(true);
+          setCrmError(null);
+          const url =
+            q.length >= 2 ? `/api/contacts?q=${encodeURIComponent(q)}` : "/api/contacts";
+          const res = await fetch(url).catch(() => null);
+          if (cancelled) return;
+          setCrmSearching(false);
+          if (!res?.ok) {
+            setCrmError("No se pudieron cargar los contactos del CRM.");
+            return;
+          }
+          const data = (await res.json().catch(() => null)) as
+            | { contacts?: ContactDto[] }
+            | null;
+          setCrmResults((data?.contacts ?? []).slice(0, 60));
+        })();
+      },
+      q ? 300 : 0
+    );
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [crmQuery, picked]);
+
+  // Segmento sistema: 2+ caracteres (igual que el buscador de backoffice).
+  useEffect(() => {
+    if (picked) return;
+    const q = sysQuery.trim();
     if (q.length < 2) {
-      setSearched(false);
-      setSearchError(null);
-      setSearching(false);
+      setSysResults(null);
+      setSysError(null);
+      setSysSearching(false);
       return;
     }
     let cancelled = false;
     const t = setTimeout(() => {
       void (async () => {
-        setSearching(true);
-        setSearchError(null);
-        const url =
-          source === "crm"
-            ? `/api/contacts?q=${encodeURIComponent(q)}`
-            : `/api/clients/search?q=${encodeURIComponent(q)}`;
-        const res = await fetch(url).catch(() => null);
+        setSysSearching(true);
+        setSysError(null);
+        const res = await fetch(`/api/clients/search?q=${encodeURIComponent(q)}`).catch(
+          () => null
+        );
         if (cancelled) return;
-        setSearching(false);
-        setSearched(true);
-        if (!res) {
-          setSearchError("No se pudo buscar. Probá de nuevo.");
-          return;
-        }
-        const data = (await res.json().catch(() => null)) as
+        setSysSearching(false);
+        const data = (await res?.json().catch(() => null)) as
           | {
-              contacts?: ContactDto[];
               results?: SystemClientSearchResultDto[];
               error?: { message?: string };
             }
           | null;
-        if (!res.ok) {
-          setSearchError(data?.error?.message ?? "No se pudo buscar");
+        if (!res?.ok) {
+          setSysError(data?.error?.message ?? "No se pudo buscar en el sistema");
           return;
         }
-        if (source === "crm") setCrmResults(data?.contacts ?? []);
-        else setSysResults(data?.results ?? []);
+        setSysResults(data?.results ?? []);
       })();
-    }, 300);
+    }, 350);
     return () => {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [query, source, picked]);
+  }, [sysQuery, picked]);
+
+  // Conversaciones del contacto elegido: la tarjeta del CRM las muestra.
+  useEffect(() => {
+    if (picked?.kind !== "crm") return;
+    let alive = true;
+    setPickedConvs(null);
+    void (async () => {
+      const res = await fetch(`/api/contacts/${picked.contact.id}`).catch(
+        () => null
+      );
+      if (!alive) return;
+      if (!res?.ok) {
+        setPickedConvs([]);
+        return;
+      }
+      const data = (await res.json().catch(() => null)) as
+        | { conversations?: ClientConversationDto[] }
+        | null;
+      setPickedConvs(data?.conversations ?? []);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [picked]);
 
   /** Abre el hilo de un contacto del CRM por la plataforma pedida. */
   async function openContact(contactId: string, channel: "whatsapp" | "telegram") {
@@ -241,11 +300,7 @@ export function NewConversationDialog({
 
   const platforms = platformState();
 
-  function PlatformButton({
-    channel,
-  }: {
-    channel: "whatsapp" | "telegram";
-  }) {
+  function PlatformButton({ channel }: { channel: "whatsapp" | "telegram" }) {
     const state = platforms[channel];
     const isBusy = busy === channel;
     return (
@@ -277,49 +332,6 @@ export function NewConversationDialog({
     );
   }
 
-  const results: React.ReactNode = (() => {
-    if (searching) {
-      return (
-        <p className="flex items-center gap-2 px-1 py-3 text-xs text-text-3">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Buscando…
-        </p>
-      );
-    }
-    if (searchError) {
-      return <p className="px-1 py-3 text-xs text-danger-text">{searchError}</p>;
-    }
-    if (query.trim().length < 2) {
-      return (
-        <p className="px-1 py-3 text-xs text-text-3">
-          Escribí al menos 2 letras para buscar.
-        </p>
-      );
-    }
-    if (!searched) return null;
-    const rows =
-      source === "crm"
-        ? crmResults.map((c) => ({ key: c.id, node: crmRow(c) }))
-        : sysResults.map((r) => ({
-            key: r.client.recordId,
-            node: sysRow(r),
-          }));
-    if (rows.length === 0) {
-      return (
-        <p className="px-1 py-3 text-xs text-text-3">
-          Nadie coincide con esa búsqueda
-          {source === "system" ? " en el sistema de seguros" : ""}.
-        </p>
-      );
-    }
-    return (
-      <ul className="max-h-[42vh] space-y-1.5 overflow-y-auto pr-0.5">
-        {rows.map((r) => (
-          <li key={r.key}>{r.node}</li>
-        ))}
-      </ul>
-    );
-  })();
-
   function crmRow(c: ContactDto) {
     return (
       <button
@@ -334,9 +346,7 @@ export function NewConversationDialog({
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="truncate text-[13px] font-medium">{c.name}</span>
-            {c.channel && (
-              <Badge variant="outline">{labelOf(c.channel)}</Badge>
-            )}
+            {c.channel && <Badge variant="outline">{labelOf(c.channel)}</Badge>}
             {c.isTest && <Badge variant="secondary">Prueba</Badge>}
             {c.stageName && <Badge variant="outline">{c.stageName}</Badge>}
           </span>
@@ -379,6 +389,39 @@ export function NewConversationDialog({
     );
   }
 
+  /** Lista scrolleable de un segmento (CRM o sistema). */
+  function segmentList(
+    loading: boolean,
+    error: string | null,
+    empty: React.ReactNode,
+    rows: { key: string; node: React.ReactNode }[]
+  ) {
+    if (loading) {
+      return (
+        <p className="flex items-center gap-2 px-1 py-3 text-xs text-text-3">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Buscando…
+        </p>
+      );
+    }
+    if (error) {
+      return <p className="px-1 py-3 text-xs text-danger-text">{error}</p>;
+    }
+    if (rows.length === 0) return <>{empty}</>;
+    return (
+      <ul className="space-y-1.5 pr-0.5">
+        {rows.map((r) => (
+          <li key={r.key}>{r.node}</li>
+        ))}
+      </ul>
+    );
+  }
+
+  const crmRows = (crmResults ?? []).map((c) => ({ key: c.id, node: crmRow(c) }));
+  const sysRows = (sysResults ?? []).map((r) => ({
+    key: r.client.recordId,
+    node: sysRow(r),
+  }));
+
   const pickedName =
     picked?.kind === "crm"
       ? picked.contact.name
@@ -396,14 +439,16 @@ export function NewConversationDialog({
       onClick={onClose}
     >
       <div
-        className="max-h-[88dvh] w-full max-w-lg overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
+        className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="font-semibold">Nueva conversación</h3>
             <p className="mt-0.5 text-xs text-text-3">
-              Elegí a quién escribirle y por dónde.
+              {picked
+                ? "Mirá su tarjeta y elegí por dónde escribirle."
+                : "Elegí a quién escribirle: buscá en tu CRM o en el sistema de seguros."}
             </p>
           </div>
           <Button
@@ -430,14 +475,27 @@ export function NewConversationDialog({
               />
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">{pickedName}</p>
-                <p className="truncate text-[11.5px] text-text-3">
-                  {picked.kind === "crm"
-                    ? `${labelOf((picked.contact.channel ?? "whatsapp") as string)} · ${formatPhone(picked.contact.phone) || "sin teléfono"}`
-                    : `Cliente del sistema de seguros${
-                        picked.result.crm
-                          ? ` · En el CRM: ${picked.result.crm.name}`
-                          : " · Todavía no está en el CRM"
-                      }`}
+                <p className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-text-3">
+                  {picked.kind === "crm" ? (
+                    <>
+                      <span>
+                        {labelOf((picked.contact.channel ?? "whatsapp") as string)} ·{" "}
+                        {formatPhone(picked.contact.phone) || "sin teléfono"}
+                      </span>
+                      {picked.contact.isTest && (
+                        <Badge variant="secondary">Prueba</Badge>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span>Cliente del sistema de seguros</span>
+                      {picked.result.client.estado && (
+                        <Badge variant="outline">
+                          {picked.result.client.estado}
+                        </Badge>
+                      )}
+                    </>
+                  )}
                 </p>
               </div>
               <Button
@@ -447,13 +505,31 @@ export function NewConversationDialog({
                 onClick={() => {
                   setOpenError(null);
                   setPicked(null);
+                  setPickedConvs(null);
                 }}
               >
                 <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Cambiar
               </Button>
             </div>
 
-            <p className="mt-3 text-[12.5px] font-semibold">
+            {picked.kind === "crm" ? (
+              <ContactDetails
+                contact={picked.contact}
+                convs={pickedConvs}
+                onOpenConversation={(contactId, channel) =>
+                  void openContact(contactId, channel as "whatsapp" | "telegram")
+                }
+              />
+            ) : (
+              <SystemClientDetails
+                result={picked.result}
+                onOpenConversation={(contactId, channel) =>
+                  void openContact(contactId, channel as "whatsapp" | "telegram")
+                }
+              />
+            )}
+
+            <p className="mt-4 text-[12.5px] font-semibold">
               ¿Por dónde escribirle?
             </p>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -463,98 +539,126 @@ export function NewConversationDialog({
             {openError && (
               <p className="mt-2 text-xs text-danger-text">{openError}</p>
             )}
-            {picked.kind === "system" && (
-              <a
-                className="mt-3 inline-flex items-center gap-1 text-xs text-text-3 underline-offset-2 hover:underline"
-                href={`https://airtable.com/${AIRTABLE_BASE}/${AIRTABLE_TABLE}/${picked.result.client.recordId}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <ExternalLink className="h-3.5 w-3.5" /> Ver ficha completa en el
-                sistema
-              </a>
-            )}
           </div>
         ) : (
-          <>
-            <div className="mt-4 grid grid-cols-2 gap-1 rounded-full border border-border-strong bg-secondary/70 p-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setSource("crm");
-                  setSearched(false);
-                  setSearchError(null);
-                }}
-                aria-pressed={source === "crm"}
-                className={cn(
-                  "rounded-full py-[6px] text-[12.5px] font-semibold transition-colors",
-                  source === "crm"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-text-3 hover:text-foreground"
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            {/* Segmento 1: contactos del CRM (los prospectos). */}
+            <section
+              aria-label="Contactos del CRM"
+              className="flex min-h-0 flex-col rounded-lg border border-border-strong/70 p-3"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                <h4 className="text-[13px] font-semibold">Contactos del CRM</h4>
+                <span className="text-[11px] text-text-3">
+                  tus prospectos y contactos del chat
+                </span>
+              </div>
+              <div className="mt-2 flex items-center gap-2 rounded-full border border-border-strong bg-background px-3.5 py-[7px] shadow-sm transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand-soft">
+                <Search className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
+                <input
+                  autoFocus
+                  value={crmQuery}
+                  onChange={(e) => setCrmQuery(e.target.value)}
+                  placeholder="Nombre o teléfono…"
+                  aria-label="Buscar contacto del CRM"
+                  className="w-full bg-transparent text-[13px] outline-none placeholder:text-text-3"
+                />
+                {crmQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setCrmQuery("")}
+                    aria-label="Limpiar búsqueda del CRM"
+                    className="shrink-0 rounded-full p-0.5 text-text-3 hover:bg-accent hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" strokeWidth={2} />
+                  </button>
                 )}
-              >
-                Contactos del CRM
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSource("system");
-                  setSearched(false);
-                  setSearchError(null);
-                }}
-                aria-pressed={source === "system"}
-                className={cn(
-                  "rounded-full py-[6px] text-[12.5px] font-semibold transition-colors",
-                  source === "system"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-text-3 hover:text-foreground"
+              </div>
+              <div className="mt-2 max-h-[46vh] min-h-[120px] overflow-y-auto">
+                {segmentList(
+                  crmSearching && crmResults === null,
+                  crmError,
+                  crmQuery.trim().length >= 2 ? (
+                    <p className="px-1 py-3 text-xs text-text-3">
+                      Nadie coincide con esa búsqueda en el CRM.
+                    </p>
+                  ) : (
+                    <p className="px-1 py-3 text-xs text-text-3">
+                      Todavía no hay contactos en el CRM.
+                    </p>
+                  ),
+                  crmRows
                 )}
-              >
-                Clientes del sistema
-              </button>
-            </div>
+                {crmSearching && crmResults !== null && crmRows.length === 0 && (
+                  <p className="flex items-center gap-2 px-1 py-2 text-xs text-text-3">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Buscando…
+                  </p>
+                )}
+              </div>
+              <p className="mt-1.5 text-[11px] leading-snug text-text-3">
+                Al elegir un contacto se abre su tarjeta con sus conversaciones.
+              </p>
+            </section>
 
-            <div className="mt-3 flex items-center gap-2 rounded-full border border-border-strong bg-background px-3.5 py-[7px] shadow-sm transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand-soft">
-              <Search
-                className="h-4 w-4 shrink-0 text-text-3"
-                strokeWidth={1.7}
-              />
-              <input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={
-                  source === "crm"
-                    ? "Buscar prospecto por nombre o teléfono…"
-                    : "Buscar cliente por nombre, teléfono o DNI…"
-                }
-                aria-label={
-                  source === "crm"
-                    ? "Buscar contacto del CRM"
-                    : "Buscar cliente del sistema"
-                }
-                className="w-full bg-transparent text-[13px] outline-none placeholder:text-text-3"
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery("")}
-                  aria-label="Limpiar búsqueda"
-                  className="shrink-0 rounded-full p-0.5 text-text-3 hover:bg-accent hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" strokeWidth={2} />
-                </button>
-              )}
-            </div>
-
-            <p className="mt-1.5 px-1 text-[11px] text-text-3">
-              {source === "crm"
-                ? "Los contactos del CRM son tus prospectos: los que ya te escribieron o los que capturaste a mano."
-                : "Los clientes del sistema son los del backoffice de seguros; al abrir el chat se vinculan solos por teléfono."}
-            </p>
-
-            <div className="mt-3">{results}</div>
-          </>
+            {/* Segmento 2: clientes del sistema de seguros (backoffice). */}
+            <section
+              aria-label="Clientes del sistema"
+              className="flex min-h-0 flex-col rounded-lg border border-border-strong/70 p-3"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                <h4 className="text-[13px] font-semibold">Clientes del sistema</h4>
+                <span className="text-[11px] text-text-3">solo lectura</span>
+              </div>
+              <div className="mt-2 flex items-center gap-2 rounded-full border border-border-strong bg-background px-3.5 py-[7px] shadow-sm transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand-soft">
+                {sysSearching ? (
+                  <Loader2
+                    className="h-4 w-4 shrink-0 animate-spin text-text-3"
+                    strokeWidth={1.7}
+                  />
+                ) : (
+                  <Search className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
+                )}
+                <input
+                  value={sysQuery}
+                  onChange={(e) => setSysQuery(e.target.value)}
+                  placeholder="Nombre, DNI o teléfono…"
+                  aria-label="Buscar cliente del sistema"
+                  className="w-full bg-transparent text-[13px] outline-none placeholder:text-text-3"
+                />
+                {sysQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSysQuery("")}
+                    aria-label="Limpiar búsqueda del sistema"
+                    className="shrink-0 rounded-full p-0.5 text-text-3 hover:bg-accent hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" strokeWidth={2} />
+                  </button>
+                )}
+              </div>
+              <div className="mt-2 max-h-[46vh] min-h-[120px] overflow-y-auto">
+                {sysQuery.trim().length < 2 ? (
+                  <p className="px-1 py-3 text-xs text-text-3">
+                    Escribí al menos 2 letras (por nombre, DNI o teléfono). Al elegir
+                    un cliente se abre su tarjeta con el enlace a la interface.
+                  </p>
+                ) : (
+                  segmentList(
+                    sysSearching,
+                    sysError,
+                    <p className="px-1 py-3 text-xs text-text-3">
+                      Sin resultados en el sistema para «{sysQuery.trim()}».
+                    </p>,
+                    sysRows
+                  )
+                )}
+              </div>
+              <p className="mt-1.5 text-[11px] leading-snug text-text-3">
+                Los clientes del sistema son los del backoffice; al abrir el chat se
+                vinculan solos por teléfono.
+              </p>
+            </section>
+          </div>
         )}
       </div>
     </div>

@@ -26,7 +26,12 @@ export const CHANNEL_LABEL: Record<string, string> = {
 };
 
 const AIRTABLE_BASE = "appuhslj3GFf60Tea";
-const AIRTABLE_TABLE = "tblVAcMxNTLYXbLfT";
+/**
+ * Interface de CLIENTES del sistema (Airtable): el enlace "de cada uno" abre
+ * el registro en esta interface, no en la tabla cruda — es la vista que usa
+ * el equipo en el backoffice (mismo formato que el tablero).
+ */
+const AIRTABLE_INTERFACE_CLIENTES = "pagloDiKehe3EMnT4";
 
 function Modal({
   label,
@@ -78,7 +83,7 @@ function ConvList({
 }: {
   conversations: ClientConversationDto[];
   contactId: string;
-  onOpenConversation: (contactId: string) => void;
+  onOpenConversation: (contactId: string, channel: string) => void;
 }) {
   return (
     <ul className="mt-1.5 space-y-1">
@@ -100,7 +105,7 @@ function ConvList({
               size="sm"
               variant="ghost"
               className="h-6 px-2 text-xs"
-              onClick={() => onOpenConversation(contactId)}
+              onClick={() => onOpenConversation(contactId, c.channel)}
             >
               Abrir
             </Button>
@@ -111,58 +116,38 @@ function ConvList({
   );
 }
 
+/** Enlace al registro del cliente en la interface del sistema (backoffice). */
+function InterfaceLink({ recordId }: { recordId: string }) {
+  return (
+    <div className="mt-3 flex justify-end">
+      <a
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+        href={`https://airtable.com/${AIRTABLE_BASE}/${AIRTABLE_INTERFACE_CLIENTES}/${recordId}`}
+        target="_blank"
+        rel="noreferrer"
+        title="Abrir el registro en la interface del sistema"
+      >
+        <ExternalLink className="h-3.5 w-3.5" /> Abrir en la interface del sistema
+      </a>
+    </div>
+  );
+}
+
 /**
- * Tarjeta de un cliente del sistema de gestión de seguros: los datos que
- * importan + su estado en el CRM + los botones para abrir el chat por
- * WhatsApp o Telegram (pedido Diego, 2026-09-12).
+ * Tarjeta (contenido) de un cliente del sistema de gestión de seguros: los
+ * datos que importan + su estado en el CRM + el enlace a su registro en la
+ * interface. La usan tanto la tarjeta del buscador como el diálogo de
+ * "Nueva conversación" (pedido Diego, 2026-09-13).
  */
-export function SystemClientCard({
+export function SystemClientDetails({
   result,
-  onClose,
   onOpenConversation,
 }: {
   result: SystemClientSearchResultDto;
-  onClose: () => void;
-  onOpenConversation: (contactId: string) => void;
+  onOpenConversation: (contactId: string, channel: string) => void;
 }) {
   const { client, crm } = result;
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const openConv = crm?.conversations.find((c) => !c.closed);
-  const tgConv = crm?.conversations.find((c) => c.channel === "telegram");
-  const nombre = `${client.nombre} ${client.apellido}`.trim() || "Cliente";
   const p = client.polizas;
-
-  async function abrirChat() {
-    setError(null);
-    if (!client.telefono) {
-      setError("El cliente no tiene teléfono cargado en el sistema");
-      return;
-    }
-    if (crm && openConv) {
-      onOpenConversation(crm.contactId);
-      return;
-    }
-    setBusy(true);
-    const res = await fetch("/api/clients/link", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        recordId: client.recordId,
-        name: nombre,
-        phone: client.telefono,
-      }),
-    }).catch(() => null);
-    setBusy(false);
-    const data = (await res?.json().catch(() => null)) as
-      | { contactId?: string; error?: { message?: string } }
-      | null;
-    if (!res?.ok || !data?.contactId) {
-      setError(data?.error?.message ?? "No se pudo abrir el chat");
-      return;
-    }
-    onOpenConversation(data.contactId);
-  }
 
   const chips: { label: string; tone?: "warn" | "ok" }[] = [];
   if (p.total !== null) chips.push({ label: `Pólizas: ${p.total}` });
@@ -177,20 +162,7 @@ export function SystemClientCard({
     chips.push({ label: `Vencen en 30 días: ${p.vence30}` });
 
   return (
-    <Modal label={`Cliente ${nombre}`} onClose={onClose}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-lg font-semibold">{nombre}</h3>
-          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-            <span>Cliente del sistema de seguros</span>
-            {client.estado && <Badge variant="outline">{client.estado}</Badge>}
-          </p>
-        </div>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Cerrar
-        </Button>
-      </div>
-
+    <>
       <div className="mt-4 space-y-2">
         <Dato
           label="Teléfono"
@@ -282,6 +254,83 @@ export function SystemClientCard({
         )}
       </div>
 
+      <InterfaceLink recordId={client.recordId} />
+    </>
+  );
+}
+
+/**
+ * Tarjeta de un cliente del sistema de gestión de seguros: los datos que
+ * importan + su estado en el CRM + los botones para abrir el chat por
+ * WhatsApp o Telegram (pedido Diego, 2026-09-12).
+ */
+export function SystemClientCard({
+  result,
+  onClose,
+  onOpenConversation,
+}: {
+  result: SystemClientSearchResultDto;
+  onClose: () => void;
+  onOpenConversation: (contactId: string, channel?: string) => void;
+}) {
+  const { client, crm } = result;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const openConv = crm?.conversations.find((c) => !c.closed);
+  const tgConv = crm?.conversations.find((c) => c.channel === "telegram");
+  const nombre = `${client.nombre} ${client.apellido}`.trim() || "Cliente";
+
+  async function abrirChat() {
+    setError(null);
+    if (!client.telefono) {
+      setError("El cliente no tiene teléfono cargado en el sistema");
+      return;
+    }
+    if (crm && openConv) {
+      onOpenConversation(crm.contactId);
+      return;
+    }
+    setBusy(true);
+    const res = await fetch("/api/clients/link", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        recordId: client.recordId,
+        name: nombre,
+        phone: client.telefono,
+      }),
+    }).catch(() => null);
+    setBusy(false);
+    const data = (await res?.json().catch(() => null)) as
+      | { contactId?: string; error?: { message?: string } }
+      | null;
+    if (!res?.ok || !data?.contactId) {
+      setError(data?.error?.message ?? "No se pudo abrir el chat");
+      return;
+    }
+    onOpenConversation(data.contactId);
+  }
+
+  return (
+    <Modal label={`Cliente ${nombre}`} onClose={onClose}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-lg font-semibold">{nombre}</h3>
+          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <span>Cliente del sistema de seguros</span>
+            {client.estado && <Badge variant="outline">{client.estado}</Badge>}
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Cerrar
+        </Button>
+      </div>
+
+      <SystemClientDetails
+        result={result}
+        onOpenConversation={onOpenConversation}
+      />
+
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -309,19 +358,13 @@ export function SystemClientCard({
               ? undefined
               : "Telegram solo funciona si el cliente ya escribió al bot"
           }
-          onClick={() => tgConv && crm && onOpenConversation(crm.contactId)}
+          onClick={() =>
+            tgConv && crm && onOpenConversation(crm.contactId, "telegram")
+          }
         >
           <Send className="mr-1.5 h-4 w-4" />
           {tgConv ? "Abrir chat Telegram" : "Telegram no disponible"}
         </Button>
-        <a
-          className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
-          href={`https://airtable.com/${AIRTABLE_BASE}/${AIRTABLE_TABLE}/${client.recordId}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          <ExternalLink className="h-3.5 w-3.5" /> Ver ficha completa
-        </a>
       </div>
 
       <p className="mt-3 text-[11px] text-muted-foreground">
@@ -333,71 +376,25 @@ export function SystemClientCard({
 }
 
 /**
- * Tarjeta de un contacto del CRM (click en la lista de Contactos): datos +
- * sus conversaciones + abrir/editar.
+ * Contenido de la tarjeta de un contacto del CRM: datos + ficha + sus
+ * conversaciones. Lo comparten la tarjeta de la página de Contactos y el
+ * diálogo de "Nueva conversación".
  */
-export function ContactCard({
+export function ContactDetails({
   contact,
-  onClose,
+  convs,
   onOpenConversation,
-  onEdit,
 }: {
   contact: ContactDto;
-  onClose: () => void;
-  onOpenConversation: (contactId: string) => void;
-  onEdit: () => void;
+  convs: ClientConversationDto[] | null;
+  onOpenConversation: (contactId: string, channel: string) => void;
 }) {
-  const [convs, setConvs] = useState<ClientConversationDto[] | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      const res = await fetch(`/api/contacts/${contact.id}`).catch(() => null);
-      if (!alive) return;
-      if (!res?.ok) {
-        setConvs([]);
-        return;
-      }
-      const data = (await res.json()) as {
-        conversations?: ClientConversationDto[];
-      };
-      setConvs(data.conversations ?? []);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [contact.id]);
-
-  const openConv = convs?.find((c) => !c.closed) ?? null;
   const ficha = Object.entries(contact.ficha ?? {}).filter(
     ([, v]) => v !== null && v !== undefined && v !== ""
   );
 
   return (
-    <Modal label={`Contacto ${contact.name}`} onClose={onClose}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-lg font-semibold">{contact.name}</h3>
-          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-            {contact.channel && (
-              <Badge variant="outline">
-                {CHANNEL_LABEL[contact.channel] ?? contact.channel}
-              </Badge>
-            )}
-            {contact.isTest && <Badge variant="secondary">Prueba</Badge>}
-            {contact.archivedAt && (
-              <Badge variant="secondary">Archivado</Badge>
-            )}
-            {contact.stageName && (
-              <Badge variant="outline">{contact.stageName}</Badge>
-            )}
-          </p>
-        </div>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Cerrar
-        </Button>
-      </div>
-
+    <>
       <div className="mt-4 space-y-2">
         <Dato label="Teléfono" value={formatPhone(contact.phone)} />
         <Dato
@@ -449,6 +446,78 @@ export function ContactCard({
           />
         )}
       </div>
+    </>
+  );
+}
+
+/**
+ * Tarjeta de un contacto del CRM (click en la lista de Contactos): datos +
+ * sus conversaciones + abrir/editar.
+ */
+export function ContactCard({
+  contact,
+  onClose,
+  onOpenConversation,
+  onEdit,
+}: {
+  contact: ContactDto;
+  onClose: () => void;
+  onOpenConversation: (contactId: string, channel?: string) => void;
+  onEdit: () => void;
+}) {
+  const [convs, setConvs] = useState<ClientConversationDto[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const res = await fetch(`/api/contacts/${contact.id}`).catch(() => null);
+      if (!alive) return;
+      if (!res?.ok) {
+        setConvs([]);
+        return;
+      }
+      const data = (await res.json()) as {
+        conversations?: ClientConversationDto[];
+      };
+      setConvs(data.conversations ?? []);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [contact.id]);
+
+  const openConv = convs?.find((c) => !c.closed) ?? null;
+
+  return (
+    <Modal label={`Contacto ${contact.name}`} onClose={onClose}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-lg font-semibold">{contact.name}</h3>
+          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            {contact.channel && (
+              <Badge variant="outline">
+                {CHANNEL_LABEL[contact.channel] ?? contact.channel}
+              </Badge>
+            )}
+            {contact.isTest && <Badge variant="secondary">Prueba</Badge>}
+            {contact.archivedAt && (
+              <Badge variant="secondary">Archivado</Badge>
+            )}
+            {contact.stageName && (
+              <Badge variant="outline">{contact.stageName}</Badge>
+            )}
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Cerrar
+        </Button>
+      </div>
+
+      <ContactDetails
+        contact={contact}
+        convs={convs}
+        onOpenConversation={onOpenConversation}
+      />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button
