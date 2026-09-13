@@ -26,6 +26,7 @@ const OFICINAS_TABLE = "OFICINAS";
 const CLIENTE_FIELDS = [
   "NOMBRES",
   "APELLIDO",
+  "NOMBRE NORMALIZADO",
   "DNI",
   "TELEFONO",
   "TELEFONO NORMALIZADO",
@@ -199,6 +200,7 @@ export async function searchClients(
       recordId: r.id,
       nombre: str(f["NOMBRES"]) ?? "",
       apellido: str(f["APELLIDO"]) ?? "",
+      nombreNormalizado: str(f["NOMBRE NORMALIZADO"]),
       dni: str(f["DNI"]),
       telefono: telDigits || null,
       telefonoRaw: str(f["TELEFONO"]),

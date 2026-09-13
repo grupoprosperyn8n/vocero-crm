@@ -14,7 +14,7 @@ import type {
   ContactDto,
   SystemClientSearchResultDto,
 } from "@/lib/types";
-import { formatPhone } from "@/lib/utils";
+import { formatPhone, systemClientName } from "@/lib/utils";
 import { SOURCE_LABELS } from "@/server/contact-source";
 
 export const CHANNEL_LABEL: Record<string, string> = {
@@ -261,7 +261,7 @@ export function SystemClientCard({
   const [error, setError] = useState<string | null>(null);
   const openConv = crm?.conversations.find((c) => !c.closed);
   const tgConv = crm?.conversations.find((c) => c.channel === "telegram");
-  const nombre = `${client.nombre} ${client.apellido}`.trim() || "Cliente";
+  const nombre = systemClientName(client);
 
   async function abrirChat() {
     setError(null);

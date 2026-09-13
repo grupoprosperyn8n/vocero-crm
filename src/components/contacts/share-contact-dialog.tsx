@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, ChevronRight, Loader2, Search, X } from "lucide-react";
 import { CHANNEL_LABEL, isChannel } from "@/lib/channels";
+import { systemClientName } from "@/lib/utils";
 import type {
   ChatContactShareDto,
   ContactDto,
@@ -25,7 +26,7 @@ type Picked =
   | { kind: "system"; result: SystemClientSearchResultDto };
 
 function systemName(r: SystemClientSearchResultDto): string {
-  return `${r.client.nombre} ${r.client.apellido}`.trim() || "Cliente";
+  return systemClientName(r.client);
 }
 
 export function ShareContactDialog({

@@ -14,7 +14,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import type { ContactDto, SystemClientSearchResultDto } from "@/lib/types";
-import { formatPhone } from "@/lib/utils";
+import { formatPhone, systemClientName } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -239,12 +239,12 @@ export function ContactsClient() {
                   className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-subtle"
                 >
                   <ContactAvatar
-                    name={`${r.client.nombre} ${r.client.apellido}`.trim() || "Cliente"}
+                    name={systemClientName(r.client)}
                     seed={r.client.recordId}
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
-                      {r.client.nombre} {r.client.apellido}
+                      {systemClientName(r.client)}
                       {r.client.estado ? (
                         <span className="ml-2 text-[11px] font-normal text-muted-foreground">
                           {r.client.estado}

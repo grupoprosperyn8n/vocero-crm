@@ -16,7 +16,7 @@ import type {
   ContactDto,
   SystemClientSearchResultDto,
 } from "@/lib/types";
-import { cn, formatPhone } from "@/lib/utils";
+import { cn, formatPhone, systemClientName } from "@/lib/utils";
 
 type Picked =
   | { kind: "crm"; contact: ContactDto }
@@ -193,7 +193,7 @@ export function NewConversationDialog({
     }
     setBusy("whatsapp");
     setOpenError(null);
-    const nombre = `${client.nombre} ${client.apellido}`.trim() || "Cliente";
+    const nombre = systemClientName(client);
     const res = await fetch("/api/clients/link", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -361,7 +361,7 @@ export function NewConversationDialog({
   }
 
   function sysRow(r: SystemClientSearchResultDto) {
-    const nombre = `${r.client.nombre} ${r.client.apellido}`.trim() || "Cliente";
+    const nombre = systemClientName(r.client);
     const p = r.client.polizas;
     return (
       <button
@@ -432,8 +432,7 @@ export function NewConversationDialog({
     picked?.kind === "crm"
       ? picked.contact.name
       : picked
-        ? `${picked.result.client.nombre} ${picked.result.client.apellido}`.trim() ||
-          "Cliente"
+        ? systemClientName(picked.result.client)
         : "";
 
   return (

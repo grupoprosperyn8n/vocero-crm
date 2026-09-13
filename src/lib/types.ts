@@ -134,6 +134,8 @@ export type SystemClientDto = {
   recordId: string;
   nombre: string;
   apellido: string;
+  /** «NOMBRE NORMALIZADO» de la base: el nombre canónico del sistema (ej. «TEST IA»). */
+  nombreNormalizado: string | null;
   dni: string | null;
   /** Dígitos del teléfono, como los guarda el sistema. */
   telefono: string | null;

@@ -14,6 +14,21 @@ export function initials(name: string): string {
   return (first + second).toUpperCase() || "?";
 }
 
+/**
+ * Nombre para mostrar de un cliente del SISTEMA: el canónico es «NOMBRE
+ * NORMALIZADO» de la base (ej. TEST → «TEST IA»; los campos NOMBRES/APELLIDO
+ * pueden venir invertidos). Si falta, se compone; último recurso «Cliente».
+ */
+export function systemClientName(client: {
+  nombre: string;
+  apellido: string;
+  nombreNormalizado?: string | null;
+}): string {
+  const norm = (client.nombreNormalizado ?? "").trim();
+  if (norm) return norm;
+  return `${client.nombre} ${client.apellido}`.trim() || "Cliente";
+}
+
 /* Paleta de los avatares del mockup de la landing (hsl(h 62% 52%)): tonos
    medios saturados, legibles con inicial blanca en los dos temas. */
 const AVATAR_COLORS = [
