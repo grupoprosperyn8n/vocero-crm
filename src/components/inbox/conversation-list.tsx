@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCheck, Search, Sparkles, UserRound, X } from "lucide-react";
+import { CheckCheck, Plus, Search, Sparkles, UserRound, X } from "lucide-react";
 import type { ConversationDto } from "@/lib/types";
 import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
 import { ChannelBadge } from "@/components/channel-badge";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { formatTime, previewText } from "./helpers";
+import { NewConversationDialog } from "./new-conversation";
 import { topicDot, topicLabel } from "@/lib/topics";
 
 /* Puntos de etapa con la paleta de la landing: azul, ámbar, verde WhatsApp. */
@@ -22,7 +23,13 @@ const STAGE_DOT: Record<string, string> = {
 };
 const STAGE_DOT_FALLBACK = "#8391aa";
 
-function EmptyState({ onSeeded }: { onSeeded: () => void }) {
+function EmptyState({
+  onSeeded,
+  onNew,
+}: {
+  onSeeded: () => void;
+  onNew: () => void;
+}) {
   const [seeding, setSeeding] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -43,19 +50,25 @@ function EmptyState({ onSeeded }: { onSeeded: () => void }) {
       </p>
       <p className="text-xs text-text-3">
         Cuando alguien escriba a tu número de WhatsApp, su conversación
-        aparecerá aquí en tiempo real.
+        aparecerá aquí en tiempo real. También podés abrir una vos.
       </p>
-      {!failed && (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={seeding}
-          onClick={() => void seed()}
-        >
-          <Sparkles className="h-4 w-4" strokeWidth={1.7} />
-          {seeding ? "Cargando demo…" : "Cargar datos de demostración"}
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <Button size="sm" onClick={onNew}>
+          <Plus className="h-4 w-4" strokeWidth={1.7} />
+          Nueva conversación
         </Button>
-      )}
+        {!failed && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={seeding}
+            onClick={() => void seed()}
+          >
+            <Sparkles className="h-4 w-4" strokeWidth={1.7} />
+            {seeding ? "Cargando demo…" : "Cargar datos de demostración"}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -66,6 +79,7 @@ export function ConversationList({
   selectedId,
   onSelect,
   onSeeded,
+  onNewConversation,
   view,
   onViewChange,
   openTotal,
@@ -77,6 +91,8 @@ export function ConversationList({
   selectedId: string | null;
   onSelect: (id: string) => void;
   onSeeded: () => void;
+  /** 2026-09-13: "Nueva conversación" — el hilo abierto se selecciona solo. */
+  onNewConversation: (contactId: string) => void;
   /** 2A: qué lista se muestra: la cola viva (En curso) o el archivo (Cerradas). */
   view: "open" | "closed";
   onViewChange: (view: "open" | "closed") => void;
@@ -91,6 +107,8 @@ export function ConversationList({
   // clasificar (las que el operador debe catalogar), resto = topic concreto.
   const [topic, setTopic] = useState<string>("all");
   const inputRef = useRef<HTMLInputElement>(null);
+  // "Nueva conversación": el diálogo vive acá (misma pantalla que la lista).
+  const [nova, setNova] = useState(false);
 
   /**
    * Rescate de lo tecleado ANTES de que hidratara el JS. La caja se pinta en
@@ -246,6 +264,21 @@ export function ConversationList({
               })}
             </div>
           )}
+          {!closed && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setNova(true)}
+              title="Nueva conversación"
+              className={cn(
+                "h-7 shrink-0 gap-1 rounded-full border-border-strong px-2.5 text-[12px] font-semibold",
+                !multiChannel && "ml-auto"
+              )}
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />
+              Nueva
+            </Button>
+          )}
         </div>
         <div className="flex items-center gap-2 rounded-full border border-border-strong bg-background px-3.5 py-[7px] shadow-sm transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand-soft">
           <Search className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
@@ -377,7 +410,7 @@ export function ConversationList({
               </div>
             </div>
           ) : (
-            <EmptyState onSeeded={onSeeded} />
+            <EmptyState onSeeded={onSeeded} onNew={() => setNova(true)} />
           )
         ) : visible.length === 0 ? (
           <p className="p-6 text-center text-xs text-text-3">
@@ -535,6 +568,17 @@ export function ConversationList({
           </ul>
         )}
       </div>
+
+      {nova && (
+        <NewConversationDialog
+          channels={channels}
+          onClose={() => setNova(false)}
+          onOpened={(contactId) => {
+            setNova(false);
+            onNewConversation(contactId);
+          }}
+        />
+      )}
     </div>
   );
 }

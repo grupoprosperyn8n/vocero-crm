@@ -158,6 +158,34 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
     if (match) select(match.id);
   }, [contactParam, conversations, select]);
 
+  // "Nueva conversación" (2026-09-13): el diálogo abre/crea el hilo de un
+  // contacto del CRM o cliente del sistema, y acá se selecciona apenas
+  // aparece en la cola (el refetch trae la conversación nueva o reabierta).
+  const [pendingContact, setPendingContact] = useState<string | null>(null);
+  const newConversationOpened = useCallback(
+    (contactId: string) => {
+      setPendingContact(contactId);
+      if (view !== "open") {
+        changeView("open");
+      } else {
+        void refetchConversations("open");
+      }
+      // Segundo intento por si el primer refetch le ganó la carrera al commit.
+      setTimeout(() => void refetchConversations("open"), 2000);
+    },
+    [view, changeView, refetchConversations]
+  );
+  useEffect(() => {
+    if (!pendingContact) return;
+    const match = conversations?.find(
+      (c) => c.contact.id === pendingContact && !c.closedAt
+    );
+    if (match) {
+      select(match.id);
+      setPendingContact(null);
+    }
+  }, [pendingContact, conversations, select]);
+
   useEvents({
     onMessageNew: ({ conversationId, message }) => {
       if (selectedIdRef.current === conversationId) {
@@ -405,6 +433,7 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
           selectedId={selectedId}
           onSelect={select}
           onSeeded={() => void refetchConversations("open")}
+          onNewConversation={newConversationOpened}
           view={view}
           onViewChange={changeView}
           openTotal={openTotal}
