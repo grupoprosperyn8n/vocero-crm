@@ -274,3 +274,26 @@ export type ChatContactShareDto = {
   recordId?: string | null;
   policies?: number | null;
 };
+
+/** Snapshot seguro de una alerta SGSA compartida en el chat interno. */
+export type ChatAlertShareDto = {
+  id: string;
+  /** Airtable ALERTAS record id, when the alert is already persisted. */
+  airtableRecordId?: string | null;
+  /** English + source-language aliases are kept so cards and future APIs stay stable. */
+  title: string;
+  titulo: string;
+  body: string;
+  cuerpo: string;
+  type: string;
+  tipo: string;
+  urgencyLabel: string;
+  urgenciaLabel: string;
+  /** Optional safe context fields. */
+  recordUrl?: string | null;
+  linkRegistro?: string | null;
+  estado?: string | null;
+  fecha?: string | null;
+};
+
+export type ChatMessagePayloadDto = ChatContactShareDto | ChatAlertShareDto;

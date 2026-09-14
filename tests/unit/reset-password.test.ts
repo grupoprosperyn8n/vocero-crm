@@ -1,5 +1,6 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { verifyPassword } from "better-auth/crypto";
@@ -16,7 +17,6 @@ import { verifyPassword } from "better-auth/crypto";
  * realmente deje entrar.
  */
 
-const exec = promisify(execFile);
 const SCRIPT = path.resolve(import.meta.dirname, "../../scripts/reset-password.mjs");
 const TIMEOUT = 20_000;
 
@@ -28,13 +28,45 @@ function hashDeLaSalida(stdout: string): string | null {
 async function correr(args: string[], password?: string) {
   const env = { ...process.env };
   delete env.NEW_PASSWORD;
+  delete env.NODE_OPTIONS;
+  delete env.VITEST;
+  delete env.VITEST_POOL_ID;
+  delete env.VITEST_WORKER_ID;
   if (password !== undefined) env.NEW_PASSWORD = password;
+
+  // En algunos runners/sandboxes de Codex, `execFile`/`spawnSync` con pipes
+  // devuelve stdout/stderr vacíos aunque el proceso escriba correctamente.
+  // Redirigir a archivos mantiene el test fiel a la CLI real y evita ese bug
+  // del harness.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "vocero-reset-password-"));
+  const outPath = path.join(tmp, "stdout.txt");
+  const errPath = path.join(tmp, "stderr.txt");
+  const outFd = fs.openSync(outPath, "w");
+  const errFd = fs.openSync(errPath, "w");
+  let closed = false;
   try {
-    const { stdout, stderr } = await exec(process.execPath, [SCRIPT, ...args], { env });
-    return { code: 0, stdout, stderr };
-  } catch (e) {
-    const err = e as { code?: number; stdout?: string; stderr?: string };
-    return { code: err.code ?? 1, stdout: err.stdout ?? "", stderr: err.stderr ?? "" };
+    const result = spawnSync(process.execPath, [SCRIPT, ...args], {
+      env,
+      stdio: ["ignore", outFd, errFd],
+    });
+    fs.closeSync(outFd);
+    fs.closeSync(errFd);
+    closed = true;
+    return {
+      code: result.status ?? 1,
+      stdout: fs.readFileSync(outPath, "utf8"),
+      stderr: fs.readFileSync(errPath, "utf8") || result.error?.message || "",
+    };
+  } finally {
+    if (!closed) {
+      try {
+        fs.closeSync(outFd);
+      } catch {}
+      try {
+        fs.closeSync(errFd);
+      } catch {}
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
 

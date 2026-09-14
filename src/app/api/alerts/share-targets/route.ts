@@ -1,31 +1,91 @@
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { withAuth } from "@/lib/api";
-import {
-  alertsConfigured,
-  listShareTargets,
-  resolveEmpleadoForUser,
-} from "@/server/alerts/service";
+import { getDb, schema } from "@/lib/db";
+import { onlineUserIds } from "@/server/events/presence";
+import { alertsConfigured } from "@/server/alerts/service";
 
 export const dynamic = "force-dynamic";
 
 /**
- * 027b — Destinatarios para compartir una alerta: los empleados del sistema
- * (chat interno) + los grupos del chat interno a los que PERTENECE el
- * empleado vinculado al usuario del CRM. Sin match de empleado: empleados sí,
- * grupos vacíos (el CRM no puede saber a qué grupos pertenece).
+ * 027c — Destinatarios locales para compartir una alerta.
+ *
+ * Los empleados son usuarios locales del CRM (DM por /api/internal/rooms) y los
+ * grupos son salas locales del chat interno donde participa el usuario actual.
+ * `airtableId` se conserva por compatibilidad con el diálogo viejo, pero ahora
+ * contiene el userId local de Vocero.
  */
 export const GET = withAuth(async (session) => {
   if (!alertsConfigured()) {
     return Response.json({ ok: false, configured: false, employees: [], groups: [] });
   }
   try {
-    const empleadoRef = await resolveEmpleadoForUser(session.userId);
-    const { employees, groups } = await listShareTargets(empleadoRef);
-    return Response.json({ ok: true, configured: true, empleadoRef, employees, groups });
+    const db = getDb();
+    const online = new Set(onlineUserIds(session.organizationId));
+
+    const employeeRows = await db
+      .select({ userId: schema.member.userId, nombre: schema.user.name })
+      .from(schema.member)
+      .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+      .where(eq(schema.member.organizationId, session.organizationId))
+      .orderBy(asc(schema.user.name));
+
+    const employees = employeeRows
+      .filter((e) => e.userId !== session.userId)
+      .map((e) => ({
+        airtableId: e.userId,
+        nombre: e.nombre || "Empleado",
+        online: online.has(e.userId),
+      }))
+      .sort(
+        (a, b) =>
+          Number(b.online) - Number(a.online) ||
+          a.nombre.localeCompare(b.nombre, "es")
+      );
+
+    const myGroups = await db
+      .select({ roomId: schema.chatRoomMember.roomId })
+      .from(schema.chatRoomMember)
+      .where(
+        and(
+          eq(schema.chatRoomMember.organizationId, session.organizationId),
+          eq(schema.chatRoomMember.userId, session.userId),
+          isNull(schema.chatRoomMember.pausedAt)
+        )
+      );
+    const groupIds = myGroups.map((g) => g.roomId);
+    const groupRows = groupIds.length
+      ? await db
+          .select({ id: schema.chatRoom.id, nombre: schema.chatRoom.name })
+          .from(schema.chatRoom)
+          .where(
+            and(
+              eq(schema.chatRoom.organizationId, session.organizationId),
+              eq(schema.chatRoom.kind, "group"),
+              inArray(schema.chatRoom.id, groupIds)
+            )
+          )
+          .orderBy(asc(schema.chatRoom.name))
+      : [];
+
+    const groups = groupRows.map((g) => ({
+      id: g.id,
+      nombre: g.nombre?.trim() || "Grupo",
+    }));
+
+    return Response.json({
+      ok: true,
+      configured: true,
+      // Compatibilidad con el diálogo; ya no depende del empleado SGSA.
+      empleadoRef: session.userId,
+      employees,
+      groups,
+    });
   } catch (err) {
     console.error("[api/alerts/share-targets] error:", err);
     return Response.json({
       ok: false,
       configured: true,
+      empleadoRef: null,
       employees: [],
       groups: [],
       error: "No se pudieron cargar los destinatarios",

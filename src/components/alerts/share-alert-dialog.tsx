@@ -14,9 +14,24 @@ import type { SgsaAlertDto } from "@/lib/types";
  */
 
 type Targets = {
+  empleadoRef: string | null;
   employees: { airtableId: string; nombre: string; online: boolean }[];
-  groups: { id: number; nombre: string }[];
+  groups: { id: string; nombre: string }[];
 };
+
+type ApiErrorBody = { error?: string | { message?: string } };
+
+function apiErrorMessage(
+  data: ApiErrorBody | null | undefined,
+  fallback: string
+): string {
+  const error = data?.error;
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object" && typeof error.message === "string") {
+    return error.message;
+  }
+  return fallback;
+}
 
 export function ShareAlertDialog({
   alert,
@@ -31,7 +46,7 @@ export function ShareAlertDialog({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [selEmps, setSelEmps] = useState<Set<string>>(new Set());
-  const [selGroups, setSelGroups] = useState<Set<number>>(new Set());
+  const [selGroups, setSelGroups] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -46,10 +61,14 @@ export function ShareAlertDialog({
       if (cancelled) return;
       if (!res?.ok || !data?.ok) {
         setLoadError("No se pudieron cargar los destinatarios.");
-        setTargets({ employees: [], groups: [] });
+        setTargets({ empleadoRef: null, employees: [], groups: [] });
         return;
       }
-      setTargets({ employees: data.employees ?? [], groups: data.groups ?? [] });
+      setTargets({
+        empleadoRef: data.empleadoRef ?? null,
+        employees: data.employees ?? [],
+        groups: data.groups ?? [],
+      });
     })();
     return () => {
       cancelled = true;
@@ -73,7 +92,7 @@ export function ShareAlertDialog({
       return next;
     });
 
-  const toggleGroup = (id: number) =>
+  const toggleGroup = (id: string) =>
     setSelGroups((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -96,18 +115,36 @@ export function ShareAlertDialog({
           body: JSON.stringify({
             empleados: [...selEmps],
             grupos: [...selGroups],
+            alert: {
+              id: alert.id,
+              airtableRecordId: alert.airtableRecordId,
+              title: alert.titulo,
+              titulo: alert.titulo,
+              body: alert.cuerpo || alert.detalle,
+              cuerpo: alert.cuerpo || alert.detalle,
+              type: alert.tipo,
+              tipo: alert.tipo,
+              urgencyLabel: alert.urgenciaLabel,
+              urgenciaLabel: alert.urgenciaLabel,
+              recordUrl: alert.linkRegistro,
+              linkRegistro: alert.linkRegistro,
+              estado: alert.estado,
+              fecha: alert.fecha,
+            },
           }),
         }
       ).catch(() => null);
-      const data = (await res?.json().catch(() => null)) as {
-        ok?: boolean;
-        compartidaCon?: string[];
-        grupos?: string[];
-        chatGrupos?: number[];
-        error?: string;
-      } | null;
+      const data = (await res?.json().catch(() => null)) as
+        | ({
+            ok?: boolean;
+            compartidaCon?: string[];
+            grupos?: string[];
+            chatGrupos?: string[];
+            errores?: string[];
+          } & ApiErrorBody)
+        | null;
       if (!res?.ok || !data?.ok) {
-        setError(data?.error ?? "No se pudo compartir la alerta.");
+        setError(apiErrorMessage(data, "No se pudo compartir la alerta."));
         return;
       }
       const partes: string[] = [];
@@ -124,7 +161,18 @@ export function ShareAlertDialog({
       if (data.chatGrupos?.length) {
         partes.push("aviso publicado en el chat del grupo");
       }
-      setDone(`Compartida con ${partes.join(" · ")}.`);
+      if (data.errores?.length) {
+        partes.push(
+          `${data.errores.length} aviso${
+            data.errores.length === 1 ? "" : "s"
+          } con observación`
+        );
+      }
+      setDone(
+        partes.length
+          ? `Compartida con ${partes.join(" · ")}.`
+          : "Alerta compartida."
+      );
       onShared?.();
     } finally {
       setSending(false);
@@ -257,7 +305,7 @@ export function ShareAlertDialog({
                   <div className="space-y-1.5">
                     {targets.groups.length === 0 ? (
                       <p className="px-1 text-[12px] text-text-3">
-                        No pertenecés a grupos del chat interno.
+No pertenecés a grupos del chat interno.
                       </p>
                     ) : (
                       targets.groups.map((g) => (

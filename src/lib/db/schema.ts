@@ -10,7 +10,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { ChatContactShareDto } from "@/lib/types";
+import type { ChatMessagePayloadDto } from "@/lib/types";
 
 /* ============================================================
  * Auth (Better Auth + plugin organization)
@@ -1368,7 +1368,7 @@ export const chatMessage = pgTable(
     /** 025 — tipo del mensaje: `text` (default) o `contact` (contacto compartido). */
     kind: text("kind").notNull().default("text"),
     /** 025 — snapshot del contacto compartido (CRM o sistema) al momento de compartir. */
-    payload: jsonb("payload").$type<ChatContactShareDto | null>(),
+    payload: jsonb("payload").$type<ChatMessagePayloadDto | null>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [

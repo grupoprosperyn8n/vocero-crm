@@ -17,7 +17,7 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { alertUrgency, alertUrgencyLabel } from "@/lib/alerts";
-import type { SgsaAlertDto } from "@/lib/types";
+import type { ChatAlertShareDto, SgsaAlertDto } from "@/lib/types";
 import { getTodayOffice } from "@/server/internal/office-day";
 
 const DEFAULT_BACKEND_URL = "https://web-production-2584d.up.railway.app";
@@ -156,6 +156,40 @@ export async function setAlertStatus(
       sucursal_id: info.sucursalId ?? undefined,
     }),
   });
+}
+
+
+export function alertSharePayload(alert: SgsaAlertDto): ChatAlertShareDto {
+  const body = alert.cuerpo || alert.detalle || alert.titulo || "Alerta";
+  return {
+    id: alert.id,
+    airtableRecordId: alert.airtableRecordId,
+    title: alert.titulo,
+    titulo: alert.titulo,
+    body,
+    cuerpo: body,
+    type: alert.tipo,
+    tipo: alert.tipo,
+    urgencyLabel: alert.urgenciaLabel,
+    urgenciaLabel: alert.urgenciaLabel,
+    recordUrl: alert.linkRegistro,
+    linkRegistro: alert.linkRegistro,
+    estado: alert.estado,
+    fecha: alert.fecha,
+  };
+}
+
+export async function getAlertSharePayload(id: string): Promise<ChatAlertShareDto | null> {
+  const pending = await listAlerts(false);
+  const fromPending = pending.alerts.find(
+    (a) => a.id === id || a.airtableRecordId === id
+  );
+  if (fromPending) return alertSharePayload(fromPending);
+  const history = await listAlerts(true);
+  const fromHistory = history.alerts.find(
+    (a) => a.id === id || a.airtableRecordId === id
+  );
+  return fromHistory ? alertSharePayload(fromHistory) : null;
 }
 
 /* ─── Compartir alertas (espejo del share de la PWA) ───────────────────── */

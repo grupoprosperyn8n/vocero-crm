@@ -4,7 +4,7 @@ import { newId } from "@/lib/db/ids";
 import { publish } from "@/server/events/bus";
 import { onlineUserIds } from "@/server/events/presence";
 import { artDayKey } from "./office-day";
-import type { ChatContactShareDto } from "@/lib/types";
+import type { ChatAlertShareDto, ChatContactShareDto, ChatMessagePayloadDto } from "@/lib/types";
 
 /**
  * 022 — Chat interno del equipo.
@@ -26,6 +26,10 @@ export const CHAT_BODY_MAX = 4000;
 export const CHAT_NAME_MAX = 80;
 /** 025 — tope del nombre en un contacto compartido. */
 export const CHAT_CONTACT_NAME_MAX = 120;
+/** 027c — topes del snapshot de alerta compartida. */
+export const CHAT_ALERT_TITLE_MAX = 160;
+export const CHAT_ALERT_BODY_MAX = 1200;
+export const CHAT_ALERT_LABEL_MAX = 80;
 /** Tope de mensajes que devuelve una sala (el historial completo no se pagina: el chat interno es chico). */
 export const CHAT_PAGE = 200;
 
@@ -59,6 +63,25 @@ export function sanitizeRoomName(raw: unknown): string | null {
     .replace(/\s+/g, " ");
   if (!name) return null;
   return name.length > CHAT_NAME_MAX ? name.slice(0, CHAT_NAME_MAX) : name;
+}
+
+
+function cleanStr(v: unknown, max: number): string | null {
+  const s = String(v ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+  return s ? s.slice(0, max) : null;
+}
+
+function cleanUrl(v: unknown): string | null {
+  const s = cleanStr(v, 600);
+  if (!s) return null;
+  try {
+    const url = new URL(s);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -98,6 +121,47 @@ export function sanitizeContactShare(raw: unknown): ChatContactShareDto | null {
   return { source, recordId, name, phone, policies };
 }
 
+/**
+ * 027c — Alerta compartida: snapshot seguro, plano y acotado.
+ * Acepta aliases del dominio (`titulo`, `cuerpo`, `tipo`, `urgenciaLabel`) y
+ * guarda también aliases en inglés para que el chat no dependa del backend SGSA.
+ */
+export function sanitizeAlertShare(raw: unknown): ChatAlertShareDto | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const id = cleanStr(o.id, 80);
+  const title = cleanStr(o.title ?? o.titulo, CHAT_ALERT_TITLE_MAX);
+  const body = cleanStr(o.body ?? o.cuerpo, CHAT_ALERT_BODY_MAX);
+  const type = cleanStr(o.type ?? o.tipo, CHAT_ALERT_LABEL_MAX);
+  const urgencyLabel = cleanStr(
+    o.urgencyLabel ?? o.urgenciaLabel,
+    CHAT_ALERT_LABEL_MAX
+  );
+  if (!id || !title || !body || !type || !urgencyLabel) return null;
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) return null;
+  const recordUrl = cleanUrl(o.recordUrl ?? o.linkRegistro);
+  return {
+    id,
+    airtableRecordId: cleanStr(o.airtableRecordId, 80),
+    title,
+    titulo: title,
+    body,
+    cuerpo: body,
+    type,
+    tipo: type,
+    urgencyLabel,
+    urgenciaLabel: urgencyLabel,
+    recordUrl,
+    linkRegistro: recordUrl,
+    estado: cleanStr(o.estado, CHAT_ALERT_LABEL_MAX),
+    fecha: cleanStr(o.fecha, 80),
+  };
+}
+
+function chatKind(kind: unknown): ChatMessageView["kind"] {
+  return kind === "contact" || kind === "alert" ? kind : "text";
+}
+
 /** Un DM es entre dos personas distintas. */
 export function dmPairOk(a: string, b: string): boolean {
   return Boolean(a) && Boolean(b) && a !== b;
@@ -131,10 +195,10 @@ export type ChatMessageView = {
   senderId: string;
   senderName: string;
   body: string;
-  /** 025 — `text` (normal) o `contact` (contacto compartido). */
-  kind: "text" | "contact";
-  /** 025 — snapshot del contacto compartido; null en los mensajes de texto. */
-  payload: ChatContactShareDto | null;
+  /** `text` (normal), `contact` (contacto compartido) o `alert` (alerta compartida). */
+  kind: "text" | "contact" | "alert";
+  /** Snapshot del adjunto compartido; null en los mensajes de texto. */
+  payload: ChatMessagePayloadDto | null;
   createdAt: string;
 };
 
@@ -345,7 +409,7 @@ export async function listRoomsForUser(
             senderId: last.senderId,
             senderName: last.senderName,
             body: last.body,
-            kind: last.kind === "contact" ? ("contact" as const) : ("text" as const),
+            kind: chatKind(last.kind),
             payload: last.payload ?? null,
             createdAt: last.createdAt.toISOString(),
           }
@@ -506,9 +570,11 @@ export async function postChatMessage(input: {
   body: string;
   /** 025 — contacto a compartir (opcional). */
   contact?: unknown;
+  /** 027c — alerta a compartir (opcional). */
+  alert?: unknown;
 }): Promise<ChatMessageView> {
-  let kind: "text" | "contact" = "text";
-  let payload: ChatContactShareDto | null = null;
+  let kind: ChatMessageView["kind"] = "text";
+  let payload: ChatMessagePayloadDto | null = null;
   let body = sanitizeChatBody(input.body);
   if (input.contact !== undefined && input.contact !== null) {
     payload = sanitizeContactShare(input.contact);
@@ -521,6 +587,17 @@ export async function postChatMessage(input: {
       (payload.source === "crm"
         ? "Te comparto este contacto del CRM."
         : "Te comparto este cliente del sistema.");
+  }
+  if (input.alert !== undefined && input.alert !== null) {
+    if (kind !== "text") {
+      throw new ChatError(422, "invalid_payload", "Compartí un solo adjunto por mensaje");
+    }
+    payload = sanitizeAlertShare(input.alert);
+    if (!payload) {
+      throw new ChatError(422, "invalid_alert", "La alerta compartida no es válida");
+    }
+    kind = "alert";
+    body = body ?? `Te comparto esta alerta: ${payload.title}`;
   }
   if (!body) {
     throw new ChatError(422, "empty", "El mensaje está vacío");
@@ -631,7 +708,7 @@ export async function listChatMessages(input: {
       senderId: m.senderId,
       senderName: m.senderName,
       body: m.body,
-      kind: m.kind === "contact" ? ("contact" as const) : ("text" as const),
+      kind: chatKind(m.kind),
       payload: m.payload ?? null,
       createdAt: m.createdAt.toISOString(),
     })),

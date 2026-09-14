@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
+  BellRing,
   ArrowLeft,
   Briefcase,
   Building2,
@@ -31,7 +32,7 @@ import {
 import { cn, initials } from "@/lib/utils";
 import { CHANNEL_LABEL, isChannel } from "@/lib/channels";
 import { ShareContactDialog } from "@/components/contacts/share-contact-dialog";
-import type { ChatContactShareDto } from "@/lib/types";
+import type { ChatAlertShareDto, ChatContactShareDto, ChatMessagePayloadDto } from "@/lib/types";
 import { useEvents } from "@/components/use-events";
 
 /**
@@ -54,10 +55,10 @@ type ChatMessage = {
   senderId: string;
   senderName: string;
   body: string;
-  /** 025 — `text` o `contact` (contacto compartido). */
-  kind: "text" | "contact";
-  /** 025 — snapshot del contacto compartido; null en los textos. */
-  payload: ChatContactShareDto | null;
+  /** 025/027c — `text`, `contact` o `alert` (adjunto compartido). */
+  kind: "text" | "contact" | "alert";
+  /** 025/027c — snapshot del adjunto compartido; null en los textos. */
+  payload: ChatMessagePayloadDto | null;
   createdAt: string;
 };
 
@@ -275,6 +276,15 @@ function MemberStack({
   );
 }
 
+
+function isContactPayload(payload: ChatMessagePayloadDto): payload is ChatContactShareDto {
+  return "source" in payload;
+}
+
+function isAlertPayload(payload: ChatMessagePayloadDto): payload is ChatAlertShareDto {
+  return "urgencyLabel" in payload || "urgenciaLabel" in payload;
+}
+
 /** 025 — par base/interface del backoffice (el mismo que usa client-card). */
 const AIRTABLE_BASE = "appuhslj3GFf60Tea";
 const AIRTABLE_INTERFACE_CLIENTES = "pagloDiKehe3EMnT4";
@@ -364,22 +374,26 @@ function ContactShareCard({ payload }: { payload: ChatContactShareDto }) {
     }
   }
 
+  const ContactIcon = isCrm ? Users : Briefcase;
+
   return (
-    <div className="mt-1.5 rounded-md border bg-background/80 px-2.5 py-2">
-      <p className="text-[10.5px] font-bold uppercase tracking-wide text-text-3">
+    <div className="mt-1.5 rounded-md border border-brand/25 bg-background/90 px-2.5 py-2 text-text shadow-sm">
+      <p className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide text-brand-text">
+        <ContactIcon className="h-3.5 w-3.5" strokeWidth={1.9} />
         {isCrm ? "Contacto del CRM" : "Cliente del sistema"}
       </p>
       <p className="mt-0.5 text-[13.5px] font-semibold leading-tight">
         {payload.name}
       </p>
-      {sub && <p className="text-[11.5px] text-text-3">{sub}</p>}
+      {sub && <p className="mt-0.5 text-[11.5px] text-text-3">{sub}</p>}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {isCrm ? (
           payload.contactId ? (
             <a
               href={`/contacts?contact=${encodeURIComponent(payload.contactId)}`}
-              className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[12px] font-medium hover:bg-subtle"
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-brand/20 bg-background px-2 text-[12px] font-medium text-text hover:bg-subtle"
             >
+              <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
               Abrir ficha
             </a>
           ) : null
@@ -388,7 +402,7 @@ function ContactShareCard({ payload }: { payload: ChatContactShareDto }) {
             href={`https://airtable.com/${AIRTABLE_BASE}/${AIRTABLE_INTERFACE_CLIENTES}/${payload.recordId}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[12px] font-medium hover:bg-subtle"
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-brand/20 bg-background px-2 text-[12px] font-medium text-text hover:bg-subtle"
             title="Abrir el registro en la interface del sistema"
           >
             <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -399,14 +413,58 @@ function ContactShareCard({ payload }: { payload: ChatContactShareDto }) {
           type="button"
           onClick={() => void abrirConversacion()}
           disabled={busy}
-          className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[12px] font-medium hover:bg-subtle disabled:opacity-40"
+          className="inline-flex h-7 items-center gap-1 rounded-md border border-brand/20 bg-background px-2 text-[12px] font-medium text-text hover:bg-subtle disabled:opacity-40"
         >
-          {busy && <Loader2 className="h-3 w-3 animate-spin" />}
+          {busy ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <MessageSquareText className="h-3.5 w-3.5" strokeWidth={1.8} />
+          )}
           {isCrm ? "Abrir conversación" : "Abrir chat"}
         </button>
       </div>
       {err && (
         <p className="mt-1 text-[11px] font-semibold text-red-600">{err}</p>
+      )}
+    </div>
+  );
+}
+
+/** 027c — Tarjeta de alerta compartida dentro del chat interno local. */
+function AlertShareCard({ payload }: { payload: ChatAlertShareDto }) {
+  const title = payload.title || payload.titulo || "Alerta";
+  const body = payload.body || payload.cuerpo;
+  const type = payload.type || payload.tipo;
+  const urgency = payload.urgencyLabel || payload.urgenciaLabel;
+  const url = payload.recordUrl || payload.linkRegistro;
+
+  return (
+    <div className="mt-1.5 rounded-md border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-amber-950">
+      <p className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide text-amber-700">
+        <BellRing className="h-3.5 w-3.5" strokeWidth={1.9} />
+        Alerta compartida
+      </p>
+      <p className="mt-0.5 text-[13.5px] font-semibold leading-tight">
+        {title}
+      </p>
+      <p className="mt-0.5 text-[11.5px] text-amber-800">
+        {[type, urgency, payload.estado, payload.fecha].filter(Boolean).join(" · ")}
+      </p>
+      {body && (
+        <p className="mt-1 whitespace-pre-wrap break-words text-[12.5px] leading-snug text-text-2">
+          {body}
+        </p>
+      )}
+      {url && (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-md border border-amber-200 bg-background px-2 text-[12px] font-medium hover:bg-amber-100"
+        >
+          <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
+          Abrir registro
+        </a>
       )}
     </div>
   );
@@ -1493,8 +1551,11 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                         <p className="whitespace-pre-wrap break-words text-[13.5px] leading-snug">
                           {m.body}
                         </p>
-                        {m.kind === "contact" && m.payload && (
+                        {m.kind === "contact" && m.payload && isContactPayload(m.payload) && (
                           <ContactShareCard payload={m.payload} />
+                        )}
+                        {m.kind === "alert" && m.payload && isAlertPayload(m.payload) && (
+                          <AlertShareCard payload={m.payload} />
                         )}
                         <p
                           className={cn(

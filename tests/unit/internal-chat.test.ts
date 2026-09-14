@@ -7,6 +7,7 @@ import {
   resolveRoomDisplayName,
   sanitizeChatBody,
   sanitizeContactShare,
+  sanitizeAlertShare,
   sanitizeRoomName,
 } from "@/server/internal/chat";
 
@@ -169,5 +170,63 @@ describe("chat interno — contacto compartido (025)", () => {
       name: "x".repeat(300),
     });
     expect(long?.name.length).toBe(120);
+  });
+});
+
+
+describe("chat interno — alerta compartida (027c)", () => {
+  it("normaliza aliases, topa campos y conserva URL segura", () => {
+    expect(
+      sanitizeAlertShare({
+        id: "alert_123",
+        airtableRecordId: "recAlert123",
+        titulo: "  Pago   vencido ",
+        cuerpo: " Cliente con cuota vencida ",
+        tipo: "COBRANZA",
+        urgenciaLabel: "Alta",
+        linkRegistro: "https://airtable.com/app/table/rec",
+        estado: "PENDIENTE",
+        fecha: "2026-09-14",
+      })
+    ).toEqual({
+      id: "alert_123",
+      airtableRecordId: "recAlert123",
+      title: "Pago vencido",
+      titulo: "Pago vencido",
+      body: "Cliente con cuota vencida",
+      cuerpo: "Cliente con cuota vencida",
+      type: "COBRANZA",
+      tipo: "COBRANZA",
+      urgencyLabel: "Alta",
+      urgenciaLabel: "Alta",
+      recordUrl: "https://airtable.com/app/table/rec",
+      linkRegistro: "https://airtable.com/app/table/rec",
+      estado: "PENDIENTE",
+      fecha: "2026-09-14",
+    });
+  });
+
+  it("rechaza payloads incompletos, ids raros y URLs no http(s)", () => {
+    expect(sanitizeAlertShare(null)).toBeNull();
+    expect(sanitizeAlertShare({ id: "alert_1", titulo: "X" })).toBeNull();
+    expect(
+      sanitizeAlertShare({
+        id: "../bad",
+        titulo: "X",
+        cuerpo: "Y",
+        tipo: "T",
+        urgenciaLabel: "Alta",
+      })
+    ).toBeNull();
+    expect(
+      sanitizeAlertShare({
+        id: "alert_1",
+        titulo: "X",
+        cuerpo: "Y",
+        tipo: "T",
+        urgenciaLabel: "Alta",
+        linkRegistro: "javascript:alert(1)",
+      })?.recordUrl
+    ).toBeNull();
   });
 });

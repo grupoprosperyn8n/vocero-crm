@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { dropPresence, touchPresence } from "@/server/events/presence";
+import type { ChatContactShareDto } from "@/lib/types";
 
 /**
  * Integración REAL del chat interno contra una copia local de producción
@@ -486,7 +487,7 @@ suite("chat interno — integración con copia de la BD real", () => {
     expect(sys.kind).toBe("contact");
     // Nota vacía → texto por defecto del sistema.
     expect(sys.body).toBe("Te comparto este cliente del sistema.");
-    expect(sys.payload?.source).toBe("system");
+    expect((sys.payload as ChatContactShareDto | null)?.source).toBe("system");
 
     // El historial y el resumen de la sala conservan kind/payload.
     const { messages } = await chat.listChatMessages({
@@ -495,7 +496,7 @@ suite("chat interno — integración con copia de la BD real", () => {
       meId: memberId,
     });
     const lastShare = messages.filter((m) => m.kind === "contact").at(-1);
-    expect(lastShare?.payload?.recordId).toBe("rechYRnw7FzaGj");
+    expect((lastShare?.payload as ChatContactShareDto | null)?.recordId).toBe("rechYRnw7FzaGj");
 
     const room = (await chat.listRoomsForUser(orgId, memberId)).find(
       (r) => r.id === groupId
