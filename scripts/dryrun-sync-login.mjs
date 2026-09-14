@@ -51,7 +51,7 @@ for (const e of emps) {
     };
   }
 }
-const rolMap = { "Dueño": "owner", "Gerente": "admin", "Empleado": "member" };
+const rolMap = { "Propietario": "owner", "Dueño": "admin", "Dueno": "admin", "Gerente": "manager", "Empleado": "member", "Siniestros": "member" };
 const items = [], skipped = [];
 for (const r of logins) {
   const f = r.fields || {};

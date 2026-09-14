@@ -24,11 +24,13 @@ export const dynamic = "force-dynamic";
  *   - baja: active=false (o DELETE) → se quita la membresía de la bandeja.
  *
  * Roles que entiende el CRM y su equivalente en LOGIN (Airtable):
- *   owner  ← Propietario (autoridad máxima, "todo libre"; el único que no
- *            puede quedar fuera de línea y maneja a cualquiera desde Equipo)
- *   admin  ← Dueño / Gerente (la autoridad del negocio; desde Equipo puede
- *            dejar fuera de línea a los miembros)
- *   member ← Empleado / Siniestros (atienden la bandeja)
+ *   owner   ← Propietario (autoridad máxima, "todo libre"; el único que no
+ *             puede quedar fuera de línea y maneja a cualquiera desde Equipo)
+ *   admin   ← Dueño (la autoridad del negocio; desde Equipo puede
+ *             dejar fuera de línea a los miembros)
+ *   manager ← Gerente (ve toda la bandeja y filtra por empleado; no
+ *             administra Equipo)
+ *   member  ← Empleado / Siniestros (atienden la bandeja)
  *   (Visitante no tiene cuenta CRM: el productor no lo sincroniza)
  *
  * La cuenta user jamás se borra: una baja quita la membresía (el acceso a la
@@ -45,7 +47,7 @@ const upsertSchema = z.object({
   name: z.string().trim().min(1).max(120),
   /** Obligatoria en el alta; en un cambio se aplica solo si difiere del hash. */
   password: z.string().min(6).max(128).optional(),
-  role: z.enum(["owner", "admin", "member"]),
+  role: z.enum(["owner", "admin", "manager", "member"]),
   /** false = baja: se quita la membresía (ver DELETE). */
   active: z.boolean().default(true),
   // Ficha del empleado (sync v2): viaja desde EMPLEADOS de Airtable y la
