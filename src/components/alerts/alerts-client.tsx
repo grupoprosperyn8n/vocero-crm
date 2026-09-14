@@ -14,7 +14,9 @@ import {
   Inbox,
   RefreshCw,
   Search,
+  Share2,
 } from "lucide-react";
+import { ShareAlertDialog } from "@/components/alerts/share-alert-dialog";
 import { alertDate, alertEstadoLabel, parseAlertDetalle } from "@/lib/alerts";
 import type { SgsaAlertDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -124,6 +126,7 @@ export function AlertsClient() {
   const [lastAt, setLastAt] = useState<Date | null>(null);
   // El sonido arranca encendido salvo que el usuario lo apague (como la PWA).
   const [sound, setSound] = useState(true);
+  const [shareFor, setShareFor] = useState<SgsaAlertDto | null>(null);
 
   const soundRef = useRef(sound);
   const histRef = useRef(hist);
@@ -467,6 +470,18 @@ export function AlertsClient() {
                               {alertEstadoLabel(a.estado)}
                             </span>
                           )}
+                          {(a.compartidaCon.length > 0 || a.compartidaGrupos) && (
+                            <span
+                              className="rounded bg-accent px-1.5 py-0.5 font-medium"
+                              title={
+                                a.compartidaGrupos
+                                  ? `Compartida: ${a.compartidaGrupos}`
+                                  : "Compartida"
+                              }
+                            >
+                              Compartida
+                            </span>
+                          )}
                           <ChevronDown
                             className={cn(
                               "ml-auto h-3.5 w-3.5 transition-transform",
@@ -525,6 +540,15 @@ export function AlertsClient() {
                             {d.label}
                           </button>
                         ))}
+                        <button
+                          data-alert-action="share"
+                          disabled={busy}
+                          onClick={() => setShareFor(a)}
+                          className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-semibold text-text-2 transition-colors hover:border-brand hover:text-brand-text disabled:opacity-50"
+                        >
+                          <Share2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+                          Compartir
+                        </button>
                       </div>
                     </div>
                   )}
@@ -534,6 +558,13 @@ export function AlertsClient() {
           </div>
         )}
       </div>
+      {shareFor && (
+        <ShareAlertDialog
+          alert={shareFor}
+          onClose={() => setShareFor(null)}
+          onShared={() => void load(histRef.current)}
+        />
+      )}
     </div>
   );
 }

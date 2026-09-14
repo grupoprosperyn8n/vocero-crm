@@ -201,6 +201,10 @@ export type SgsaAlertDto = {
   fechaVisto: string | null;
   clienteNombre: string | null;
   empleadoLeido: string | null;
+  /** Empleados (airtable ids) con los que se compartió la alerta. */
+  compartidaCon: string[];
+  /** Grupos del chat interno con los que se compartió (log de texto). */
+  compartidaGrupos: string | null;
 };
 
 /* ============================================================

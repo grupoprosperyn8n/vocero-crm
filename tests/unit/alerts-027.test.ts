@@ -113,6 +113,8 @@ describe("normalizeAlert (DTO del backend → forma del CRM)", () => {
       fechaVisto: null,
       clienteNombre: "Juan Pérez",
       empleadoLeido: null,
+      compartidaCon: [],
+      compartidaGrupos: null,
     });
   });
 

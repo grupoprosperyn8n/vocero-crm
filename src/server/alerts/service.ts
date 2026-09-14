@@ -97,6 +97,12 @@ export function normalizeAlert(raw: RawAlert): SgsaAlertDto {
     fechaVisto: str(raw.fecha_visto),
     clienteNombre: str(raw.cliente_nombre),
     empleadoLeido: str(raw.empleado_que_marco_leido),
+    compartidaCon: Array.isArray(raw.compartida_con)
+      ? raw.compartida_con.filter(
+          (x): x is string => typeof x === "string" && x.length > 0
+        )
+      : [],
+    compartidaGrupos: str(raw.compartida_grupos),
   };
 }
 
@@ -150,6 +156,104 @@ export async function setAlertStatus(
       sucursal_id: info.sucursalId ?? undefined,
     }),
   });
+}
+
+/* ─── Compartir alertas (espejo del share de la PWA) ───────────────────── */
+
+export type ShareTargetEmployee = {
+  airtableId: string;
+  nombre: string;
+  online: boolean;
+};
+
+export type ShareTargetGroup = {
+  id: number;
+  nombre: string;
+};
+
+/**
+ * Destinatarios posibles para compartir una alerta: todos los empleados del
+ * chat interno (Supabase, vía backend SGSA) + los grupos a los que PERTENECE
+ * el empleado vinculado al usuario del CRM (los DM se excluyen).
+ */
+export async function listShareTargets(empleadoRef: string | null): Promise<{
+  employees: ShareTargetEmployee[];
+  groups: ShareTargetGroup[];
+}> {
+  const [empsRaw, groupsRaw] = await Promise.all([
+    backendFetch("/api/chat/employees").catch(() => null),
+    empleadoRef
+      ? backendFetch(
+          `/api/chat/groups?airtable_id=${encodeURIComponent(empleadoRef)}`
+        ).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  const empsData = empsRaw as { employees?: Record<string, unknown>[] } | null;
+  const employees = (empsData?.employees ?? [])
+    .map((e) => ({
+      airtableId: str(e.airtable_id) ?? "",
+      nombre: str(e.nombre) ?? "Empleado",
+      online: Boolean(e.online),
+    }))
+    .filter((e) => e.airtableId && e.airtableId !== empleadoRef)
+    .sort(
+      (a, b) =>
+        Number(b.online) - Number(a.online) ||
+        a.nombre.localeCompare(b.nombre, "es")
+    );
+
+  const groupsData = groupsRaw as { groups?: Record<string, unknown>[] } | null;
+  const groups = (groupsData?.groups ?? [])
+    .map((g) => ({ id: Number(g.id), nombre: str(g.nombre) ?? "" }))
+    .filter((g) => Number.isFinite(g.id) && g.nombre && !g.nombre.startsWith("__dm__"))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+
+  return { employees, groups };
+}
+
+/**
+ * Comparte una alerta con empleados y/o grupos del chat interno. El backend
+ * expande los grupos a sus miembros (panel de alertas) y postea el aviso
+ * DENTRO del chat del grupo.
+ */
+export async function shareAlert(
+  storeId: string,
+  opts: { empleados: string[]; grupos: number[]; empleadoRef: string | null }
+): Promise<{
+  compartidaCon: string[];
+  grupos: string[];
+  chatGrupos: number[];
+  errores: string[];
+}> {
+  const data = (await backendFetch(
+    `/api/alerts/${encodeURIComponent(storeId)}/share`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        empleados: opts.empleados,
+        grupos: opts.grupos,
+        empleado_que_comparte: opts.empleadoRef ?? undefined,
+      }),
+    }
+  )) as {
+    ok?: boolean;
+    error?: string;
+    compartida_con?: string[];
+    grupos?: string[];
+    chat_grupos?: number[];
+    errores?: string[];
+  };
+  if (!data.ok) {
+    throw new AlertsBackendError(data.error ?? "El backend rechazó el compartir");
+  }
+  return {
+    compartidaCon: data.compartida_con ?? [],
+    grupos: data.grupos ?? [],
+    chatGrupos: data.chat_grupos ?? [],
+    errores: data.errores ?? [],
+  };
 }
 
 /* ─── Mapeos locales (usuario CRM → registros del sistema) ─────────────── */
