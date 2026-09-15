@@ -103,8 +103,10 @@ export async function pullAlertSync(input: {
     const info = sistema.get(card.sgsaRef!);
     if (!info || !info.estado) continue; // el registro ya no está en la tabla: no se toca
     const meta = (card.meta ?? {}) as Record<string, unknown>;
-    const prioridad =
-      info.prioridad ?? (typeof meta.prioridad === "string" ? meta.prioridad : null);
+    // La TABLA manda también cuando está vacía: «sin prioridad» es un dato, no
+    // un hueco. Sin este detalle, limpiar la prioridad en el cajón se revertía
+    // sola al siguiente pull (el meta viejo sobrevivía como fantasma).
+    const prioridad = info.prioridad;
     // 031c — la prioridad del CRM (cajón y chip) es ESPEJO de la de la alerta:
     // alta/media/baja/null. Si difiere, este mismo pase la corrige acá.
     const priority = priorityValueForPrioridad(prioridad);
