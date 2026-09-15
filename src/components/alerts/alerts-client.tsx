@@ -22,8 +22,9 @@ import {
 import { ShareAlertDialog } from "@/components/alerts/share-alert-dialog";
 import { AssignAlertDialog } from "@/components/alerts/assign-alert-dialog";
 import { AlertRulesDialog } from "@/components/alerts/alert-rules-dialog";
+import { AlertStatsPanel } from "@/components/alerts/alert-stats-panel";
 import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
-import { alertDate, alertEstadoLabel, parseAlertDetalle } from "@/lib/alerts";
+import { alertDate, alertEstadoLabel, isLiveAssignmentStatus, parseAlertDetalle } from "@/lib/alerts";
 import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import type { SgsaAlertDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -124,6 +125,8 @@ export function AlertsClient() {
   const [alerts, setAlerts] = useState<SgsaAlertDto[] | null>(null);
   const [pendientes, setPendientes] = useState(0);
   const [hist, setHist] = useState(false);
+  /** 030 — vista «Estado general» (admin, propietario y gerente). */
+  const [verEstado, setVerEstado] = useState(false);
   const [urg, setUrg] = useState<UrgFilter>("");
   const [q, setQ] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -390,7 +393,12 @@ export function AlertsClient() {
         </button>
       </header>
 
-      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
+      <div
+        className={cn(
+          "items-center gap-2 border-b px-4 py-2.5",
+          verEstado ? "hidden" : "flex flex-wrap"
+        )}
+      >
         <div className="relative min-w-[180px] flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-3" />
           <input
@@ -451,6 +459,20 @@ export function AlertsClient() {
             Reglas
           </button>
         )}
+        {canManage && (
+          <button
+            onClick={() => setVerEstado((v) => !v)}
+            title="Estado general de todas las alertas, con filtro por empleado"
+            className={cn(
+              "rounded-md border px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
+              verEstado
+                ? "border-brand bg-brand-tint text-brand-text"
+                : "text-text-2 hover:bg-accent"
+            )}
+          >
+            Estado
+          </button>
+        )}
         <button
           onClick={() => setHist((h) => !h)}
           className={cn(
@@ -463,6 +485,12 @@ export function AlertsClient() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        {/* 030 — Estado general (admin, propietario y gerente): el MISMO
+            tablero de situación para los tres, con filtro por empleado. */}
+        {verEstado ? (
+          <AlertStatsPanel />
+        ) : (
+          <>
         {error && (
           <div className="mb-3 flex items-center gap-2 rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-[12.5px] text-danger-text">
             <span>{error}</span>
@@ -667,15 +695,36 @@ export function AlertsClient() {
                           </button>
                         ))}
                         {canManage && !hist && (
-                          <button
-                            data-alert-action="assign"
-                            disabled={busy}
-                            onClick={() => setAssignFor(a)}
-                            className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-semibold text-text-2 transition-colors hover:border-brand hover:text-brand-text disabled:opacity-50"
-                          >
-                            <GitBranch className="h-3.5 w-3.5" strokeWidth={1.8} />
-                            Derivar
-                          </button>
+                          // 030 — una alerta derivada o asumida no se re-deriva:
+                          // el botón se cierra y muestra quién la tiene. Un solo
+                          // ejecutor por vez.
+                          (() => {
+                            const live = (a.asignaciones ?? []).find((x) =>
+                              isLiveAssignmentStatus(x.status)
+                            );
+                            return (
+                              <button
+                                data-alert-action="assign"
+                                disabled={busy || !!live}
+                                onClick={() => setAssignFor(a)}
+                                title={
+                                  live
+                                    ? `Ya tiene ejecutor: ${live.targetName}${live.source === "assumed" ? " (la asumió)" : ""} — un solo ejecutor por vez`
+                                    : undefined
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-semibold text-text-2 transition-colors hover:border-brand hover:text-brand-text disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <GitBranch className="h-3.5 w-3.5" strokeWidth={1.8} />
+                                {live ? (
+                                  <span className="max-w-[130px] truncate">
+                                    Derivada · {live.targetName}
+                                  </span>
+                                ) : (
+                                  "Derivar"
+                                )}
+                              </button>
+                            );
+                          })()
                         )}
                         <button
                           data-alert-action="share"
@@ -694,6 +743,7 @@ export function AlertsClient() {
                             label: a.titulo,
                             meta: {
                               tipo: a.tipo,
+                              estado: a.estado,
                               urgencia: a.urgenciaLabel,
                               clienteNombre: a.clienteNombre ?? undefined,
                               clienteRecordId: a.clienteRecordId ?? undefined,
@@ -708,6 +758,8 @@ export function AlertsClient() {
               );
             })}
           </div>
+        )}
+          </>
         )}
       </div>
       {shareFor && (

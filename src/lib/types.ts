@@ -93,7 +93,28 @@ export type StageDto = {
 export type PipelineBoard = "ventas" | "gestiones";
 
 /** De dónde salió una tarjeta del pipeline. */
-export type PipelineSourceKind = "contact" | "sgsa_client" | "alert";
+export type PipelineSourceKind = "contact" | "sgsa_client" | "alert" | "sgsa_gestion";
+
+/** 030 — una gestión del sistema (GESTIÓN GENERAL) para el buscador del pipeline. */
+export type SgsaGestionDto = {
+  recordId: string;
+  idUnico: string | null;
+  numero: number | null;
+  clienteRecordId: string | null;
+  clienteNombre: string | null;
+  dni: string | null;
+  telefono: string | null;
+  motivo: string | null;
+  tipoAtencion: string | null;
+  prioridad: string | null;
+  fecha: string | null;
+  poliza: string | null;
+  patente: string | null;
+  marcaModelo: string | null;
+  esCliente: boolean | null;
+  /** Link a la interface del sistema (registro + cliente en uno). */
+  registroUrl: string;
+};
 
 /**
  * Una tarjeta del tablero. Cada usuario tiene las SUYAS: `ownerUserId` es el
@@ -252,7 +273,8 @@ export type SgsaAlertDto = {
     targetKind: "employee" | "group";
     targetId: string;
     targetName: string;
-    source: "manual" | "rule";
+    /** assumed (030): el empleado la tomó sin derivación previa. */
+    source: "manual" | "rule" | "assumed";
     status: string;
   }[];
   /** true cuando la alerta está asignada directa o por grupo al usuario actual. */

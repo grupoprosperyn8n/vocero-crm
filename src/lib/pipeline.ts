@@ -15,6 +15,7 @@ export const SOURCE_KIND_LABEL: Record<PipelineSourceKind, string> = {
   contact: "Contacto del CRM",
   sgsa_client: "Cliente del sistema",
   alert: "Alerta",
+  sgsa_gestion: "Gestión del sistema",
 };
 
 /**

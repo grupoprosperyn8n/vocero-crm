@@ -53,3 +53,42 @@ export function alertRecordInterfaceUrl(
   if (clientRecordId) return sgsaClientInterfaceUrl(clientRecordId);
   return null;
 }
+
+/**
+ * 030 — página de la interface donde viven las GESTIONES (GESTIÓN GENERAL);
+ * verificada contra los links reales de la tabla ALERTA (15Sep).
+ */
+export const SGSA_GESTION_PAGE_ID = "pag3HZa7GNLZI8ijC";
+const GESTION_HINT = {
+  type: "pageElement",
+  elementId: "plezKYejBviDWR94C",
+  queryContainerId: "pelAI17aU4fd0Eh56",
+} as const;
+
+/**
+ * 030 — abre el registro de una GESTIÓN GENERAL en la interface, con el
+ * cliente por debajo si se conoce (`?detail=…&DSjXA=…`): mismo formato que
+ * usa el sistema en sus propios links.
+ */
+export function sgsaGestionInterfaceUrl(
+  gestionRecordId: string,
+  clientRecordId?: string | null
+): string {
+  const payload = {
+    pageId: SGSA_GESTION_PAGE_ID,
+    rowId: gestionRecordId,
+    showComments: false,
+    queryOriginHint: GESTION_HINT,
+  };
+  const detail = base64UrlEncode(JSON.stringify(payload));
+  const base = `https://airtable.com/${SGSA_BASE_ID}/${SGSA_INTERFACE_ID}?detail=${detail}`;
+  return withClientParam(base, clientRecordId);
+}
+
+/** base64url sin padding, igual que la usa la interface en `?detail=`. */
+function base64UrlEncode(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}

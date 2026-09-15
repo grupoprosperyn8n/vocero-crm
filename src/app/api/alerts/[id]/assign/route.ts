@@ -2,6 +2,7 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import {
   assignAlerts,
+  assignmentStatusLabel,
   canManageAlertAssignments,
   parseAssignmentTargets,
 } from "@/server/alerts/assignments";
@@ -38,7 +39,15 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
   if (!body.ok) return body.response;
   const targets = parseAssignmentTargets(body.data);
   if (!targets.empleados.length && !targets.grupos.length) {
-    return apiError(400, "invalid_targets", "Elegí al menos un empleado o grupo");
+    return apiError(400, "invalid_targets", "Elegí un empleado o un grupo");
+  }
+  // 030 — un solo ejecutor por vez: una derivación, UN destino.
+  if (targets.empleados.length + targets.grupos.length > 1) {
+    return apiError(
+      400,
+      "single_target",
+      "Un solo destino por derivación — un ejecutor por vez"
+    );
   }
 
   try {
@@ -58,6 +67,16 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
       source: "manual",
       note: body.data.note ?? null,
     });
+    // 030 — si la ÚNICA alerta pedida ya tiene ejecutor, se avisa con nombre
+    // y estado; en el lote las bloqueadas solo se cuentan en la respuesta.
+    if (body.data.scope === "one" && !result.creadas && result.bloqueadas.length) {
+      const b = result.bloqueadas[0]!;
+      return apiError(
+        409,
+        "already_assigned",
+        `Ya está derivada a ${b.targetName} (${assignmentStatusLabel(b.status)}) — un solo ejecutor por vez.`
+      );
+    }
     return Response.json({ ok: true, ...result });
   } catch (err) {
     console.error("[api/alerts assign] error:", err);

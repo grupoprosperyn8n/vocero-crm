@@ -1,5 +1,6 @@
 import { apiError, withAuth } from "@/lib/api";
 import { isOrgMember, listBoardCards } from "@/server/pipeline/board";
+import { pullAlertSync } from "@/server/pipeline/alert-sync";
 import { getBranding } from "@/server/branding";
 import { seesWholeTeam } from "@/lib/pipeline";
 import type { PipelineBoard } from "@/lib/types";
@@ -13,6 +14,8 @@ const BOARDS = ["ventas", "gestiones"] as const;
  * `board` elige la pestaña; `assignee` (solo para quien ve todo el equipo)
  * filtra "me" | "all" | <userId>. Un member no tiene parámetro que lo saque
  * de sus propias tarjetas.
+ * 030 — al abrir, las tarjetas-alerta se «machean» con la tabla ALERTA: una
+ * conclusión hecha en la PWA o en Alertas mueve la tarjeta sola.
  */
 export const GET = withAuth(async (session, req: Request) => {
   const url = new URL(req.url);
@@ -30,12 +33,18 @@ export const GET = withAuth(async (session, req: Request) => {
     if (!ok) return apiError(422, "invalid_assignee", "Ese usuario no es del equipo");
   }
 
-  const { stages, cards } = await listBoardCards({
+  const { stages, cards: rawCards } = await listBoardCards({
     organizationId: session.organizationId,
     viewerUserId: session.userId,
     viewerRole: session.role,
     board,
     assignee,
+  });
+
+  const { cards } = await pullAlertSync({
+    organizationId: session.organizationId,
+    stages,
+    cards: rawCards,
   });
 
   // La moneda del negocio viaja con el tablero: el cliente suma sus columnas y

@@ -1,5 +1,6 @@
 import { apiError, withAuth } from "@/lib/api";
 import {
+  assumeExecutorIfFree,
   markAlertAssignmentsStatus,
   traceAssignmentStatus,
 } from "@/server/alerts/assignments";
@@ -11,6 +12,7 @@ import {
   resolveEmpleadoForUser,
   resolveSucursalForUser,
 } from "@/server/alerts/service";
+import { invalidateAlertEstadoCache } from "@/server/pipeline/alert-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -42,11 +44,21 @@ export const POST = withAuth(async (session, _req: Request, ctx: Params) => {
       airtableRecordId: payload?.airtableRecordId ?? null,
       status: "EN_PROGRESO",
     }).catch(() => null);
+    // 030 — «asumida»: nadie la tenía derivada, la marco yo → soy su
+    // ejecutor (y ya no se puede derivar a otro).
+    await assumeExecutorIfFree({
+      session,
+      alertStoreId: id,
+      airtableRecordId: payload?.airtableRecordId ?? null,
+      alertType: payload?.type ?? "GENERICA",
+      status: "EN_PROGRESO",
+    }).catch(() => null);
     await traceAssignmentStatus({
       organizationId: session.organizationId,
       alertStoreId: id,
       status: "EN_PROGRESO",
     }).catch(() => null);
+    invalidateAlertEstadoCache(); // el tablero verá el estado nuevo al abrir
     return Response.json({ ok: true, empleadoId, sucursalId });
   } catch (err) {
     console.error("[api/alerts ack] error:", err);

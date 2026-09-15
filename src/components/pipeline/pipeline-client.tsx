@@ -14,8 +14,10 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
+  AlertTriangle,
   ExternalLink,
   MessageSquareText,
+  Plus,
   Settings2,
   Trophy,
   XCircle,
@@ -29,6 +31,7 @@ import type {
 } from "@/lib/types";
 import { formatMoneyCents, sumable } from "@/lib/money";
 import { PIPELINE_BOARDS } from "@/lib/pipeline";
+import { ALERT_ESTADO_LABEL } from "@/lib/alerts";
 import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
@@ -38,6 +41,7 @@ import { StageManager } from "./stage-manager";
 import { LossReasonDialog } from "./loss-reason-dialog";
 import { AmountDialog } from "./amount-dialog";
 import { PriorityBadge } from "./priority-picker";
+import { GestionSearchDialog } from "./gestion-search-dialog";
 import { LeadDrawer } from "./lead-drawer";
 
 /** Compat: antes el DTO del tablero se llamaba BoardLead. */
@@ -62,6 +66,22 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
   const [activeLead, setActiveLead] = useState<PipelineCardDto | null>(null);
   const [managing, setManaging] = useState(false);
   const [cargado, setCargado] = useState(false);
+  /** 030 — buscador de gestiones del sistema (traer una puntual al tablero). */
+  const [gestionSearch, setGestionSearch] = useState(false);
+  /** 030 — aviso del tablero (p. ej. el sistema no aceptó sincronizar). */
+  const [aviso, setAviso] = useState<string | null>(null);
+  /** 030 — mover una tarjeta-alerta puede cambiar el estado EN EL SISTEMA. */
+  const [pendingAlert, setPendingAlert] = useState<{
+    leadId: string;
+    stageId: string;
+    mensaje: string;
+  } | null>(null);
+  /** El aviso se va solo: un cartel pegado deja de leerse a los segundos. */
+  useEffect(() => {
+    if (!aviso) return;
+    const t = setTimeout(() => setAviso(null), 6000);
+    return () => clearTimeout(t);
+  }, [aviso]);
   /** Arrastre hacia una etapa perdida, esperando el motivo. */
   const [pendingLoss, setPendingLoss] = useState<{
     leadId: string;
@@ -134,12 +154,24 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
     overStage: string,
     loss?: { reason: LossReason; note: string }
   ) {
+    const lead = cards.find((l) => l.id === leadId);
+    const destino = stages.find((s) => s.id === overStage);
+
+    // 030 — la tarjeta de una ALERTA va «macheada» con la tabla ALERTA:
+    // soltarla en la última etapa (o sacarla de ella) cambia el estado EN EL
+    // SISTEMA. Se avisa antes de tocar nada.
+    const mensajeSync = alertSyncMessage(lead, destino);
+    if (!loss && mensajeSync) {
+      setPendingAlert({ leadId, stageId: overStage, mensaje: mensajeSync });
+      return;
+    }
+
     const position = cards.filter((l) => l.stageId === overStage).length;
     // Optimista + persistencia
     setCards((prev) =>
       prev.map((l) => (l.id === leadId ? { ...l, stageId: overStage, position } : l))
     );
-    await fetch(`/api/pipeline/leads/${leadId}`, {
+    const res = await fetch(`/api/pipeline/leads/${leadId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -150,6 +182,16 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
           : {}),
       }),
     }).catch(() => null);
+    // El sistema es la fuente de verdad: si no aceptó el cambio de estado,
+    // el refresco devuelve la tarjeta a su lugar y se avisa por qué.
+    if (res && !res.ok) {
+      const data = (await res.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setAviso(data?.error?.message ?? "No se pudo mover la tarjeta.");
+    } else {
+      setAviso(null);
+    }
     void refetch();
   }
 
@@ -270,6 +312,11 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
               ))}
             </select>
           )}
+          {board === "gestiones" && (
+            <Button variant="outline" size="sm" onClick={() => setGestionSearch(true)}>
+              <Plus className="h-4 w-4" /> Sumar gestión
+            </Button>
+          )}
           {role !== "member" && (
             <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
               <Settings2 className="h-4 w-4" /> Gestionar etapas
@@ -278,11 +325,19 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
         </div>
       </header>
 
+      {/* 030 — si el sistema no aceptó sincronizar, la tarjeta no se movió y
+          acá se explica por qué. */}
+      {aviso && (
+        <div className="border-b border-warning-soft bg-warning-tint px-4 py-2 text-[12.5px] text-warning-text sm:px-6">
+          {aviso}
+        </div>
+      )}
+
       {vacio && (
         <div className="border-b bg-subtle px-4 py-2 text-[12.5px] text-muted-foreground sm:px-6">
           {board === "ventas"
             ? "Este tablero se llena a mano: sumá prospectos desde el chat con el cliente, la ficha de un contacto del CRM o la de un cliente del sistema."
-            : "Sumá gestiones desde la tarjeta de una alerta (acá o en Alertas), el chat con el cliente o su ficha."}
+            : "Sumá gestiones desde la tarjeta de una alerta (acá o en Alertas), desde el chat con el cliente o su ficha — o buscá una del sistema con «Sumar gestión»."}
         </div>
       )}
 
@@ -380,6 +435,88 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
           }}
         />
       )}
+
+      {/* 030 — mover una tarjeta-alerta toca la tabla ALERTA: se confirma qué
+          va a pasar afuera antes de que pase. */}
+      {pendingAlert && (
+        <AlertSyncDialog
+          mensaje={pendingAlert.mensaje}
+          onCancel={() => setPendingAlert(null)}
+          onConfirm={() => {
+            const { leadId, stageId } = pendingAlert;
+            setPendingAlert(null);
+            void moverLead(leadId, stageId);
+          }}
+        />
+      )}
+
+      {gestionSearch && (
+        <GestionSearchDialog
+          onClose={() => setGestionSearch(false)}
+          onAdded={() => void refetch()}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * 030 — ¿este movimiento cambia el estado de la ALERTA en el sistema? Si sí,
+ * devuelve el aviso a confirmar; si no, null y se mueve directo.
+ */
+function alertSyncMessage(
+  lead: PipelineCardDto | undefined,
+  destino: StageDto | undefined
+): string | null {
+  if (!lead || lead.sourceKind !== "alert" || !destino) return null;
+  const estado = typeof lead.meta?.estado === "string" ? lead.meta.estado : null;
+  if (destino.kind === "won" && estado !== "CONCLUIDA") {
+    return "Esta tarjeta es una alerta del sistema: al soltarla acá, la alerta queda CONCLUIDA en la tabla de alertas.";
+  }
+  if (destino.kind !== "won" && estado === "CONCLUIDA") {
+    return "En el sistema, esta alerta figura CONCLUIDA: si la movés, se reabre (EN_PROGRESO).";
+  }
+  return null;
+}
+
+/** 030 — confirmación de los movimientos que tocan la tabla de alertas. */
+function AlertSyncDialog({
+  mensaje,
+  onCancel,
+  onConfirm,
+}: {
+  mensaje: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-pop"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3">
+          <AlertTriangle
+            className="mt-0.5 h-5 w-5 shrink-0 text-warning-text"
+            strokeWidth={1.8}
+          />
+          <div>
+            <h3 className="font-semibold">Alerta del sistema</h3>
+            <p className="mt-1 text-[13px] text-muted-foreground">{mensaje}</p>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onCancel}>
+            Cancelar
+          </Button>
+          <Button size="sm" onClick={onConfirm}>
+            Mover y sincronizar
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -559,7 +696,7 @@ function tituloDeTarjeta(lead: PipelineCardDto): string {
   return lead.contact?.name ?? lead.label ?? "Tarjeta";
 }
 
-/** URL externa para abrir la fuente de la tarjeta (registro/cliente). */
+/** URL externa para abrir la fuente de la tarjeta (registro/cliente/gestión). */
 function urlExterna(lead: PipelineCardDto): string | null {
   if (lead.sourceKind === "alert") {
     const link = typeof lead.meta?.linkRegistro === "string" ? lead.meta.linkRegistro : "";
@@ -571,12 +708,25 @@ function urlExterna(lead: PipelineCardDto): string | null {
   if (lead.sourceKind === "sgsa_client" && lead.sgsaRef) {
     return sgsaClientInterfaceUrl(lead.sgsaRef);
   }
+  // 030 — la gestión del sistema trae su URL de interface ya armada.
+  if (lead.sourceKind === "sgsa_gestion") {
+    return typeof lead.meta?.registroUrl === "string" && lead.meta.registroUrl
+      ? lead.meta.registroUrl
+      : null;
+  }
   return null;
 }
 
 /** Segunda línea de la tarjeta, según de dónde venga. */
 function subtituloDeTarjeta(lead: PipelineCardDto): string {
   if (lead.sourceKind === "sgsa_client") return "Cliente del sistema";
+  if (lead.sourceKind === "sgsa_gestion") {
+    const cliente =
+      typeof lead.meta?.clienteNombre === "string" ? lead.meta.clienteNombre : "";
+    const motivo = typeof lead.meta?.motivo === "string" ? lead.meta.motivo : "";
+    const cola = [cliente, motivo].filter(Boolean).join(" · ");
+    return cola ? `Gestión · ${cola}` : "Gestión del sistema";
+  }
   if (lead.sourceKind === "alert") {
     const tipo = typeof lead.meta?.tipo === "string" ? lead.meta.tipo : "";
     const urgencia =
@@ -606,6 +756,11 @@ function LeadCard({
 }) {
   const externa = urlExterna(lead);
   const sinContacto = !lead.contact;
+  /** 030 — estado de la alerta en el sistema (la tarjeta va macheada). */
+  const estadoAlerta =
+    lead.sourceKind === "alert" && typeof lead.meta?.estado === "string"
+      ? lead.meta.estado
+      : null;
   return (
     <div
       className={cn(
@@ -627,6 +782,23 @@ function LeadCard({
           <p className="truncate text-[11px] text-muted-foreground">
             {subtituloDeTarjeta(lead)}
           </p>
+          {estadoAlerta && (
+            <span
+              title="Estado de la alerta en el sistema"
+              className={cn(
+                "mt-0.5 inline-flex items-center rounded-full border px-1.5 py-px text-[10px] font-semibold",
+                estadoAlerta === "CONCLUIDA"
+                  ? "border-success-soft bg-success-tint text-success-text"
+                  : estadoAlerta === "ANULADA"
+                    ? "border-border-strong bg-subtle text-text-3"
+                    : estadoAlerta === "TURNO_CONFIRMADO"
+                      ? "border-warning-soft bg-warning-tint text-warning-text"
+                      : "border-border-strong bg-subtle text-text-2"
+              )}
+            >
+              {ALERT_ESTADO_LABEL[estadoAlerta] ?? estadoAlerta}
+            </span>
+          )}
         </div>
         {lead.conversationId && (
           <Link
@@ -646,7 +818,7 @@ function LeadCard({
             rel="noreferrer"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
-            aria-label={lead.sourceKind === "alert" ? "Abrir registro" : "Abrir cliente"}
+            aria-label={lead.sourceKind === "alert" || lead.sourceKind === "sgsa_gestion" ? "Abrir registro" : "Abrir cliente"}
             className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <ExternalLink className="h-4 w-4" />

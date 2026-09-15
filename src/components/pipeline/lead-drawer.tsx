@@ -12,6 +12,7 @@ import type {
   StageDto,
 } from "@/lib/types";
 import { formatMoneyCents, parseMoneyToCents } from "@/lib/money";
+import { ALERT_ESTADO_LABEL } from "@/lib/alerts";
 import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import { cn, formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
@@ -125,11 +126,15 @@ export function LeadDrawer({
   const alertaTipo = typeof lead.meta?.tipo === "string" ? lead.meta.tipo : "";
   const alertaUrgencia =
     typeof lead.meta?.urgencia === "string" ? lead.meta.urgencia : "";
-  /** Registro + cliente en uno (028c/028d): null si no hay ninguno. */
-  const registroUrl = alertRecordInterfaceUrl(
-    linkRegistro || null,
-    clienteRecordId || null
-  );
+  /**
+   * 030 — una gestión del sistema ya trae su URL de interface hecha (busca su
+   * registro en GESTIÓN GENERAL); alertas y clientes la arman con el helper.
+   */
+  const registroUrl =
+    lead.sourceKind === "sgsa_gestion" &&
+    typeof lead.meta?.registroUrl === "string"
+      ? lead.meta.registroUrl
+      : alertRecordInterfaceUrl(linkRegistro || null, clienteRecordId || null);
 
   return (
     <>
@@ -170,7 +175,9 @@ export function LeadDrawer({
                     ? formatPhone(lead.contact.phone)
                     : lead.sourceKind === "alert"
                       ? "Alerta del sistema"
-                      : "Cliente del sistema"}
+                      : lead.sourceKind === "sgsa_gestion"
+                        ? "Gestión del sistema"
+                        : "Cliente del sistema"}
                 </p>
               </div>
             </div>
@@ -204,6 +211,16 @@ export function LeadDrawer({
             )}
             {lead.sourceKind === "alert" && (
               <div className="mt-3 space-y-2">
+                {/* 030 — el estado REAL de la alerta, a la vista: la tarjeta
+                    va macheada con la tabla. */}
+                {typeof lead.meta?.estado === "string" && (
+                  <p className="rounded border border-border-strong bg-subtle px-2 py-1 text-[11px] text-text-2">
+                    Estado en el sistema:{" "}
+                    <span className="font-semibold">
+                      {ALERT_ESTADO_LABEL[lead.meta.estado] ?? lead.meta.estado}
+                    </span>
+                  </p>
+                )}
                 {registroUrl && (
                   <a
                     href={registroUrl}
@@ -225,6 +242,16 @@ export function LeadDrawer({
                   </a>
                 )}
               </div>
+            )}
+            {lead.sourceKind === "sgsa_gestion" && registroUrl && (
+              <a
+                href={registroUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-md border bg-secondary px-3 py-2 text-sm font-medium hover:bg-accent"
+              >
+                <ExternalLink className="h-4 w-4" /> Abrir gestión en el sistema
+              </a>
             )}
             {lead.sourceKind === "sgsa_client" && lead.sgsaRef && (
               <a

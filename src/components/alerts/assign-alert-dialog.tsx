@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, GitBranch, Hash, Loader2, Search, Send, X } from "lucide-react";
+import { CheckCircle2, GitBranch, Hash, Loader2, Lock, Search, Send, X } from "lucide-react";
 import type { SgsaAlertDto } from "@/lib/types";
+import { isLiveAssignmentStatus } from "@/lib/alerts";
 import { cn } from "@/lib/utils";
 
 type Targets = {
@@ -11,6 +12,9 @@ type Targets = {
 };
 
 type ApiErrorBody = { error?: string | { message?: string } };
+
+/** Un destino (empleado o grupo): un ejecutor por vez, sin multitarget. */
+type Pick = { kind: "empleado" | "grupo"; id: string; nombre: string };
 
 function apiErrorMessage(data: ApiErrorBody | null | undefined, fallback: string): string {
   const error = data?.error;
@@ -21,6 +25,11 @@ function apiErrorMessage(data: ApiErrorBody | null | undefined, fallback: string
   return fallback;
 }
 
+/**
+ * Derivación de una alerta a UN ejecutor (030): antes se podía derivar a
+ * varios; ahora la tarjeta pertenece a una sola persona o grupo y no se
+ * re-deriva mientras la derivación siga viva.
+ */
 export function AssignAlertDialog({
   alert,
   onClose,
@@ -35,11 +44,13 @@ export function AssignAlertDialog({
   const [q, setQ] = useState("");
   const [scope, setScope] = useState<"one" | "type">("one");
   const [note, setNote] = useState("");
-  const [selEmps, setSelEmps] = useState<Set<string>>(new Set());
-  const [selGroups, setSelGroups] = useState<Set<string>>(new Set());
+  const [pick, setPick] = useState<Pick | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+
+  /** La derivación viva que ya tiene (si la hay): es la puerta cerrada. */
+  const live = (alert.asignaciones ?? []).find((x) => isLiveAssignmentStatus(x.status));
 
   useEffect(() => {
     let cancelled = false;
@@ -66,24 +77,14 @@ export function AssignAlertDialog({
     return targets.employees.filter((e) => e.nombre.toLowerCase().includes(needle));
   }, [targets, q]);
 
-  const total = selEmps.size + selGroups.size;
-  const toggleEmp = (id: string) =>
-    setSelEmps((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const toggleGroup = (id: string) =>
-    setSelGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const isPicked = (kind: Pick["kind"], id: string) =>
+    pick?.kind === kind && pick.id === id;
+  /** Un clic elige; otro clic en el mismo lo suelta; uno distinto lo reemplaza. */
+  const toggle = (p: Pick) =>
+    setPick((prev) => (prev && prev.kind === p.kind && prev.id === p.id ? null : p));
 
   async function submit() {
-    if (!total || sending) return;
+    if (!pick || sending || live) return;
     setSending(true);
     setError(null);
     try {
@@ -93,8 +94,8 @@ export function AssignAlertDialog({
         body: JSON.stringify({
           scope,
           alertType: alert.tipo,
-          empleados: [...selEmps],
-          grupos: [...selGroups],
+          empleados: pick.kind === "empleado" ? [pick.id] : [],
+          grupos: pick.kind === "grupo" ? [pick.id] : [],
           note: note.trim() || undefined,
         }),
       }).catch(() => null);
@@ -107,8 +108,8 @@ export function AssignAlertDialog({
       }
       setDone(
         scope === "type"
-          ? `Derivadas ${data.assigned ?? 0} alertas tipo ${alert.tipo}.`
-          : "Alerta derivada con trazabilidad."
+          ? `Derivadas ${data.assigned ?? 0} alertas tipo ${alert.tipo} a ${pick.nombre}.`
+          : `Derivada a ${pick.nombre} con trazabilidad.`
       );
       onAssigned?.();
     } finally {
@@ -132,7 +133,19 @@ export function AssignAlertDialog({
           </button>
         </header>
 
-        {done ? (
+        {live ? (
+          <div className="space-y-3 px-4 py-8 text-center">
+            <Lock className="mx-auto h-8 w-8 text-warning-text" strokeWidth={1.6} />
+            <p className="text-[13px] font-semibold">Esta alerta ya tiene ejecutor</p>
+            <p className="text-[12.5px] text-text-3">
+              Está derivada a <span className="font-semibold text-foreground">{live.targetName}</span>
+              {live.source === "assumed" ? " (la asumió)" : ""} — un solo ejecutor por vez.
+            </p>
+            <button onClick={onClose} className="rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-fg hover:opacity-90">
+              Entendido
+            </button>
+          </div>
+        ) : done ? (
           <div className="space-y-3 px-4 py-8 text-center">
             <CheckCircle2 className="mx-auto h-8 w-8 text-success-text" strokeWidth={1.6} />
             <p className="text-[13px] font-semibold">{done}</p>
@@ -166,6 +179,12 @@ export function AssignAlertDialog({
                   className="h-9 w-full rounded-md border bg-card py-1.5 pl-8 pr-2.5 text-[13px] outline-none placeholder:text-text-3 focus-visible:ring-1 focus-visible:ring-ring"
                 />
               </div>
+              {/* La regla del pedido: una alerta se gestiona por UN empleado a
+                  la vez. El lote también reparte de a un destino por alerta. */}
+              <p className="text-[11.5px] text-text-3">
+                Elegí <span className="font-semibold text-text-2">un solo destino</span> — un
+                ejecutor por vez{scope === "type" ? " (cada alerta del lote va a este mismo destino)" : ""}.
+              </p>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
@@ -182,13 +201,15 @@ export function AssignAlertDialog({
                       <button
                         key={e.airtableId}
                         type="button"
-                        onClick={() => toggleEmp(e.airtableId)}
+                        onClick={() => toggle({ kind: "empleado", id: e.airtableId, nombre: e.nombre })}
                         className={cn(
                           "flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 text-left text-[12.5px] transition-colors",
-                          selEmps.has(e.airtableId) ? "border-brand bg-brand-tint" : "hover:bg-accent"
+                          isPicked("empleado", e.airtableId) ? "border-brand bg-brand-tint" : "hover:bg-accent"
                         )}
                       >
-                        <span className={cn("flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold", selEmps.has(e.airtableId) ? "border-brand bg-brand text-brand-fg" : "border-border-strong")}>{selEmps.has(e.airtableId) ? "✓" : ""}</span>
+                        <span className={cn("flex h-4 w-4 shrink-0 items-center justify-center rounded-full border", isPicked("empleado", e.airtableId) ? "border-brand" : "border-border-strong")}>
+                          <span className={cn("h-2 w-2 rounded-full", isPicked("empleado", e.airtableId) ? "bg-brand" : "bg-transparent")} />
+                        </span>
                         <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", e.online ? "bg-success" : "bg-border-strong")} />
                         <span className="truncate">{e.nombre}</span>
                       </button>
@@ -202,13 +223,15 @@ export function AssignAlertDialog({
                       <button
                         key={g.id}
                         type="button"
-                        onClick={() => toggleGroup(g.id)}
+                        onClick={() => toggle({ kind: "grupo", id: g.id, nombre: g.nombre })}
                         className={cn(
                           "flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 text-left text-[12.5px] transition-colors",
-                          selGroups.has(g.id) ? "border-brand bg-brand-tint" : "hover:bg-accent"
+                          isPicked("grupo", g.id) ? "border-brand bg-brand-tint" : "hover:bg-accent"
                         )}
                       >
-                        <span className={cn("flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold", selGroups.has(g.id) ? "border-brand bg-brand text-brand-fg" : "border-border-strong")}>{selGroups.has(g.id) ? "✓" : ""}</span>
+                        <span className={cn("flex h-4 w-4 shrink-0 items-center justify-center rounded-full border", isPicked("grupo", g.id) ? "border-brand" : "border-border-strong")}>
+                          <span className={cn("h-2 w-2 rounded-full", isPicked("grupo", g.id) ? "bg-brand" : "bg-transparent")} />
+                        </span>
                         <Hash className="h-3.5 w-3.5 shrink-0 text-text-3" strokeWidth={1.9} />
                         <span className="truncate">{g.nombre}</span>
                       </button>
@@ -229,8 +252,8 @@ export function AssignAlertDialog({
             </div>
 
             <footer className="flex items-center gap-2 border-t px-4 py-3">
-              {error ? <p className="mr-auto text-[12px] text-danger-text">{error}</p> : <p className="mr-auto text-[12px] text-text-3">{total ? `${total} destino${total === 1 ? "" : "s"}` : "Elegí al menos un destino"}</p>}
-              <button onClick={() => void submit()} disabled={!total || sending} className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-fg hover:opacity-90 disabled:opacity-40">
+              {error ? <p className="mr-auto text-[12px] text-danger-text">{error}</p> : <p className="mr-auto text-[12px] text-text-3">{pick ? `Ejecutor: ${pick.nombre}` : "Elegí un destino — un ejecutor por vez"}</p>}
+              <button onClick={() => void submit()} disabled={!pick || sending} className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-fg hover:opacity-90 disabled:opacity-40">
                 {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" strokeWidth={1.9} />}
                 Derivar
               </button>

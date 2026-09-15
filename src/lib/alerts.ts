@@ -85,6 +85,37 @@ export const ALERT_STATUSES = [
 ] as const;
 export type AlertStatus = (typeof ALERT_STATUSES)[number];
 
+/**
+ * 030 — ¿la derivación «sigue viva»? Mientras lo esté, la alerta pertenece a
+ * su ejecutor (un solo ejecutor por vez): cerrada con CONCLUIDA/ANULADA, la
+ * alerta terminó y ya no hay nada que re-derivar. Mismo criterio en el CRM y
+ * en el servidor.
+ */
+export function isLiveAssignmentStatus(status: string): boolean {
+  const s = status.toUpperCase();
+  return s !== "CONCLUIDA" && s !== "ANULADA";
+}
+
+/**
+ * 030 — etapas del tablero de gestiones ↔ estado real de la alerta:
+ * Resuelta (ancla `won`) = CONCLUIDA · anulada (`lost`) = ANULADA · cualquier
+ * etapa abierta = EN_PROGRESO. La tarjeta y la tabla ALERTA van «macheadas».
+ */
+export function alertEstadoForStageKind(kind: "open" | "won" | "lost"): AlertStatus {
+  if (kind === "won") return "CONCLUIDA";
+  if (kind === "lost") return "ANULADA";
+  return "EN_PROGRESO";
+}
+
+/** Etiquetas del estado de la alerta para los chips del pipeline. */
+export const ALERT_ESTADO_LABEL: Record<string, string> = {
+  PENDIENTE: "Pendiente",
+  EN_PROGRESO: "En progreso",
+  TURNO_CONFIRMADO: "Turno confirmado",
+  CONCLUIDA: "Concluida",
+  ANULADA: "Anulada",
+};
+
 /** Fecha ISO (o "YYYY-MM-DD…") → "YYYY-MM-DD" para mostrar. */
 export function alertDate(fecha: string | null | undefined): string {
   return (fecha ?? "").slice(0, 10);

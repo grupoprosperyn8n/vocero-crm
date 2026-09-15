@@ -7,19 +7,19 @@ export const dynamic = "force-dynamic";
 /**
  * 029 — agregar una tarjeta a MI pipeline (ventas o gestiones).
  *
- * Fuentes: un contacto del CRM, un cliente del sistema (rec… + rótulo) o una
- * alerta (rec… de Airtable + rótulo + foto). Las alertas SOLO entran al
- * tablero de gestiones: una alerta es algo que hay que gestionar, no una
- * negociación de venta.
+ * Fuentes: un contacto del CRM, un cliente del sistema (rec… + rótulo), una
+ * alerta (rec… de Airtable + rótulo + foto) o una gestión del sistema (030 —
+ * buscador de GESTIÓN GENERAL). Alertas y gestiones SOLO entran al tablero de
+ * gestiones: son cosas que hay que gestionar, no negociaciones de venta.
  *
  * Idempotente: si ya está, devuelve la tarjeta existente con 200 y
  * `created: false` — el botón puede llamarse dos veces sin duplicar.
  */
 const bodySchema = z.object({
   board: z.enum(["ventas", "gestiones"]),
-  kind: z.enum(["contact", "sgsa_client", "alert"]),
+  kind: z.enum(["contact", "sgsa_client", "alert", "sgsa_gestion"]),
   contactId: z.string().min(1).optional(),
-  /** rec… del cliente del sistema o de la alerta de Airtable. */
+  /** rec… del cliente / alerta / gestión de Airtable. */
   ref: z.string().min(3).max(200).optional(),
   label: z.string().trim().min(1).max(200).optional(),
   meta: z.record(z.unknown()).optional(),
@@ -35,8 +35,9 @@ export const POST = withAuth(async (session, req: Request) => {
   if (kind !== "contact" && !ref) {
     return apiError(422, "missing_ref", "Falta la referencia de origen");
   }
-  // Una alerta siempre vive en gestiones, venga de donde venga el clic.
-  const targetBoard = kind === "alert" ? "gestiones" : board;
+  // Alertas y gestiones del sistema siempre viven en gestiones, venga de
+  // donde venga el clic.
+  const targetBoard = kind === "alert" || kind === "sgsa_gestion" ? "gestiones" : board;
 
   const res = await createPipelineCard({
     organizationId: session.organizationId,

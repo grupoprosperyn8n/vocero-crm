@@ -30,6 +30,10 @@ export const POST = withAuth(async (session, req: Request) => {
   const body = await parseBody(req, ruleSchema);
   if (!body.ok) return body.response;
   const targets = parseAssignmentTargets(body.data);
+  // 030 — una regla, un destino: toda alerta que caiga acá tiene UN ejecutor.
+  if (targets.empleados.length + targets.grupos.length > 1) {
+    return apiError(400, "single_target", "Un solo destino por regla — un ejecutor por vez");
+  }
   const rules = await replaceAlertRules({
     session,
     alertType: body.data.alertType,

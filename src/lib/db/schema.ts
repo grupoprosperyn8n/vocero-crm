@@ -258,7 +258,7 @@ export const lead = pgTable(
       .default("ventas"),
     /** 029 — de dónde salió la tarjeta. */
     sourceKind: text("source_kind", {
-      enum: ["contact", "sgsa_client", "alert"],
+      enum: ["contact", "sgsa_client", "alert", "sgsa_gestion"],
     })
       .notNull()
       .default("contact"),

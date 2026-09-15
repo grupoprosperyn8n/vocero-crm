@@ -28,6 +28,34 @@ export function canManageAlertAssignments(role: string): boolean {
   return role === "owner" || role === "admin" || role === "manager";
 }
 
+/**
+ * 030 — ¿La derivación sigue VIVA? (mientras lo esté, la alerta pertenece a
+ * su ejecutor y no se re-deriva a otro). Cerrada con CONCLUIDA/ANULADA la
+ * alerta terminó: ya no hay nada que re-derivar.
+ */
+export function isActiveAssignmentStatus(status: string): boolean {
+  const s = status.toUpperCase();
+  return s !== "CONCLUIDA" && s !== "ANULADA";
+}
+
+/** Nombres visibles del estado del ejecutor para mensajes («En progreso»). */
+export function assignmentStatusLabel(status: string): string {
+  switch (status.toUpperCase()) {
+    case "ASSIGNED":
+      return "derivada (sin empezar)";
+    case "EN_PROGRESO":
+      return "en progreso";
+    case "TURNO_CONFIRMADO":
+      return "turno confirmado";
+    case "CONCLUIDA":
+      return "concluida";
+    case "ANULADA":
+      return "anulada";
+    default:
+      return status.toLowerCase();
+  }
+}
+
 function alertRef(alert: Pick<SgsaAlertDto, "id" | "airtableRecordId">): string {
   return alert.airtableRecordId || alert.id;
 }
@@ -193,30 +221,51 @@ export async function ensureRuleAssignments(
     );
   if (!rules.length) return;
 
+  // 030 — un solo ejecutor por vez: las alertas que YA tienen derivación (o
+  // fueron asumidas) quedan como están, y de las reglas aplica solo la
+  // primera que matchee el tipo (una regla = un destino).
+  const refs = alerts.map(alertRef);
+  const conAsignacion = new Set(
+    (
+      await getDb()
+        .select({ alertRef: schema.alertAssignment.alertRef })
+        .from(schema.alertAssignment)
+        .where(
+          and(
+            eq(schema.alertAssignment.organizationId, session.organizationId),
+            inArray(schema.alertAssignment.alertRef, refs)
+          )
+        )
+    ).map((r) => r.alertRef)
+  );
+  const ordenadas = [...rules].sort(
+    (r1, r2) => r1.createdAt.getTime() - r2.createdAt.getTime() || r1.id.localeCompare(r2.id)
+  );
+
   const values: (typeof schema.alertAssignment.$inferInsert)[] = [];
   const now = new Date();
   for (const a of alerts) {
     const ref = alertRef(a);
-    for (const r of rules) {
-      if (r.alertType !== a.tipo) continue;
-      values.push({
-        id: newId("alertAssignment"),
-        organizationId: session.organizationId,
-        alertStoreId: a.id,
-        airtableRecordId: a.airtableRecordId,
-        alertRef: ref,
-        alertType: a.tipo,
-        targetKind: r.targetKind,
-        targetId: r.targetId,
-        targetName: r.targetName,
-        source: "rule",
-        ruleId: r.id,
-        assignedBy: r.createdBy,
-        assignedAt: now,
-        status: "assigned",
-        updatedAt: now,
-      });
-    }
+    if (conAsignacion.has(ref)) continue;
+    const rule = ordenadas.find((r) => r.alertType === a.tipo);
+    if (!rule) continue;
+    values.push({
+      id: newId("alertAssignment"),
+      organizationId: session.organizationId,
+      alertStoreId: a.id,
+      airtableRecordId: a.airtableRecordId,
+      alertRef: ref,
+      alertType: a.tipo,
+      targetKind: rule.targetKind,
+      targetId: rule.targetId,
+      targetName: rule.targetName,
+      source: "rule",
+      ruleId: rule.id,
+      assignedBy: rule.createdBy,
+      assignedAt: now,
+      status: "assigned",
+      updatedAt: now,
+    });
   }
   if (!values.length) return;
   await getDb().insert(schema.alertAssignment).values(values).onConflictDoNothing();
@@ -265,7 +314,7 @@ export async function decorateAlertsForSession(
           targetKind: r.targetKind === "group" ? "group" : "employee",
           targetId: r.targetId,
           targetName: r.targetName,
-          source: r.source === "rule" ? "rule" : "manual",
+          source: r.source === "rule" ? "rule" : r.source === "assumed" ? "assumed" : "manual",
           status: r.status,
         })),
       } satisfies SgsaAlertDto;
@@ -466,15 +515,82 @@ export async function assignAlerts(input: {
   grupos: string[];
   chatGrupos: string[];
   errores: string[];
+  /** 030 — alertas que ya tenían ejecutor: no se re-derivan a otro. */
+  bloqueadas: { alertRef: string; title: string; targetName: string; status: string }[];
+  /** 030 — el destino pedido YA era el ejecutor (idempotente, sin novedad). */
+  yaEstaba: number;
 }> {
   const targets = await targetNames(input.session.organizationId, input.targets);
   if (!targets.length || !input.alerts.length) {
-    return { assigned: 0, creadas: 0, compartidaCon: [], grupos: [], chatGrupos: [], errores: [] };
+    return {
+      assigned: 0,
+      creadas: 0,
+      compartidaCon: [],
+      grupos: [],
+      chatGrupos: [],
+      errores: [],
+      bloqueadas: [],
+      yaEstaba: 0,
+    };
   }
 
   const now = new Date();
-  const rows: (typeof schema.alertAssignment.$inferInsert)[] = [];
+
+  // 030 — UN SOLO EJECUTOR POR VEZ: si la alerta ya fue derivada o asumida,
+  // no se entrega a otro. Mismo destino ⇒ idempotente (sin aviso nuevo).
+  const refs = input.alerts.map((a) => alertRef(a));
+  const previas = await getDb()
+    .select({
+      alertRef: schema.alertAssignment.alertRef,
+      targetKind: schema.alertAssignment.targetKind,
+      targetId: schema.alertAssignment.targetId,
+      targetName: schema.alertAssignment.targetName,
+      status: schema.alertAssignment.status,
+    })
+    .from(schema.alertAssignment)
+    .where(
+      and(
+        eq(schema.alertAssignment.organizationId, input.session.organizationId),
+        inArray(schema.alertAssignment.alertRef, refs)
+      )
+    );
+  const previasPorRef = new Map<string, typeof previas>();
+  for (const p of previas) {
+    const list = previasPorRef.get(p.alertRef) ?? [];
+    list.push(p);
+    previasPorRef.set(p.alertRef, list);
+  }
+
+  const bloqueadas: { alertRef: string; title: string; targetName: string; status: string }[] = [];
+  const alertsLibres: SgsaAlertDto[] = [];
+  let yaEstaba = 0;
   for (const alert of input.alerts) {
+    const previasDeLaAlerta = previasPorRef.get(alertRef(alert)) ?? [];
+    if (!previasDeLaAlerta.length) {
+      alertsLibres.push(alert);
+      continue;
+    }
+    const mismoDestino = previasDeLaAlerta.some(
+      (p) =>
+        (p.targetKind === "employee" && input.targets.empleados.includes(p.targetId)) ||
+        (p.targetKind === "group" && input.targets.grupos.includes(p.targetId))
+    );
+    if (mismoDestino) {
+      yaEstaba += 1;
+      continue;
+    }
+    const actual =
+      previasDeLaAlerta.find((p) => isActiveAssignmentStatus(p.status)) ?? previasDeLaAlerta[0]!;
+    bloqueadas.push({
+      alertRef: alertRef(alert),
+      title: alert.titulo,
+      targetName: actual.targetName,
+      status: actual.status,
+    });
+  }
+
+  const rows: (typeof schema.alertAssignment.$inferInsert)[] = [];
+  for (const alert of alertsLibres) {
     for (const t of targets) {
       rows.push({
         id: newId("alertAssignment"),
@@ -497,34 +613,38 @@ export async function assignAlerts(input: {
     }
   }
   // Solo lo realmente nuevo: re-derivar no duplica filas ni re-avisa.
-  const inserted = await getDb()
-    .insert(schema.alertAssignment)
-    .values(rows)
-    .onConflictDoNothing()
-    .returning({
-      alertRef: schema.alertAssignment.alertRef,
-      targetKind: schema.alertAssignment.targetKind,
-      targetId: schema.alertAssignment.targetId,
-    });
+  const inserted = rows.length
+    ? await getDb()
+        .insert(schema.alertAssignment)
+        .values(rows)
+        .onConflictDoNothing()
+        .returning({
+          alertRef: schema.alertAssignment.alertRef,
+          targetKind: schema.alertAssignment.targetKind,
+          targetId: schema.alertAssignment.targetId,
+        })
+    : [];
 
   const freshByTarget = new Map<string, Set<string>>();
   for (const r of inserted) {
     const key = `${r.targetKind}:${r.targetId}`;
-    const refs = freshByTarget.get(key) ?? new Set<string>();
-    refs.add(r.alertRef);
-    freshByTarget.set(key, refs);
+    const refsDeTarget = freshByTarget.get(key) ?? new Set<string>();
+    refsDeTarget.add(r.alertRef);
+    freshByTarget.set(key, refsDeTarget);
   }
 
   const aggregate = {
-    assigned: input.alerts.length,
+    assigned: alertsLibres.length,
     creadas: inserted.length,
     compartidaCon: [] as string[],
     grupos: [] as string[],
     chatGrupos: [] as string[],
     errores: [] as string[],
+    bloqueadas,
+    yaEstaba,
   };
-  const single = input.alerts.length === 1 ? input.alerts[0]! : null;
-  const tipos = Array.from(new Set(input.alerts.map((a) => a.tipo)));
+  const single = alertsLibres.length === 1 ? alertsLibres[0]! : null;
+  const tipos = Array.from(new Set(alertsLibres.map((a) => a.tipo)));
 
   for (const t of targets) {
     const fresh = freshByTarget.get(`${t.kind}:${t.id}`)?.size ?? 0;
@@ -560,7 +680,7 @@ export async function assignAlerts(input: {
   // Trazabilidad en Airtable solo para alertas con derivaciones nuevas.
   const newRefs = new Set(inserted.map((r) => r.alertRef));
   const updates: { id: string; fields: Record<string, unknown> }[] = [];
-  for (const alert of input.alerts) {
+  for (const alert of alertsLibres) {
     if (!newRefs.has(alertRef(alert)) || !alert.airtableRecordId) continue;
     const fields = await airtableTraceFields({
       alert,
@@ -576,6 +696,65 @@ export async function assignAlerts(input: {
   aggregate.grupos = Array.from(new Set(aggregate.grupos));
   aggregate.chatGrupos = Array.from(new Set(aggregate.chatGrupos));
   return aggregate;
+}
+
+/**
+ * 030 — «asumir»: quien marca/gestiona una alerta que NADIE tenía derivada
+ * pasa a ser su ejecutor. Queda registrado (source `assumed`) y, como toda
+ * derivación, cierra la puerta a entregársela a otro.
+ */
+export async function assumeExecutorIfFree(input: {
+  session: SessionLike;
+  alertStoreId: string;
+  airtableRecordId?: string | null;
+  alertType: string;
+  status: string;
+}): Promise<boolean> {
+  const db = getDb();
+  const conditions = [eq(schema.alertAssignment.alertStoreId, input.alertStoreId)];
+  if (input.airtableRecordId) {
+    conditions.push(eq(schema.alertAssignment.airtableRecordId, input.airtableRecordId));
+  }
+  const existing = await db
+    .select({ id: schema.alertAssignment.id })
+    .from(schema.alertAssignment)
+    .where(
+      and(
+        eq(schema.alertAssignment.organizationId, input.session.organizationId),
+        or(...conditions)
+      )
+    )
+    .limit(1);
+  if (existing[0]) return false; // ya tiene ejecutor: no se pisa
+
+  const nameRow = await db
+    .select({ name: schema.user.name })
+    .from(schema.user)
+    .where(eq(schema.user.id, input.session.userId))
+    .limit(1);
+
+  const now = new Date();
+  await db
+    .insert(schema.alertAssignment)
+    .values({
+      id: newId("alertAssignment"),
+      organizationId: input.session.organizationId,
+      alertStoreId: input.alertStoreId,
+      airtableRecordId: input.airtableRecordId ?? null,
+      alertRef: input.airtableRecordId || input.alertStoreId,
+      alertType: input.alertType,
+      targetKind: "employee",
+      targetId: input.session.userId,
+      targetName: nameRow[0]?.name ?? "Empleado",
+      source: "assumed",
+      ruleId: null,
+      assignedBy: input.session.userId,
+      assignedAt: now,
+      status: input.status,
+      updatedAt: now,
+    })
+    .onConflictDoNothing();
+  return true;
 }
 
 export async function markAlertAssignmentsStatus(input: {

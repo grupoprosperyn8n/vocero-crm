@@ -105,7 +105,7 @@ export function buildSearchFormula(q: string): string {
   return `OR(${parts.join(", ")})`;
 }
 
-async function airtableList(
+export async function airtableList(
   table: string,
   params: URLSearchParams
 ): Promise<AirtableRecord[]> {

@@ -5,6 +5,7 @@ import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { publish } from "@/server/events/bus";
 import { moveLeadToStage } from "@/server/leads/stage-history";
+import { pushCardAlertEstado } from "@/server/pipeline/alert-sync";
 import { getBranding } from "@/server/branding";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +60,11 @@ async function loadOwnCard(organizationId: string, id: string, userId: string) {
       ownerUserId: schema.lead.ownerUserId,
       board: schema.lead.board,
       contactId: schema.lead.contactId,
+      // 030 — la sincronización de tarjetas-alerta necesita saber de dónde
+      // viene la tarjeta y su foto (ref + meta).
+      sourceKind: schema.lead.sourceKind,
+      sgsaRef: schema.lead.sgsaRef,
+      meta: schema.lead.meta,
     })
     .from(schema.lead)
     .where(
@@ -136,7 +142,7 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   // el embudo de ventas y moverla dejaría el tablero mintiendo.
   const db = getDb();
   const target = await db
-    .select({ board: schema.pipelineStage.board })
+    .select({ board: schema.pipelineStage.board, kind: schema.pipelineStage.kind })
     .from(schema.pipelineStage)
     .where(
       scoped(
@@ -150,6 +156,34 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     return apiError(422, "invalid_stage", "Esa etapa es de otro tablero");
   }
 
+  // 030 — tarjeta-alerta «macheada»: mover la tarjeta toca el estado REAL de
+  // la alerta en el sistema (última etapa = CONCLUIDA, ancla perdida =
+  // ANULADA, abierta = EN_PROGRESO). Si el sistema no lo acepta el movimiento
+  // se rechaza: la tarjeta no puede prometer lo que la tabla no va a decir.
+  let alertMetaPatch: Record<string, unknown> | null = null;
+  if (card.sourceKind === "alert") {
+    const sync = await pushCardAlertEstado({
+      session,
+      card: {
+        id: card.id,
+        sourceKind: card.sourceKind,
+        sgsaRef: card.sgsaRef,
+        meta: card.meta,
+      },
+      toStageKind: target[0]?.kind ?? "open",
+    });
+    if (!sync.ok) return apiError(502, "alert_sync_failed", sync.message);
+    if (sync.changed) {
+      alertMetaPatch = {
+        meta: {
+          ...((card.meta as Record<string, unknown> | null) ?? {}),
+          estado: sync.estado,
+          estadoAt: new Date().toISOString(),
+        },
+      };
+    }
+  }
+
   const res = await moveLeadToStage({
     organizationId: session.organizationId,
     leadId: id,
@@ -159,7 +193,7 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     source: "dueno",
     lossReason: body.data.lossReason ?? null,
     lossNote: body.data.lossNote ?? null,
-    extra,
+    extra: { ...extra, ...(alertMetaPatch ?? {}) },
   });
 
   if (!res.ok) {

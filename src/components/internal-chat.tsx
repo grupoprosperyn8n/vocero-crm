@@ -496,6 +496,7 @@ function AlertShareCard({ payload }: { payload: ChatAlertShareDto }) {
               label: title,
               meta: {
                 tipo: type,
+                estado: payload.estado,
                 urgencia: urgency,
                 clienteRecordId: payload.clienteRecordId ?? undefined,
                 linkRegistro: payload.linkRegistro ?? undefined,
