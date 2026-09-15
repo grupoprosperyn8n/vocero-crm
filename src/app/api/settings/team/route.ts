@@ -7,6 +7,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { teamGate } from "@/server/settings/access";
+import { avatarUrlsForEmails } from "@/server/avatars";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,8 @@ export const GET = withAuth(async (session) => {
       )
     )
     .where(scoped(schema.member.organizationId, session.organizationId));
+  // 032 — foto de perfil (misma fuente que el chat: EMPLEADOS en Airtable).
+  const avatares = await avatarUrlsForEmails(members.map((m) => m.email));
   return Response.json({
     // Quién mira: la UI decide qué controles mostrar (el server igual valida).
     viewer: { userId: session.userId, role: session.role },
@@ -60,6 +63,7 @@ export const GET = withAuth(async (session) => {
       offlineAt: m.offlineAt ? m.offlineAt.toISOString() : null,
       offlineByName: m.offlineByName,
       createdAt: m.createdAt.toISOString(),
+      avatarUrl: avatares.get(m.email.trim().toLowerCase()) ?? null,
     })),
   });
 });

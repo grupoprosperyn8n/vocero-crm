@@ -85,6 +85,8 @@ type ChatRoom = {
     name: string;
     online: boolean;
     paused: boolean;
+    /** 032 — foto de perfil (proxy /api/avatars), null si no tiene. */
+    avatarUrl: string | null;
   }[];
 };
 
@@ -100,6 +102,8 @@ type StaffMember = {
   /** 023 — sucursal marcada hoy (si la eligió). */
   officeName: string | null;
   officeSince: string | null;
+  /** 032 — foto de perfil (proxy /api/avatars), null si no tiene. */
+  avatarUrl: string | null;
 };
 
 function fmtTime(iso: string): string {
@@ -189,12 +193,16 @@ function Avatar({
   online,
   group = false,
   size = "md",
+  src = null,
 }: {
   name: string;
   online?: boolean;
   group?: boolean;
   size?: "sm" | "md" | "lg";
+  /** 032 — foto de perfil (proxy /api/avatars); si falla, iniciales. */
+  src?: string | null;
 }) {
+  const [rota, setRota] = useState(false);
   const box =
     size === "sm"
       ? "h-8 w-8 text-[11px]"
@@ -203,22 +211,33 @@ function Avatar({
         : "h-9 w-9 text-[12px]";
   return (
     <span className="relative inline-flex shrink-0">
-      <span
-        className={cn(
-          "flex items-center justify-center rounded-full",
-          box,
-          group
-            ? "bg-brand-soft text-brand-text"
-            : "border bg-subtle text-text-2",
-          "font-bold"
-        )}
-      >
-        {group ? (
-          <Users className={size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"} strokeWidth={1.8} />
-        ) : (
-          initials(name)
-        )}
-      </span>
+      {src && !rota && !group ? (
+        // eslint-disable-next-line @next/next/no-img-element -- 032: el proxy /api/avatars pide sesión; el optimizador de next/image no la lleva.
+        <img
+          src={src}
+          alt=""
+          aria-hidden
+          onError={() => setRota(true)}
+          className={cn("rounded-full border object-cover", box)}
+        />
+      ) : (
+        <span
+          className={cn(
+            "flex items-center justify-center rounded-full",
+            box,
+            group
+              ? "bg-brand-soft text-brand-text"
+              : "border bg-subtle text-text-2",
+            "font-bold"
+          )}
+        >
+          {group ? (
+            <Users className={size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"} strokeWidth={1.8} />
+          ) : (
+            initials(name)
+          )}
+        </span>
+      )}
       {online !== undefined && (
         <PresenceDot
           online={online}
@@ -1257,6 +1276,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                         ? isOnline(peerRow.userId)
                         : undefined
                     }
+                    src={room.kind === "dm" ? peerRow?.avatarUrl : null}
                   />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -1399,6 +1419,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                   group={roomMeta?.kind === "group"}
                   online={roomMeta?.kind === "dm" ? peerOnline : undefined}
                   size="md"
+                  src={roomMeta?.kind === "dm" ? peerStaff?.avatarUrl : null}
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[14px] font-bold">
@@ -1510,7 +1531,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                             me ? "cursor-default" : "hover:bg-accent"
                           )}
                         >
-                          <Avatar name={mem.name} online={on} size="sm" />
+                          <Avatar name={mem.name} online={on} size="sm" src={mem.avatarUrl} />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[13px] font-semibold">
                               {mem.name}
@@ -1716,7 +1737,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                     onClick={() => void startDm(s.userId)}
                     className="flex w-full items-center gap-2.5 px-4 py-2 text-left hover:bg-accent"
                   >
-                    <Avatar name={s.name} online={on} size="sm" />
+                    <Avatar name={s.name} online={on} size="sm" src={s.avatarUrl} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13.5px] font-semibold">
                         {s.name}
@@ -1805,7 +1826,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                     >
                       {checked && <Check className="h-3 w-3" strokeWidth={3} />}
                     </span>
-                    <Avatar name={s.name} online={on} size="sm" />
+                    <Avatar name={s.name} online={on} size="sm" src={s.avatarUrl} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13.5px] font-semibold">
                         {s.name}
@@ -1930,7 +1951,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                           key={mem.userId}
                           className="flex items-center gap-2.5 px-4 py-2"
                         >
-                          <Avatar name={mem.name} online={on} size="sm" />
+                          <Avatar name={mem.name} online={on} size="sm" src={mem.avatarUrl} />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[13.5px] font-semibold">
                               {mem.name}
@@ -2058,6 +2079,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                                 name={s.name}
                                 online={isOnline(s.userId)}
                                 size="sm"
+                                src={s.avatarUrl}
                               />
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-[13px] font-semibold">
@@ -2134,6 +2156,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                     name={roomMeta.displayName}
                     online={peerOnline}
                     size="md"
+                    src={peerStaff?.avatarUrl}
                   />
                   <p className="text-[15.5px] font-bold">
                     {roomMeta.displayName}

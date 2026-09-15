@@ -27,6 +27,8 @@ type Member = {
   offlineAt: string | null;
   offlineByName: string | null;
   createdAt: string;
+  /** 032 — foto de perfil (proxy /api/avatars), null si no tiene. */
+  avatarUrl: string | null;
 };
 
 /**
@@ -233,7 +235,7 @@ export function TeamClient() {
             key={m.id}
             className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3"
           >
-            <ContactAvatar name={m.name} seed={m.id} size="sm" />
+            <ContactAvatar name={m.name} seed={m.id} size="sm" src={m.avatarUrl} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{m.name}</p>
               <p className="text-xs text-muted-foreground">{m.email}</p>

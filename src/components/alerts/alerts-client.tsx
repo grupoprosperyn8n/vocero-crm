@@ -42,6 +42,32 @@ const CACHE_KEY = "vocero.alerts.cache";
 const SOUND_KEY = "vocero.alerts.sound";
 const REFRESH_MS = 60_000;
 
+/**
+ * 032 — mini foto de la persona derivada (empleado). Si no tiene foto cargada
+ * la imagen da 404 y no se muestra nada: el chip queda igual que antes.
+ */
+function AvatarDerivada({
+  t,
+  size = 14,
+}: {
+  t?: { targetKind: string; targetId: string };
+  size?: number;
+}) {
+  const [rota, setRota] = useState(false);
+  if (!t || t.targetKind !== "employee" || rota) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- 032: el proxy /api/avatars pide sesión; el optimizador de next/image no la lleva.
+    <img
+      src={`/api/avatars/${t.targetId}`}
+      alt=""
+      aria-hidden
+      onError={() => setRota(true)}
+      className="shrink-0 rounded-full object-cover"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 type UrgFilter = "" | "3" | "2" | "1";
 
 const URG_STYLES: Record<number, { border: string; chip: string; dot: string }> = {
@@ -600,7 +626,7 @@ export function AlertsClient() {
                           )}
                           {(a.asignaciones?.length ?? 0) > 0 && (
                             <span
-                              className="rounded bg-accent px-1.5 py-0.5 font-medium"
+                              className="inline-flex items-center gap-1 rounded bg-accent px-1.5 py-0.5 font-medium"
                               title={`Derivada a: ${(a.asignaciones ?? [])
                                 .map(
                                   (t) =>
@@ -608,6 +634,7 @@ export function AlertsClient() {
                                 )
                                 .join(", ")}`}
                             >
+                              <AvatarDerivada t={(a.asignaciones ?? [])[0]} />
                               Derivada: {(a.asignaciones ?? [])[0]?.targetName}
                               {(a.asignaciones?.length ?? 0) > 1
                                 ? ` +${(a.asignaciones?.length ?? 1) - 1}`
@@ -719,8 +746,11 @@ export function AlertsClient() {
                               >
                                 <GitBranch className="h-3.5 w-3.5" strokeWidth={1.8} />
                                 {live ? (
-                                  <span className="max-w-[130px] truncate">
-                                    Derivada · {live.targetName}
+                                  <span className="flex max-w-[130px] items-center gap-1 truncate">
+                                    <AvatarDerivada t={live} />
+                                    <span className="truncate">
+                                      Derivada · {live.targetName}
+                                    </span>
                                   </span>
                                 ) : (
                                   "Derivar"

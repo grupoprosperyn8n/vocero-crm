@@ -3,6 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { publish } from "@/server/events/bus";
 import { onlineUserIds } from "@/server/events/presence";
+import { avatarUrlsForEmails } from "@/server/avatars";
 import { artDayKey } from "./office-day";
 import type { ChatAlertShareDto, ChatContactShareDto, ChatMessagePayloadDto } from "@/lib/types";
 
@@ -194,6 +195,8 @@ export type ChatMemberView = {
   online: boolean;
   /** 022c — integrante en pausa (no cuenta como miembro activo ni presencia). */
   paused: boolean;
+  /** 032 — foto de perfil (proxy /api/avatars), null si no tiene. */
+  avatarUrl: string | null;
 };
 
 export type ChatMessageView = {
@@ -319,6 +322,7 @@ export async function listRoomsForUser(
       roomId: schema.chatRoomMember.roomId,
       userId: schema.chatRoomMember.userId,
       name: schema.user.name,
+      email: schema.user.email,
       pausedAt: schema.chatRoomMember.pausedAt,
     })
     .from(schema.chatRoomMember)
@@ -385,6 +389,8 @@ export async function listRoomsForUser(
 
   // 022 — presencia: conexión SSE viva = en línea (in-process).
   const online = new Set(onlineUserIds(organizationId));
+  // 032 — foto de perfil de los integrantes (una lectura para todas las salas).
+  const avataresMiembros = await avatarUrlsForEmails(memberRows.map((m) => m.email));
   const membersByRoom = new Map<string, ChatMemberView[]>();
   for (const m of memberRows) {
     const list = membersByRoom.get(m.roomId) ?? [];
@@ -393,6 +399,7 @@ export async function listRoomsForUser(
       name: m.name,
       online: online.has(m.userId) && !m.pausedAt,
       paused: Boolean(m.pausedAt),
+      avatarUrl: avataresMiembros.get(m.email.trim().toLowerCase()) ?? null,
     });
     membersByRoom.set(m.roomId, list);
   }
@@ -976,6 +983,8 @@ export type StaffMemberView = {
   /** 023 — sucursal que marcó hoy (si la eligió). */
   officeName: string | null;
   officeSince: string | null;
+  /** 032 — foto de perfil (proxy /api/avatars), null si no tiene. */
+  avatarUrl: string | null;
 };
 
 /** Equipo activo para los selectores del chat y la ficha del empleado. */
@@ -1022,6 +1031,8 @@ export async function listStaff(
     .orderBy(asc(schema.user.name));
   // 022 — presencia: el selector muestra quién está en línea ahora mismo.
   const online = new Set(onlineUserIds(organizationId));
+  // 032 — foto de perfil de cada uno (si la tiene en EMPLEADOS).
+  const avatares = await avatarUrlsForEmails(rows.map((row) => row.email));
   return rows.map((row) => ({
     userId: row.userId,
     name: row.name,
@@ -1033,5 +1044,6 @@ export async function listStaff(
     locality: row.locality,
     officeName: (row.officeCleanName ?? row.officeName)?.trim() ?? null,
     officeSince: row.officeSince ? row.officeSince.toISOString() : null,
+    avatarUrl: avatares.get(row.email.trim().toLowerCase()) ?? null,
   }));
 }
