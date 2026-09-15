@@ -19,6 +19,7 @@ import { getDb, schema } from "@/lib/db";
 import { alertUrgency, alertUrgencyLabel } from "@/lib/alerts";
 import type { ChatAlertShareDto, SgsaAlertDto } from "@/lib/types";
 import { getTodayOffice } from "@/server/internal/office-day";
+import { withClientRecordIds } from "@/server/alerts/client-record";
 
 const DEFAULT_BACKEND_URL = "https://web-production-2584d.up.railway.app";
 
@@ -174,6 +175,7 @@ export function alertSharePayload(alert: SgsaAlertDto): ChatAlertShareDto {
     urgenciaLabel: alert.urgenciaLabel,
     recordUrl: alert.linkRegistro,
     linkRegistro: alert.linkRegistro,
+    clienteRecordId: alert.clienteRecordId ?? null,
     estado: alert.estado,
     fecha: alert.fecha,
   };
@@ -184,12 +186,17 @@ export async function getAlertSharePayload(id: string): Promise<ChatAlertShareDt
   const fromPending = pending.alerts.find(
     (a) => a.id === id || a.airtableRecordId === id
   );
-  if (fromPending) return alertSharePayload(fromPending);
+  if (fromPending) {
+    const [withClient] = await withClientRecordIds([fromPending]);
+    return alertSharePayload(withClient ?? fromPending);
+  }
   const history = await listAlerts(true);
   const fromHistory = history.alerts.find(
     (a) => a.id === id || a.airtableRecordId === id
   );
-  return fromHistory ? alertSharePayload(fromHistory) : null;
+  if (!fromHistory) return null;
+  const [withClient] = await withClientRecordIds([fromHistory]);
+  return alertSharePayload(withClient ?? fromHistory);
 }
 
 /* ─── Compartir alertas (espejo del share de la PWA) ───────────────────── */

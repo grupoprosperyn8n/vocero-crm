@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
 import { CHANNEL_LABEL, isChannel } from "@/lib/channels";
+import { sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import { ShareContactDialog } from "@/components/contacts/share-contact-dialog";
 import type { ChatAlertShareDto, ChatContactShareDto, ChatMessagePayloadDto } from "@/lib/types";
 import { useEvents } from "@/components/use-events";
@@ -437,6 +438,9 @@ function AlertShareCard({ payload }: { payload: ChatAlertShareDto }) {
   const type = payload.type || payload.tipo;
   const urgency = payload.urgencyLabel || payload.urgenciaLabel;
   const url = payload.recordUrl || payload.linkRegistro;
+  const clienteUrl = payload.clienteRecordId
+    ? sgsaClientInterfaceUrl(payload.clienteRecordId)
+    : null;
 
   return (
     <div className="mt-1.5 rounded-md border border-warning-soft bg-warning-tint px-2.5 py-2 text-foreground">
@@ -455,16 +459,32 @@ function AlertShareCard({ payload }: { payload: ChatAlertShareDto }) {
           {body}
         </p>
       )}
-      {url && (
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-md border border-warning-soft bg-background px-2 text-[12px] font-medium text-foreground hover:bg-warning-soft"
-        >
-          <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
-          Abrir registro
-        </a>
+      {(url || clienteUrl) && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          {url && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-warning-soft bg-background px-2 text-[12px] font-medium text-foreground hover:bg-warning-soft"
+            >
+              <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
+              Abrir registro
+            </a>
+          )}
+          {clienteUrl && (
+            <a
+              href={clienteUrl}
+              target="_blank"
+              rel="noreferrer"
+              title="Abrir el cliente en la interface del sistema"
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-warning-soft bg-background px-2 text-[12px] font-medium text-foreground hover:bg-warning-soft"
+            >
+              <Users className="h-3.5 w-3.5" strokeWidth={1.8} />
+              Abrir cliente
+            </a>
+          )}
+        </div>
       )}
     </div>
   );

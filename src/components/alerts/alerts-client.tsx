@@ -17,11 +17,13 @@ import {
   Search,
   Settings2,
   Share2,
+  Users,
 } from "lucide-react";
 import { ShareAlertDialog } from "@/components/alerts/share-alert-dialog";
 import { AssignAlertDialog } from "@/components/alerts/assign-alert-dialog";
 import { AlertRulesDialog } from "@/components/alerts/alert-rules-dialog";
 import { alertDate, alertEstadoLabel, parseAlertDetalle } from "@/lib/alerts";
+import { sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import type { SgsaAlertDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -499,6 +501,9 @@ export function AlertsClient() {
               const styles = URG_STYLES[a.urgencia] ?? URG_FALLBACK;
               const open = expanded.has(a.id);
               const link = safeLink(a.linkRegistro);
+              const clienteUrl = a.clienteRecordId
+                ? sgsaClientInterfaceUrl(a.clienteRecordId)
+                : null;
               const rows = open ? parseAlertDetalle(a.detalle) : [];
               const busy = busyId === a.id;
               return (
@@ -608,16 +613,36 @@ export function AlertsClient() {
                           )}
                         </div>
                       )}
-                      {link && (
-                        <a
-                          href={link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mb-2.5 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-brand-text hover:underline"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                          Abrir registro
-                        </a>
+                      {(link || clienteUrl) && (
+                        <div className="mb-2.5 flex flex-wrap items-center gap-x-3.5 gap-y-1">
+                          {link && (
+                            <a
+                              href={link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-brand-text hover:underline"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              Abrir registro
+                            </a>
+                          )}
+                          {clienteUrl && (
+                            <a
+                              href={clienteUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={
+                                a.clienteNombre
+                                  ? `Abrir ${a.clienteNombre} en la interface del sistema`
+                                  : "Abrir el cliente en la interface del sistema"
+                              }
+                              className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-brand-text hover:underline"
+                            >
+                              <Users className="h-3.5 w-3.5" />
+                              Abrir cliente
+                            </a>
+                          )}
+                        </div>
                       )}
                       <div className="flex flex-wrap gap-1.5">
                         {ACTION_DEFS.filter(

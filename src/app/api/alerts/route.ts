@@ -22,7 +22,9 @@ export const GET = withAuth(async (session, req: Request) => {
   const mineOnly = url.searchParams.get("mine") === "1";
   try {
     const { alerts, pendientes } = await listAlerts(hist);
-    const scopedAlerts = await decorateAlertsForSession(session, alerts, mineOnly);
+    const scopedAlerts = await decorateAlertsForSession(session, alerts, mineOnly, {
+      withClients: true,
+    });
     const canManage = canManageAlertAssignments(session.role);
     // Para un miembro (o el filtro «para mí») el contador muestra lo que ve.
     const pendientesScoped = !hist && (!canManage || mineOnly) ? scopedAlerts.length : pendientes;

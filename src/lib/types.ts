@@ -205,6 +205,8 @@ export type SgsaAlertDto = {
   compartidaCon: string[];
   /** Grupos del chat interno con los que se compartió (log de texto). */
   compartidaGrupos: string | null;
+  /** 028b — record del cliente (CLIENTES) para «Abrir cliente» en la interface. */
+  clienteRecordId?: string | null;
   /** 028 — responsables derivados desde el CRM (usuario o grupo local). */
   asignaciones?: {
     targetKind: "employee" | "group";
@@ -302,6 +304,8 @@ export type ChatAlertShareDto = {
   /** Optional safe context fields. */
   recordUrl?: string | null;
   linkRegistro?: string | null;
+  /** 028b — record del cliente (CLIENTES) para «Abrir cliente» en la interface. */
+  clienteRecordId?: string | null;
   estado?: string | null;
   fecha?: string | null;
 };

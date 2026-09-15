@@ -5,6 +5,7 @@ import { newId } from "@/lib/db/ids";
 import type { ChatAlertShareDto, SgsaAlertDto } from "@/lib/types";
 import { createDmRoom, postChatMessage } from "@/server/internal/chat";
 import { alertSharePayload, resolveEmpleadoForUser } from "@/server/alerts/service";
+import { withClientRecordIds } from "@/server/alerts/client-record";
 
 type SessionLike = { userId: string; organizationId: string; role: string };
 
@@ -224,7 +225,8 @@ export async function ensureRuleAssignments(
 export async function decorateAlertsForSession(
   session: SessionLike,
   alerts: SgsaAlertDto[],
-  mineOnly: boolean
+  mineOnly: boolean,
+  opts: { withClients?: boolean } = {}
 ): Promise<SgsaAlertDto[]> {
   await ensureRuleAssignments(session, alerts);
   const refs = alerts.map(alertRef);
@@ -248,7 +250,7 @@ export async function decorateAlertsForSession(
   }
 
   const canSeeAll = canSeeAllInbox(session.role) && !mineOnly;
-  return alerts
+  const scoped = alerts
     .map((a) => {
       const assigned = byRef.get(alertRef(a)) ?? [];
       const assignedToMe = assigned.some(
@@ -269,6 +271,7 @@ export async function decorateAlertsForSession(
       } satisfies SgsaAlertDto;
     })
     .filter((a) => canSeeAll || a.asignadaParaMi);
+  return opts.withClients ? await withClientRecordIds(scoped) : scoped;
 }
 
 /** Campos de trazabilidad de Airtable para una alerta derivada (o null). */
@@ -420,7 +423,8 @@ async function sendAssignmentNotice(input: {
   alert: SgsaAlertDto;
   note?: string | null;
 }): Promise<void> {
-  const payload = alertSharePayload(input.alert);
+  const [alert] = await withClientRecordIds([input.alert]);
+  const payload = alertSharePayload(alert ?? input.alert);
   await postToTarget({
     session: input.session,
     target: input.target,
