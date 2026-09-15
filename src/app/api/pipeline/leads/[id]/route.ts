@@ -192,6 +192,11 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     }
   }
 
+  // 031 — una tarjeta del SISTEMA (alerta/gestión) no es un trato de venta:
+  // al anularla no se pide «motivo de pérdida» (el motivo real vive en la
+  // tabla); se registra solo, con nota, para no romper la trazabilidad.
+  const esTarjetaSistema =
+    card.sourceKind === "alert" || card.sourceKind === "sgsa_gestion";
   const res = await moveLeadToStage({
     organizationId: session.organizationId,
     leadId: id,
@@ -199,8 +204,10 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     position: body.data.position,
     actorUserId: session.userId,
     source: "dueno",
-    lossReason: body.data.lossReason ?? null,
-    lossNote: body.data.lossNote ?? null,
+    lossReason: body.data.lossReason ?? (esTarjetaSistema ? "otro" : null),
+    lossNote:
+      body.data.lossNote ??
+      (esTarjetaSistema ? "Anulada desde el tablero de gestiones" : null),
     extra: { ...extra, ...(alertMetaPatch ?? {}) },
   });
 

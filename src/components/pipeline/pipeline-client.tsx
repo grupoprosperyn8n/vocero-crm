@@ -240,9 +240,11 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
     if (!esMia(lead)) return; // tarjeta ajena: ni siquiera debió arrastrarse
 
     // Perder un trato exige motivo. Se pregunta ANTES de mover: si el dueño
-    // cancela, la tarjeta ni siquiera parpadea fuera de su columna.
+    // cancela, la tarjeta ni siquiera parpadea fuera de su columna. Las
+    // tarjetas del SISTEMA (alerta/gestión) no son tratos: van directo —
+    // 031, el aviso de «Alerta del sistema» ya confirma el efecto real.
     const destino = stages.find((s) => s.id === overStage);
-    if (destino?.kind === "lost") {
+    if (destino?.kind === "lost" && !esTarjetaSistema(lead)) {
       setPendingLoss({ leadId, stageId: overStage, name: lead.contact?.name ?? lead.label ?? "la tarjeta" });
       return;
     }
@@ -259,7 +261,7 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
     const lead = cards.find((l) => l.id === leadId);
     if (!lead || lead.stageId === stageId) return;
     const destino = stages.find((s) => s.id === stageId);
-    if (destino?.kind === "lost") {
+    if (destino?.kind === "lost" && !esTarjetaSistema(lead)) {
       setPendingLoss({ leadId, stageId, name: lead.contact?.name ?? lead.label ?? "la tarjeta" });
       return;
     }
@@ -482,6 +484,11 @@ function alertSyncMessage(
     return "Esta tarjeta es una alerta del sistema: al soltarla acá, la alerta queda ANULADA en la tabla de alertas.";
   }
   return `Esta tarjeta es una alerta del sistema: al moverla, la alerta pasa a «${etiqueta}» en la tabla de alertas.`;
+}
+
+/** 031 — tarjetas que vienen del SISTEMA (alerta/gestión): no son tratos de venta. */
+function esTarjetaSistema(lead: PipelineCardDto | undefined): boolean {
+  return lead?.sourceKind === "alert" || lead?.sourceKind === "sgsa_gestion";
 }
 
 /** 030 — confirmación de los movimientos que tocan la tabla de alertas. */
