@@ -744,6 +744,7 @@ export function AlertsClient() {
                             meta: {
                               tipo: a.tipo,
                               estado: a.estado,
+                              alertStoreId: a.id,
                               urgencia: a.urgenciaLabel,
                               clienteNombre: a.clienteNombre ?? undefined,
                               clienteRecordId: a.clienteRecordId ?? undefined,
