@@ -129,6 +129,7 @@ export function ShareAlertDialog({
               urgenciaLabel: alert.urgenciaLabel,
               recordUrl: alert.linkRegistro,
               linkRegistro: alert.linkRegistro,
+              clienteRecordId: alert.clienteRecordId ?? null,
               estado: alert.estado,
               fecha: alert.fecha,
             },

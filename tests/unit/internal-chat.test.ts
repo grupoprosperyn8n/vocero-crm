@@ -201,9 +201,24 @@ describe("chat interno — alerta compartida (027c)", () => {
       urgenciaLabel: "Alta",
       recordUrl: "https://airtable.com/app/table/rec",
       linkRegistro: "https://airtable.com/app/table/rec",
+      clienteRecordId: null,
       estado: "PENDIENTE",
       fecha: "2026-09-14",
     });
+  });
+
+  it("030e — conserva el record del cliente cuando es válido y lo descarta si no", () => {
+    const base = {
+      id: "alert_123",
+      titulo: "Pago vencido",
+      cuerpo: "Cliente con cuota vencida",
+      tipo: "COBRANZA",
+      urgenciaLabel: "Alta",
+    };
+    const ok = sanitizeAlertShare({ ...base, clienteRecordId: "reck7vLyA9266hhVL" });
+    expect(ok?.clienteRecordId).toBe("reck7vLyA9266hhVL");
+    const bad = sanitizeAlertShare({ ...base, clienteRecordId: "recIOGopHMdHgvA1jA" });
+    expect(bad?.clienteRecordId).toBeNull();
   });
 
   it("rechaza payloads incompletos, ids raros y URLs no http(s)", () => {

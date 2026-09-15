@@ -84,6 +84,12 @@ function cleanUrl(v: unknown): string | null {
   }
 }
 
+/** 030e — record id de Airtable (`rec` + 14 alfanuméricos) o null si no tiene esa forma. */
+function cleanRecId(v: unknown): string | null {
+  const s = cleanStr(v, 80);
+  return s && /^rec[A-Za-z0-9]{14}$/.test(s) ? s : null;
+}
+
 /**
  * 025 — Contacto compartido (del CRM o del sistema): valida forma y topes,
  * normaliza espacios y devuelve el snapshot listo para guardar. Cualquier
@@ -153,6 +159,7 @@ export function sanitizeAlertShare(raw: unknown): ChatAlertShareDto | null {
     urgenciaLabel: urgencyLabel,
     recordUrl,
     linkRegistro: recordUrl,
+    clienteRecordId: cleanRecId(o.clienteRecordId),
     estado: cleanStr(o.estado, CHAT_ALERT_LABEL_MAX),
     fecha: cleanStr(o.fecha, 80),
   };

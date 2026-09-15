@@ -3,6 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { recordLeadCreated } from "@/server/leads/stage-history";
+import { resolveAlertClientRecords } from "@/server/alerts/client-record";
 import type { PipelineBoard, PipelineSourceKind } from "@/lib/types";
 
 /**
@@ -75,6 +76,7 @@ export async function createPipelineCard(input: {
     );
 
   const id = newId("lead");
+  const meta = await enrichAlertMeta(input);
   try {
     await db.insert(schema.lead).values({
       id,
@@ -85,7 +87,7 @@ export async function createPipelineCard(input: {
       contactId: input.contactId ?? null,
       sgsaRef: input.sgsaRef ?? null,
       label: input.label ?? null,
-      meta: input.meta ?? null,
+      meta,
       stageId,
       position: (maxPos[0]?.max ?? -1) + 1,
       lastActivityAt: null,
@@ -111,6 +113,34 @@ export async function createPipelineCard(input: {
   });
 
   return { ok: true, id, stageId, created: true };
+}
+
+/**
+ * 030e — «macheado» del cliente en tarjetas de alerta: si el navegador mandó
+ * la tarjeta sin `clienteRecordId` (bundle viejo, payload de chat anterior a
+ * 030e, etc.), lo resolvemos acá leyendo CLIENTE/CLIENTES de la alerta en
+ * Airtable. Best-effort: si Airtable no responde, la tarjeta nace igual.
+ */
+async function enrichAlertMeta(input: {
+  sourceKind: PipelineSourceKind;
+  sgsaRef?: string | null;
+  meta?: Record<string, unknown> | null;
+}): Promise<Record<string, unknown> | null> {
+  const meta = input.meta ?? null;
+  if (input.sourceKind !== "alert") return meta;
+  const ref = typeof input.sgsaRef === "string" ? input.sgsaRef.trim() : "";
+  if (!/^rec[A-Za-z0-9]{14}$/.test(ref)) return meta;
+  const m = { ...(meta && typeof meta === "object" ? meta : {}) } as Record<string, unknown>;
+  const cur = m.clienteRecordId;
+  if (typeof cur === "string" && /^rec[A-Za-z0-9]{14}$/.test(cur)) return m;
+  try {
+    const map = await resolveAlertClientRecords([ref]);
+    const cli = map.get(ref);
+    if (cli) m.clienteRecordId = cli;
+  } catch {
+    // best-effort: la tarjeta puede vivir sin el cliente
+  }
+  return m;
 }
 
 async function findExistingCard(input: {
