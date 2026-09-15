@@ -439,15 +439,15 @@ function AlertShareCard({ payload }: { payload: ChatAlertShareDto }) {
   const url = payload.recordUrl || payload.linkRegistro;
 
   return (
-    <div className="mt-1.5 rounded-md border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-amber-950">
-      <p className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide text-amber-700">
+    <div className="mt-1.5 rounded-md border border-warning-soft bg-warning-tint px-2.5 py-2 text-foreground">
+      <p className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide text-warning-text">
         <BellRing className="h-3.5 w-3.5" strokeWidth={1.9} />
         Alerta compartida
       </p>
       <p className="mt-0.5 text-[13.5px] font-semibold leading-tight">
         {title}
       </p>
-      <p className="mt-0.5 text-[11.5px] text-amber-800">
+      <p className="mt-0.5 text-[11.5px] text-warning-text">
         {[type, urgency, payload.estado, payload.fecha].filter(Boolean).join(" · ")}
       </p>
       {body && (
@@ -460,7 +460,7 @@ function AlertShareCard({ payload }: { payload: ChatAlertShareDto }) {
           href={url}
           target="_blank"
           rel="noreferrer"
-          className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-md border border-amber-200 bg-background px-2 text-[12px] font-medium hover:bg-amber-100"
+          className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-md border border-warning-soft bg-background px-2 text-[12px] font-medium text-foreground hover:bg-warning-soft"
         >
           <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
           Abrir registro
