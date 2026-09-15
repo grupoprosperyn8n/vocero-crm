@@ -16,7 +16,7 @@ import type { SgsaAlertDto } from "@/lib/types";
 type Targets = {
   empleadoRef: string | null;
   employees: { airtableId: string; nombre: string; online: boolean }[];
-  groups: { id: string; nombre: string }[];
+  groups: { id: string; nombre: string; member?: boolean }[];
 };
 
 type ApiErrorBody = { error?: string | { message?: string } };
@@ -67,7 +67,8 @@ export function ShareAlertDialog({
       setTargets({
         empleadoRef: data.empleadoRef ?? null,
         employees: data.employees ?? [],
-        groups: data.groups ?? [],
+        // 028 — de los grupos de un manager solo se comparte donde escribe.
+        groups: (data.groups ?? []).filter((g) => g.member !== false),
       });
     })();
     return () => {

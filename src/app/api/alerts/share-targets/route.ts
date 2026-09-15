@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { onlineUserIds } from "@/server/events/presence";
+import { canManageAlertAssignments } from "@/server/alerts/assignments";
 import { alertsConfigured } from "@/server/alerts/service";
 
 export const dynamic = "force-dynamic";
@@ -42,34 +43,52 @@ export const GET = withAuth(async (session) => {
           a.nombre.localeCompare(b.nombre, "es")
       );
 
-    const myGroups = await db
-      .select({ roomId: schema.chatRoomMember.roomId })
-      .from(schema.chatRoomMember)
-      .where(
-        and(
-          eq(schema.chatRoomMember.organizationId, session.organizationId),
-          eq(schema.chatRoomMember.userId, session.userId),
-          isNull(schema.chatRoomMember.pausedAt)
-        )
-      );
+    const canManage = canManageAlertAssignments(session.role);
+    const myGroups = canManage
+      ? []
+      : await db
+          .select({ roomId: schema.chatRoomMember.roomId })
+          .from(schema.chatRoomMember)
+          .where(
+            and(
+              eq(schema.chatRoomMember.organizationId, session.organizationId),
+              eq(schema.chatRoomMember.userId, session.userId),
+              isNull(schema.chatRoomMember.pausedAt)
+            )
+          );
     const groupIds = myGroups.map((g) => g.roomId);
-    const groupRows = groupIds.length
+    const myGroupIdSet = new Set(groupIds);
+    const groupRows = canManage
       ? await db
           .select({ id: schema.chatRoom.id, nombre: schema.chatRoom.name })
           .from(schema.chatRoom)
           .where(
             and(
               eq(schema.chatRoom.organizationId, session.organizationId),
-              eq(schema.chatRoom.kind, "group"),
-              inArray(schema.chatRoom.id, groupIds)
+              eq(schema.chatRoom.kind, "group")
             )
           )
           .orderBy(asc(schema.chatRoom.name))
-      : [];
+      : groupIds.length
+        ? await db
+            .select({ id: schema.chatRoom.id, nombre: schema.chatRoom.name })
+            .from(schema.chatRoom)
+            .where(
+              and(
+                eq(schema.chatRoom.organizationId, session.organizationId),
+                eq(schema.chatRoom.kind, "group"),
+                inArray(schema.chatRoom.id, groupIds)
+              )
+            )
+            .orderBy(asc(schema.chatRoom.name))
+        : [];
 
     const groups = groupRows.map((g) => ({
       id: g.id,
       nombre: g.nombre?.trim() || "Grupo",
+      // 028 — un manager ve TODOS los grupos para configurar reglas; el flag
+      // dice si el usuario escribe ahí (Compartir solo avisa donde escribe).
+      member: myGroupIdSet.has(g.id),
     }));
 
     return Response.json({

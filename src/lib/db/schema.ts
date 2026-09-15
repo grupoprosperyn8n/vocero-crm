@@ -1351,6 +1351,80 @@ export const conversationArchive = pgTable(
   ]
 );
 
+
+/* ============================================================
+ * 028 — Reglas y trazabilidad de derivación de alertas SGSA
+ * ============================================================ */
+
+export const alertAssignmentRule = pgTable(
+  "alert_assignment_rule",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Tipo exacto de alerta SGSA, por ejemplo POLIZA_SIN_VIGENCIA. */
+    alertType: text("alert_type").notNull(),
+    /** employee = usuario CRM; group = sala group del chat interno. */
+    targetKind: text("target_kind").notNull(),
+    targetId: text("target_id").notNull(),
+    /** Snapshot visible del destino para auditoría si luego cambia el nombre. */
+    targetName: text("target_name").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("alert_assignment_rule_org_type_idx").on(t.organizationId, t.alertType),
+    index("alert_assignment_rule_target_idx").on(t.organizationId, t.targetKind, t.targetId),
+  ]
+);
+
+export const alertAssignment = pgTable(
+  "alert_assignment",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Store id del backend SGSA. */
+    alertStoreId: text("alert_store_id").notNull(),
+    /** Record id de Airtable ALERTAS, si existe. */
+    airtableRecordId: text("airtable_record_id"),
+    /** Clave estable preferida: Airtable id si existe; si no, store id. */
+    alertRef: text("alert_ref").notNull(),
+    alertType: text("alert_type").notNull(),
+    targetKind: text("target_kind").notNull(),
+    targetId: text("target_id").notNull(),
+    targetName: text("target_name").notNull(),
+    /** manual o rule. */
+    source: text("source").notNull().default("manual"),
+    ruleId: text("rule_id").references(() => alertAssignmentRule.id, {
+      onDelete: "set null",
+    }),
+    assignedBy: text("assigned_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    assignedAt: timestamp("assigned_at").notNull().defaultNow(),
+    status: text("status").notNull().default("assigned"),
+    note: text("note"),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("alert_assignment_target_uq").on(
+      t.organizationId,
+      t.alertRef,
+      t.targetKind,
+      t.targetId
+    ),
+    index("alert_assignment_org_alert_idx").on(t.organizationId, t.alertRef),
+    index("alert_assignment_target_idx").on(t.organizationId, t.targetKind, t.targetId),
+  ]
+);
+
 export const chatMessage = pgTable(
   "chat_message",
   {

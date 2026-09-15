@@ -10,13 +10,17 @@ import {
   CircleSlash,
   ExternalLink,
   Eye,
+  GitBranch,
   Hourglass,
   Inbox,
   RefreshCw,
   Search,
+  Settings2,
   Share2,
 } from "lucide-react";
 import { ShareAlertDialog } from "@/components/alerts/share-alert-dialog";
+import { AssignAlertDialog } from "@/components/alerts/assign-alert-dialog";
+import { AlertRulesDialog } from "@/components/alerts/alert-rules-dialog";
 import { alertDate, alertEstadoLabel, parseAlertDetalle } from "@/lib/alerts";
 import type { SgsaAlertDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -127,11 +131,18 @@ export function AlertsClient() {
   // El sonido arranca encendido salvo que el usuario lo apague (como la PWA).
   const [sound, setSound] = useState(true);
   const [shareFor, setShareFor] = useState<SgsaAlertDto | null>(null);
+  // 028 — derivación y reglas: owner/admin/manager derivan; el resto gestiona.
+  const [assignFor, setAssignFor] = useState<SgsaAlertDto | null>(null);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [mine, setMine] = useState(false);
+  const [canManage, setCanManage] = useState(false);
+  const [viewerRole, setViewerRole] = useState<string | null>(null);
 
   const soundRef = useRef(sound);
   const histRef = useRef(hist);
   const seenIdsRef = useRef<Set<string>>(new Set());
   const firstLoadRef = useRef(true);
+  const canManageRef = useRef(false);
 
   useEffect(() => {
     soundRef.current = sound;
@@ -151,13 +162,26 @@ export function AlertsClient() {
     try {
       const saved = localStorage.getItem(SOUND_KEY);
       if (saved === "0") setSound(false);
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached) as { alerts?: SgsaAlertDto[] };
-        if (Array.isArray(parsed.alerts) && parsed.alerts.length) {
-          setAlerts(parsed.alerts);
-          seenIdsRef.current = new Set(parsed.alerts.map((a) => a.id));
+      // La caché guarda la vista activa («todas» o «para mí»): va la última.
+      let cached: { alerts: SgsaAlertDto[]; at?: number; canManage?: boolean } | null = null;
+      for (const key of [CACHE_KEY, `${CACHE_KEY}.mine`]) {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const parsed = JSON.parse(raw) as {
+          alerts?: SgsaAlertDto[];
+          at?: number;
+          canManage?: boolean;
+        };
+        if (!Array.isArray(parsed.alerts) || !parsed.alerts.length) continue;
+        if (!cached || (parsed.at ?? 0) > (cached.at ?? 0)) {
+          cached = { alerts: parsed.alerts, at: parsed.at, canManage: parsed.canManage };
         }
+      }
+      if (cached) {
+        setAlerts(cached.alerts);
+        seenIdsRef.current = new Set(cached.alerts.map((a) => a.id));
+        // Quien ya venía viendo solo lo suyo pinta su vista desde el arranque.
+        if (cached.canManage === false) setMine(true);
       }
     } catch {
       /* sin storage */
@@ -167,9 +191,9 @@ export function AlertsClient() {
   const load = useCallback(async (history: boolean) => {
     setRefreshing(true);
     try {
-      const res = await fetch(`/api/alerts?hist=${history ? 1 : 0}`).catch(
-        () => null
-      );
+      const res = await fetch(
+        `/api/alerts?hist=${history ? 1 : 0}&mine=${mine ? 1 : 0}`
+      ).catch(() => null);
       if (!res) {
         setError("No se pudo conectar con el sistema de alertas.");
         setAlerts((prev) => prev ?? []); // destrabar el skeleton
@@ -179,6 +203,8 @@ export function AlertsClient() {
         alerts?: SgsaAlertDto[];
         pendientes?: number;
         error?: string;
+        viewerRole?: string;
+        canManageAssignments?: boolean;
       } | null;
       if (!res.ok || data?.error) {
         setError("El sistema de alertas no responde. Reintentá en un momento.");
@@ -186,6 +212,13 @@ export function AlertsClient() {
         return;
       }
       setError(null);
+      if (data?.viewerRole) setViewerRole(data.viewerRole);
+      if (typeof data?.canManageAssignments === "boolean") {
+        canManageRef.current = data.canManageAssignments;
+        setCanManage(data.canManageAssignments);
+        // 028 — un miembro ve SOLO lo derivado a él (directo o por su grupo).
+        if (!data.canManageAssignments) setMine(true);
+      }
       const list = data?.alerts ?? [];
       if (!history) {
         // Aviso sonoro solo cuando APARECEN alertas nuevas estando la página
@@ -203,7 +236,15 @@ export function AlertsClient() {
         firstLoadRef.current = false;
         setPendientes(data?.pendientes ?? list.length);
         try {
-          localStorage.setItem(CACHE_KEY, JSON.stringify({ alerts: list.slice(0, 60), at: Date.now() }));
+          const cacheKey = mine ? `${CACHE_KEY}.mine` : CACHE_KEY;
+          localStorage.setItem(
+            cacheKey,
+            JSON.stringify({
+              alerts: list.slice(0, 60),
+              at: Date.now(),
+              canManage: canManageRef.current,
+            })
+          );
         } catch {
           /* sin storage */
         }
@@ -213,7 +254,7 @@ export function AlertsClient() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [mine]);
 
   useEffect(() => {
     void load(hist);
@@ -262,11 +303,12 @@ export function AlertsClient() {
         setAlerts((prev) => (prev ?? []).filter((x) => x.id !== a.id));
         setPendientes((p) => Math.max(0, p - 1));
         try {
-          const cached = localStorage.getItem(CACHE_KEY);
+          const cacheKey = mine ? `${CACHE_KEY}.mine` : CACHE_KEY;
+          const cached = localStorage.getItem(cacheKey);
           if (cached) {
             const parsed = JSON.parse(cached) as { alerts?: SgsaAlertDto[] };
             localStorage.setItem(
-              CACHE_KEY,
+              cacheKey,
               JSON.stringify({
                 ...parsed,
                 alerts: (parsed.alerts ?? []).filter((x) => x.id !== a.id),
@@ -304,6 +346,7 @@ export function AlertsClient() {
   }, [alerts, urg, q]);
 
   const loading = alerts === null;
+  const isMember = viewerRole === "member";
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -377,7 +420,34 @@ export function AlertsClient() {
             </button>
           ))}
         </div>
+        {canManage && (
+          <button
+            onClick={() => setMine((m) => !m)}
+            title="Ver solo las alertas derivadas a mí"
+            className={cn(
+              "rounded-full border px-2.5 py-1 text-[11.5px] font-semibold transition-colors",
+              mine ? "border-brand bg-brand-tint text-brand-text" : "text-text-2 hover:bg-accent"
+            )}
+          >
+            Para mí
+          </button>
+        )}
+        {isMember && (
+          <span className="rounded-full border px-2.5 py-1 text-[11.5px] font-semibold text-text-3">
+            Solo las derivadas a vos
+          </span>
+        )}
         <div className="flex-1" />
+        {canManage && (
+          <button
+            onClick={() => setRulesOpen(true)}
+            title="Reglas por tipo de alerta: quién ve y gestiona cada tipo"
+            className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent"
+          >
+            <Settings2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+            Reglas
+          </button>
+        )}
         <button
           onClick={() => setHist((h) => !h)}
           className={cn(
@@ -409,12 +479,18 @@ export function AlertsClient() {
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
             <Inbox className="h-8 w-8 text-text-3" strokeWidth={1.5} />
             <p className="text-[13.5px] font-semibold">
-              {hist ? "Sin historial para mostrar" : "Sin alertas pendientes"}
+              {hist
+                ? "Sin historial para mostrar"
+                : mine || isMember
+                  ? "Sin alertas asignadas a vos"
+                  : "Sin alertas pendientes"}
             </p>
             <p className="max-w-xs text-[12px] text-text-3">
               {hist
                 ? "Las alertas gestionadas quedan acá cuando el sistema las consolida."
-                : "Las alertas operativas (pólizas, turnos, gestiones, siniestros) aparecen acá solas."}
+                : mine || isMember
+                  ? "Cuando te deriven alertas (por regla o asignación directa) van a aparecer acá."
+                  : "Las alertas operativas (pólizas, turnos, gestiones, siniestros) aparecen acá solas."}
             </p>
           </div>
         ) : (
@@ -482,6 +558,27 @@ export function AlertsClient() {
                               Compartida
                             </span>
                           )}
+                          {(a.asignaciones?.length ?? 0) > 0 && (
+                            <span
+                              className="rounded bg-accent px-1.5 py-0.5 font-medium"
+                              title={`Derivada a: ${(a.asignaciones ?? [])
+                                .map(
+                                  (t) =>
+                                    `${t.targetName}${t.source === "rule" ? " (regla)" : ""}`
+                                )
+                                .join(", ")}`}
+                            >
+                              Derivada: {(a.asignaciones ?? [])[0]?.targetName}
+                              {(a.asignaciones?.length ?? 0) > 1
+                                ? ` +${(a.asignaciones?.length ?? 1) - 1}`
+                                : ""}
+                            </span>
+                          )}
+                          {a.asignadaParaMi && (
+                            <span className="rounded bg-brand-tint px-1.5 py-0.5 font-semibold text-brand-text">
+                              Para mí
+                            </span>
+                          )}
                           <ChevronDown
                             className={cn(
                               "ml-auto h-3.5 w-3.5 transition-transform",
@@ -540,6 +637,17 @@ export function AlertsClient() {
                             {d.label}
                           </button>
                         ))}
+                        {canManage && !hist && (
+                          <button
+                            data-alert-action="assign"
+                            disabled={busy}
+                            onClick={() => setAssignFor(a)}
+                            className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-semibold text-text-2 transition-colors hover:border-brand hover:text-brand-text disabled:opacity-50"
+                          >
+                            <GitBranch className="h-3.5 w-3.5" strokeWidth={1.8} />
+                            Derivar
+                          </button>
+                        )}
                         <button
                           data-alert-action="share"
                           disabled={busy}
@@ -563,6 +671,20 @@ export function AlertsClient() {
           alert={shareFor}
           onClose={() => setShareFor(null)}
           onShared={() => void load(histRef.current)}
+        />
+      )}
+      {assignFor && (
+        <AssignAlertDialog
+          alert={assignFor}
+          onClose={() => setAssignFor(null)}
+          onAssigned={() => void load(histRef.current)}
+        />
+      )}
+      {rulesOpen && (
+        <AlertRulesDialog
+          alertTypes={Array.from(new Set((alerts ?? []).map((a) => a.tipo))).sort()}
+          onClose={() => setRulesOpen(false)}
+          onSaved={() => void load(histRef.current)}
         />
       )}
     </div>

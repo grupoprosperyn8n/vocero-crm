@@ -44,6 +44,9 @@ const prefixes = {
   staffOfficeDay: "ofd",
   // 026 — bandeja por usuario
   conversationArchive: "carch",
+  // 028 — reglas/derivación de alertas
+  alertAssignmentRule: "alrule",
+  alertAssignment: "alassn",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

@@ -205,6 +205,16 @@ export type SgsaAlertDto = {
   compartidaCon: string[];
   /** Grupos del chat interno con los que se compartió (log de texto). */
   compartidaGrupos: string | null;
+  /** 028 — responsables derivados desde el CRM (usuario o grupo local). */
+  asignaciones?: {
+    targetKind: "employee" | "group";
+    targetId: string;
+    targetName: string;
+    source: "manual" | "rule";
+    status: string;
+  }[];
+  /** true cuando la alerta está asignada directa o por grupo al usuario actual. */
+  asignadaParaMi?: boolean;
 };
 
 /* ============================================================

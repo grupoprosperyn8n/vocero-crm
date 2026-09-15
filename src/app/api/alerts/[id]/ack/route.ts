@@ -1,8 +1,13 @@
 import { apiError, withAuth } from "@/lib/api";
 import {
+  markAlertAssignmentsStatus,
+  traceAssignmentStatus,
+} from "@/server/alerts/assignments";
+import {
   ackAlert,
   AlertsBackendError,
   alertsConfigured,
+  getAlertSharePayload,
   resolveEmpleadoForUser,
   resolveSucursalForUser,
 } from "@/server/alerts/service";
@@ -30,6 +35,18 @@ export const POST = withAuth(async (session, _req: Request, ctx: Params) => {
       resolveSucursalForUser(session.organizationId, session.userId),
     ]);
     await ackAlert(id, { empleadoId, sucursalId });
+    const payload = await getAlertSharePayload(id).catch(() => null);
+    await markAlertAssignmentsStatus({
+      organizationId: session.organizationId,
+      alertStoreId: id,
+      airtableRecordId: payload?.airtableRecordId ?? null,
+      status: "EN_PROGRESO",
+    }).catch(() => null);
+    await traceAssignmentStatus({
+      organizationId: session.organizationId,
+      alertStoreId: id,
+      status: "EN_PROGRESO",
+    }).catch(() => null);
     return Response.json({ ok: true, empleadoId, sucursalId });
   } catch (err) {
     console.error("[api/alerts ack] error:", err);

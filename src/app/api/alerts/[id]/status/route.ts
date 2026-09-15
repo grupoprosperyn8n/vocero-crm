@@ -1,10 +1,15 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import {
+  markAlertAssignmentsStatus,
+  traceAssignmentStatus,
+} from "@/server/alerts/assignments";
 import { ALERT_STATUSES } from "@/lib/alerts";
 import {
   AlertsBackendError,
   alertsConfigured,
   resolveEmpleadoForUser,
+  getAlertSharePayload,
   resolveSucursalForUser,
   setAlertStatus,
 } from "@/server/alerts/service";
@@ -35,6 +40,18 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
       resolveSucursalForUser(session.organizationId, session.userId),
     ]);
     await setAlertStatus(id, body.data.estado, { empleadoId, sucursalId });
+    const payload = await getAlertSharePayload(id).catch(() => null);
+    await markAlertAssignmentsStatus({
+      organizationId: session.organizationId,
+      alertStoreId: id,
+      airtableRecordId: payload?.airtableRecordId ?? null,
+      status: body.data.estado,
+    }).catch(() => null);
+    await traceAssignmentStatus({
+      organizationId: session.organizationId,
+      alertStoreId: id,
+      status: body.data.estado,
+    }).catch(() => null);
     return Response.json({ ok: true, estado: body.data.estado });
   } catch (err) {
     console.error("[api/alerts status] error:", err);

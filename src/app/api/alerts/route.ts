@@ -1,4 +1,5 @@
 import { withAuth } from "@/lib/api";
+import { canManageAlertAssignments, decorateAlertsForSession } from "@/server/alerts/assignments";
 import {
   AlertsBackendError,
   alertsConfigured,
@@ -12,14 +13,27 @@ export const dynamic = "force-dynamic";
  * `?hist=1` = historial (leídas/gestionadas); sin él, solo pendientes.
  * El contador de pendientes viaja siempre para el badge del nav.
  */
-export const GET = withAuth(async (_session, req: Request) => {
+export const GET = withAuth(async (session, req: Request) => {
   if (!alertsConfigured()) {
     return Response.json({ configured: false, alerts: [], pendientes: 0 });
   }
-  const hist = new URL(req.url).searchParams.get("hist") === "1";
+  const url = new URL(req.url);
+  const hist = url.searchParams.get("hist") === "1";
+  const mineOnly = url.searchParams.get("mine") === "1";
   try {
     const { alerts, pendientes } = await listAlerts(hist);
-    return Response.json({ configured: true, alerts, pendientes });
+    const scopedAlerts = await decorateAlertsForSession(session, alerts, mineOnly);
+    const canManage = canManageAlertAssignments(session.role);
+    // Para un miembro (o el filtro «para mí») el contador muestra lo que ve.
+    const pendientesScoped = !hist && (!canManage || mineOnly) ? scopedAlerts.length : pendientes;
+    return Response.json({
+      configured: true,
+      alerts: scopedAlerts,
+      pendientes: pendientesScoped,
+      viewerRole: session.role,
+      canManageAssignments: canManageAlertAssignments(session.role),
+      mineOnly,
+    });
   } catch (err) {
     console.error("[api/alerts] backend SGSA inaccesible:", err);
     return Response.json(
