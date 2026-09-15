@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   ALERT_ESTADO_LABEL,
   ALERT_STATUSES,
-  alertEstadoForStageKind,
+  estadoForStage,
   isLiveAssignmentStatus,
+  stageForEstado,
 } from "@/lib/alerts";
 import { buildGestionSearchFormula } from "@/server/clients/gestiones";
 
@@ -33,18 +34,49 @@ describe("030 — derivaciones vivas", () => {
   });
 });
 
-describe("030 — la tarjeta de alerta macheada con la tabla", () => {
-  it("mapea cada ancla de etapa al estado real del sistema", () => {
-    expect(alertEstadoForStageKind("won")).toBe("CONCLUIDA");
-    expect(alertEstadoForStageKind("lost")).toBe("ANULADA");
-    expect(alertEstadoForStageKind("open")).toBe("EN_PROGRESO");
+describe("030 → 031 — la tarjeta de alerta macheada con la tabla", () => {
+  it("la etapa con estado propio manda; sin estado cae al ancla", () => {
+    expect(estadoForStage({ estado: "TURNO_CONFIRMADO", kind: "open" })).toBe("TURNO_CONFIRMADO");
+    expect(estadoForStage({ estado: "PENDIENTE", kind: "open" })).toBe("PENDIENTE");
+    expect(estadoForStage({ estado: null, kind: "won" })).toBe("CONCLUIDA");
+    expect(estadoForStage({ estado: null, kind: "lost" })).toBe("ANULADA");
+    expect(estadoForStage({ estado: null, kind: "open" })).toBe("EN_PROGRESO");
+  });
+
+  it("031 — el estado del sistema elige la columna exacta (o null si no hay columna)", () => {
+    const stages = [
+      { id: "a", estado: "PENDIENTE", kind: "open" as const },
+      { id: "b", estado: "EN_PROGRESO", kind: "open" as const },
+      { id: "c", estado: "TURNO_CONFIRMADO", kind: "open" as const },
+      { id: "w", estado: "CONCLUIDA", kind: "won" as const },
+      { id: "l", estado: "ANULADA", kind: "lost" as const },
+    ];
+    expect(stageForEstado(stages, "TURNO_CONFIRMADO")?.id).toBe("c");
+    expect(stageForEstado(stages, "en_progreso")?.id).toBe("b");
+    expect(stageForEstado(stages, "CONCLUIDA")?.id).toBe("w");
+    expect(stageForEstado(stages, "ANULADA")?.id).toBe("l");
+    expect(stageForEstado(stages, "PENDIENTE")?.id).toBe("a");
+    // Estados terminales sin columna propia: la tarjeta no se mueve.
+    expect(stageForEstado(stages, "DESACTIVADA")).toBeNull();
+    expect(stageForEstado(stages, "REVISADA")).toBeNull();
+  });
+
+  it("031 — sin columna exacta, el ancla alcanza (etapas viejas)", () => {
+    const viejas = [
+      { id: "o", estado: null, kind: "open" as const },
+      { id: "w2", estado: null, kind: "won" as const },
+      { id: "l2", estado: null, kind: "lost" as const },
+    ];
+    expect(stageForEstado(viejas, "CONCLUIDA")?.id).toBe("w2");
+    expect(stageForEstado(viejas, "ANULADA")?.id).toBe("l2");
+    expect(stageForEstado(viejas, "EN_PROGRESO")).toBeNull();
   });
 
   it("todo estado válido tiene etiqueta humana y toda etiqueta su estado", () => {
     for (const estado of ALERT_STATUSES) {
       expect(ALERT_ESTADO_LABEL[estado]).toBeTruthy();
     }
-    // PENDIENTE no es un estado «de trabajo» del CRM, pero la tabla lo usa.
+    // PENDIENTE es la columna de entrada del tablero (reabrir también existe).
     expect(ALERT_ESTADO_LABEL.PENDIENTE).toBeTruthy();
   });
 });

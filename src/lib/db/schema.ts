@@ -226,6 +226,8 @@ export const pipelineStage = pgTable(
     board: text("board", { enum: ["ventas", "gestiones"] })
       .notNull()
       .default("ventas"),
+    /** 031 — estado de la ALERTA (tabla del sistema) que esta etapa representa (solo tablero gestiones). */
+    estado: text("estado"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [

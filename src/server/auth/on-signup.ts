@@ -12,14 +12,22 @@ const SEED_STAGES: { name: string; kind: "open" | "won" | "lost" }[] = [
 ];
 
 /**
- * 029 — etapas del tablero de GESTIONES. Sin «descartada» a propósito: una
- * gestión se resuelve o queda en curso, y un estado "perdido" pediría motivos
- * de venta que aquí no significan nada.
+ * 029 → 031 — etapas del tablero de GESTIONES: una por estado real de la
+ * ALERTA en el sistema (mismos nombres). Mover la tarjeta escribe ese estado
+ * en la tabla ALERTA y, al revés, el estado del sistema reacomoda la tarjeta:
+ * «macheo» de ida y vuelta. La columna Anulada es el ancla `lost` (el sistema
+ * anula alertas por sí solo: necesitan dónde caer).
  */
-const SEED_GESTION_STAGES: { name: string; kind: "open" | "won" }[] = [
-  { name: "Nueva", kind: "open" },
-  { name: "En curso", kind: "open" },
-  { name: "Resuelta", kind: "won" },
+const SEED_GESTION_STAGES: {
+  name: string;
+  kind: "open" | "won" | "lost";
+  estado: string;
+}[] = [
+  { name: "Pendiente", kind: "open", estado: "PENDIENTE" },
+  { name: "En progreso", kind: "open", estado: "EN_PROGRESO" },
+  { name: "Turno confirmado", kind: "open", estado: "TURNO_CONFIRMADO" },
+  { name: "Concluida", kind: "won", estado: "CONCLUIDA" },
+  { name: "Anulada", kind: "lost", estado: "ANULADA" },
 ];
 
 /**
@@ -69,6 +77,7 @@ export async function onUserCreated(userId: string, userName: string) {
         position: i,
         kind: s.kind,
         board: "gestiones" as const,
+        estado: s.estado,
       })),
     ]);
     await tx.insert(schema.agentProfile).values({

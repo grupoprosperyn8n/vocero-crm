@@ -142,7 +142,11 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   // el embudo de ventas y moverla dejaría el tablero mintiendo.
   const db = getDb();
   const target = await db
-    .select({ board: schema.pipelineStage.board, kind: schema.pipelineStage.kind })
+    .select({
+      board: schema.pipelineStage.board,
+      kind: schema.pipelineStage.kind,
+      estado: schema.pipelineStage.estado,
+    })
     .from(schema.pipelineStage)
     .where(
       scoped(
@@ -156,10 +160,11 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     return apiError(422, "invalid_stage", "Esa etapa es de otro tablero");
   }
 
-  // 030 — tarjeta-alerta «macheada»: mover la tarjeta toca el estado REAL de
-  // la alerta en el sistema (última etapa = CONCLUIDA, ancla perdida =
-  // ANULADA, abierta = EN_PROGRESO). Si el sistema no lo acepta el movimiento
-  // se rechaza: la tarjeta no puede prometer lo que la tabla no va a decir.
+  // 030 → 031 — tarjeta-alerta «macheada»: mover la tarjeta toca el estado
+  // REAL de la alerta en el sistema (el estado de la etapa manda; sin `estado`
+  // guardado cae al ancla: `won` = CONCLUIDA, `lost` = ANULADA, abierta =
+  // EN_PROGRESO). Si el sistema no lo acepta el movimiento se rechaza: la
+  // tarjeta no puede prometer lo que la tabla no va a decir.
   let alertMetaPatch: Record<string, unknown> | null = null;
   if (card.sourceKind === "alert") {
     const sync = await pushCardAlertEstado({
@@ -170,7 +175,10 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
         sgsaRef: card.sgsaRef,
         meta: card.meta,
       },
-      toStageKind: target[0]?.kind ?? "open",
+      toStage: {
+        kind: target[0]?.kind ?? "open",
+        estado: target[0]?.estado ?? null,
+      },
     });
     if (!sync.ok) return apiError(502, "alert_sync_failed", sync.message);
     if (sync.changed) {

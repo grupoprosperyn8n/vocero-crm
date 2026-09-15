@@ -135,8 +135,9 @@ describe("fechas y estados permitidos", () => {
     expect(alertDate(null)).toBe("");
   });
 
-  it("solo se pueden fijar los 4 estados de la PWA", () => {
+  it("031 — los estados fijables son los del sistema: los 4 de la PWA + Pendiente (reabrir)", () => {
     expect([...ALERT_STATUSES]).toEqual([
+      "PENDIENTE",
       "EN_PROGRESO",
       "TURNO_CONFIRMADO",
       "CONCLUIDA",

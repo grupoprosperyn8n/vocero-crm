@@ -83,6 +83,8 @@ export type StageDto = {
   kind: "open" | "won" | "lost";
   /** 029 — tablero al que pertenece la etapa. */
   board: PipelineBoard;
+  /** 031 — estado del sistema (ALERTA) que representa la etapa (solo gestiones). */
+  estado?: string | null;
 };
 
 /* ============================================================

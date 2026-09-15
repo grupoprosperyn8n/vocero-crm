@@ -105,6 +105,7 @@ export async function listBoardCards(input: {
       position: s.position,
       kind: s.kind,
       board: s.board,
+      estado: s.estado,
     })),
     cards: rows.map((r) => {
       const l = r.lead;

@@ -31,7 +31,7 @@ import type {
 } from "@/lib/types";
 import { formatMoneyCents, sumable } from "@/lib/money";
 import { PIPELINE_BOARDS } from "@/lib/pipeline";
-import { ALERT_ESTADO_LABEL } from "@/lib/alerts";
+import { ALERT_ESTADO_LABEL, estadoForStage } from "@/lib/alerts";
 import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
@@ -461,8 +461,10 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
 }
 
 /**
- * 030 — ¿este movimiento cambia el estado de la ALERTA en el sistema? Si sí,
- * devuelve el aviso a confirmar; si no, null y se mueve directo.
+ * 030 → 031 — ¿este movimiento cambia el estado de la ALERTA en el sistema?
+ * Si sí, devuelve el aviso a confirmar; si no, null y se mueve directo. El
+ * estado destino es el de la etapa (mismo nombre que el sistema); las etapas
+ * viejas sin `estado` caen al ancla.
  */
 function alertSyncMessage(
   lead: PipelineCardDto | undefined,
@@ -470,13 +472,16 @@ function alertSyncMessage(
 ): string | null {
   if (!lead || lead.sourceKind !== "alert" || !destino) return null;
   const estado = typeof lead.meta?.estado === "string" ? lead.meta.estado : null;
-  if (destino.kind === "won" && estado !== "CONCLUIDA") {
+  const target = estadoForStage({ estado: destino.estado ?? null, kind: destino.kind });
+  if (!estado || estado === target) return null;
+  const etiqueta = ALERT_ESTADO_LABEL[target] ?? target;
+  if (target === "CONCLUIDA") {
     return "Esta tarjeta es una alerta del sistema: al soltarla acá, la alerta queda CONCLUIDA en la tabla de alertas.";
   }
-  if (destino.kind !== "won" && estado === "CONCLUIDA") {
-    return "En el sistema, esta alerta figura CONCLUIDA: si la movés, se reabre (EN_PROGRESO).";
+  if (target === "ANULADA") {
+    return "Esta tarjeta es una alerta del sistema: al soltarla acá, la alerta queda ANULADA en la tabla de alertas.";
   }
-  return null;
+  return `Esta tarjeta es una alerta del sistema: al moverla, la alerta pasa a «${etiqueta}» en la tabla de alertas.`;
 }
 
 /** 030 — confirmación de los movimientos que tocan la tabla de alertas. */
@@ -729,9 +734,14 @@ function subtituloDeTarjeta(lead: PipelineCardDto): string {
   }
   if (lead.sourceKind === "alert") {
     const tipo = typeof lead.meta?.tipo === "string" ? lead.meta.tipo : "";
-    const urgencia =
-      typeof lead.meta?.urgencia === "string" ? lead.meta.urgencia : "";
-    const cola = [tipo, urgencia].filter(Boolean).join(" · ");
+    // 031 — el chip muestra la prioridad TAL CUAL la del sistema («🔴 Alta»…).
+    const prioridad =
+      typeof lead.meta?.prioridad === "string" && lead.meta.prioridad
+        ? lead.meta.prioridad
+        : typeof lead.meta?.urgencia === "string"
+          ? lead.meta.urgencia
+          : "";
+    const cola = [tipo, prioridad].filter(Boolean).join(" · ");
     return cola ? `Alerta · ${cola}` : "Alerta";
   }
   return lead.lastActivityAt

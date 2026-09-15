@@ -76,8 +76,9 @@ export function parseAlertDetalle(detalle: string | null | undefined): DetalleRo
   return rows;
 }
 
-/** Estados que la PWA permite fijar a mano desde una alerta. */
+/** Estados operativos de una alerta (los que el CRM fija desde el pipeline/alertas). */
 export const ALERT_STATUSES = [
+  "PENDIENTE",
   "EN_PROGRESO",
   "TURNO_CONFIRMADO",
   "CONCLUIDA",
@@ -97,14 +98,37 @@ export function isLiveAssignmentStatus(status: string): boolean {
 }
 
 /**
- * 030 — etapas del tablero de gestiones ↔ estado real de la alerta:
- * Resuelta (ancla `won`) = CONCLUIDA · anulada (`lost`) = ANULADA · cualquier
- * etapa abierta = EN_PROGRESO. La tarjeta y la tabla ALERTA van «macheadas».
+ * 030 → 031 — la tarjeta de alerta va «macheada» con la tabla ALERTA: cada
+ * etapa del tablero de gestiones tiene SU estado del sistema (con su `estado`
+ * guardado en la etapa y el nombre igual al del sistema). Mover la tarjeta
+ * escribe ese estado. Etapas viejas sin `estado` caen al mapeo por ancla:
+ * `won` = CONCLUIDA · `lost` = ANULADA · abierta = EN_PROGRESO.
  */
-export function alertEstadoForStageKind(kind: "open" | "won" | "lost"): AlertStatus {
-  if (kind === "won") return "CONCLUIDA";
-  if (kind === "lost") return "ANULADA";
+export function estadoForStage(stage: {
+  estado?: string | null;
+  kind: "open" | "won" | "lost";
+}): AlertStatus {
+  if (stage.estado) return stage.estado as AlertStatus;
+  if (stage.kind === "won") return "CONCLUIDA";
+  if (stage.kind === "lost") return "ANULADA";
   return "EN_PROGRESO";
+}
+
+/**
+ * 031 — al revés: el estado REAL de la alerta (tabla ALERTA) decide en qué
+ * etapa descansa la tarjeta. Coincidencia exacta primero; si el sistema tiene
+ * un estado terminal sin columna propia (DESACTIVADA / REVISADA), null: la
+ * tarjeta no se mueve y el chip del estado real igual se refresca.
+ */
+export function stageForEstado<
+  T extends { estado?: string | null; kind: "open" | "won" | "lost" },
+>(stages: T[], estado: string): T | null {
+  const e = (estado ?? "").trim().toUpperCase();
+  const exact = stages.find((s) => (s.estado ?? "").toUpperCase() === e);
+  if (exact) return exact;
+  if (e === "CONCLUIDA") return stages.find((s) => s.kind === "won") ?? null;
+  if (e === "ANULADA") return stages.find((s) => s.kind === "lost") ?? null;
+  return null;
 }
 
 /** Etiquetas del estado de la alerta para los chips del pipeline. */
