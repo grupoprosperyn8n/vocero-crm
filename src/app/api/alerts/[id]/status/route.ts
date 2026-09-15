@@ -2,7 +2,7 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { ALERT_STATUSES } from "@/lib/alerts";
 import { AlertsBackendError, alertsConfigured } from "@/server/alerts/service";
-import { changeAlertStatusFromCrm } from "@/server/alerts/status-flow";
+import { changeAlertStatusFromCrm, AlertBusyError } from "@/server/alerts/status-flow";
 import { invalidateAlertEstadoCache } from "@/server/pipeline/alert-sync";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +37,9 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
     invalidateAlertEstadoCache();
     return Response.json({ ok: true, estado: body.data.estado });
   } catch (err) {
+    if (err instanceof AlertBusyError) {
+      return apiError(409, "alert_busy", err.message);
+    }
     console.error("[api/alerts status] error:", err);
     const status = err instanceof AlertsBackendError ? (err.status ?? 502) : 502;
     return apiError(

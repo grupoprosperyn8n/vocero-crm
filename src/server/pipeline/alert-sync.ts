@@ -5,7 +5,7 @@ import { alertEstadoForStageKind, type AlertStatus } from "@/lib/alerts";
 import type { PipelineCardDto, StageDto } from "@/lib/types";
 import { REC_ID_RE, airtableRecordsByIds } from "@/server/alerts/airtable-read";
 import { listAlerts } from "@/server/alerts/service";
-import { changeAlertStatusFromCrm } from "@/server/alerts/status-flow";
+import { AlertBusyError, changeAlertStatusFromCrm } from "@/server/alerts/status-flow";
 import { moveLeadToStage } from "@/server/leads/stage-history";
 
 type Session = { userId: string; organizationId: string; role: string };
@@ -202,7 +202,8 @@ export async function pushCardAlertEstado(input: {
   }
   try {
     await changeAlertStatusFromCrm({ session: input.session, alertStoreId: storeId, estado });
-  } catch {
+  } catch (err) {
+    if (err instanceof AlertBusyError) return { ok: false, message: err.message };
     return {
       ok: false,
       message: "El sistema no aceptó el cambio de estado — reintentá en un momento",

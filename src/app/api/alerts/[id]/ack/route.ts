@@ -12,6 +12,7 @@ import {
   resolveEmpleadoForUser,
   resolveSucursalForUser,
 } from "@/server/alerts/service";
+import { AlertBusyError, assertAlertFreeFor } from "@/server/alerts/status-flow";
 import { invalidateAlertEstadoCache } from "@/server/pipeline/alert-sync";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,7 @@ type Params = { params: Promise<{ id: string }> };
  * 027 — «Leído»: marca la alerta como vista/gestionada en el sistema
  * (pasa a EN_PROGRESO). Viaja el empleado (por email → EMPLEADOS) y la
  * sucursal del día del usuario, como hace la PWA.
+ * 030 — «solo un ejecutor por vez»: si otro la tiene derivada, no se toca.
  */
 export const POST = withAuth(async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
@@ -32,6 +34,12 @@ export const POST = withAuth(async (session, _req: Request, ctx: Params) => {
     return apiError(404, "not_found", "Alertas no configuradas");
   }
   try {
+    const payloadPre = await getAlertSharePayload(id).catch(() => null);
+    await assertAlertFreeFor({
+      session,
+      alertStoreId: id,
+      airtableRecordId: payloadPre?.airtableRecordId ?? null,
+    });
     const [empleadoId, sucursalId] = await Promise.all([
       resolveEmpleadoForUser(session.userId),
       resolveSucursalForUser(session.organizationId, session.userId),
@@ -61,6 +69,9 @@ export const POST = withAuth(async (session, _req: Request, ctx: Params) => {
     invalidateAlertEstadoCache(); // el tablero verá el estado nuevo al abrir
     return Response.json({ ok: true, empleadoId, sucursalId });
   } catch (err) {
+    if (err instanceof AlertBusyError) {
+      return apiError(409, "alert_busy", err.message);
+    }
     console.error("[api/alerts ack] error:", err);
     const status = err instanceof AlertsBackendError ? (err.status ?? 502) : 502;
     return apiError(status >= 400 && status < 600 ? status : 502, "backend_error", "No se pudo actualizar la alerta");

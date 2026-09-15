@@ -190,7 +190,7 @@ export async function replaceAlertRules(input: {
   return listAlertRules(input.session.organizationId);
 }
 
-async function activeGroupIdsForUser(organizationId: string, userId: string): Promise<Set<string>> {
+export async function activeGroupIdsForUser(organizationId: string, userId: string): Promise<Set<string>> {
   const rows = await getDb()
     .select({ roomId: schema.chatRoomMember.roomId })
     .from(schema.chatRoomMember)
@@ -221,9 +221,9 @@ export async function ensureRuleAssignments(
     );
   if (!rules.length) return;
 
-  // 030 — un solo ejecutor por vez: las alertas que YA tienen derivación (o
-  // fueron asumidas) quedan como están, y de las reglas aplica solo la
-  // primera que matchee el tipo (una regla = un destino).
+  // 030 — una vez derivada (o asumida) la alerta no se toca: las que YA tienen
+  // alguna derivación quedan como están. Las que no, reciben TODAS las reglas
+  // activas de su tipo (cada regla ya es de un solo destino).
   const refs = alerts.map(alertRef);
   const conAsignacion = new Set(
     (
@@ -247,25 +247,26 @@ export async function ensureRuleAssignments(
   for (const a of alerts) {
     const ref = alertRef(a);
     if (conAsignacion.has(ref)) continue;
-    const rule = ordenadas.find((r) => r.alertType === a.tipo);
-    if (!rule) continue;
-    values.push({
-      id: newId("alertAssignment"),
-      organizationId: session.organizationId,
-      alertStoreId: a.id,
-      airtableRecordId: a.airtableRecordId,
-      alertRef: ref,
-      alertType: a.tipo,
-      targetKind: rule.targetKind,
-      targetId: rule.targetId,
-      targetName: rule.targetName,
-      source: "rule",
-      ruleId: rule.id,
-      assignedBy: rule.createdBy,
-      assignedAt: now,
-      status: "assigned",
-      updatedAt: now,
-    });
+    for (const rule of ordenadas) {
+      if (rule.alertType !== a.tipo) continue;
+      values.push({
+        id: newId("alertAssignment"),
+        organizationId: session.organizationId,
+        alertStoreId: a.id,
+        airtableRecordId: a.airtableRecordId,
+        alertRef: ref,
+        alertType: a.tipo,
+        targetKind: rule.targetKind,
+        targetId: rule.targetId,
+        targetName: rule.targetName,
+        source: "rule",
+        ruleId: rule.id,
+        assignedBy: rule.createdBy,
+        assignedAt: now,
+        status: "assigned",
+        updatedAt: now,
+      });
+    }
   }
   if (!values.length) return;
   await getDb().insert(schema.alertAssignment).values(values).onConflictDoNothing();
