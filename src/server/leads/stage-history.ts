@@ -151,7 +151,7 @@ export async function moveLeadToStage(input: MoveInput): Promise<MoveResult> {
   // que el negocio marcó como "lead calificado" o a una etapa ganada se le
   // reporta a Meta. Best-effort y ya fuera de la transacción: un fallo aquí
   // jamás puede costar el movimiento del lead, que ya está en firme.
-  if (result.ok && result.changed && toStageKind !== null) {
+  if (result.ok && result.changed && toStageKind !== null && result.lead.contactId) {
     await reportStageChange({
       organizationId: input.organizationId,
       leadId: result.lead.id,
@@ -175,7 +175,8 @@ export async function moveLeadToStage(input: MoveInput): Promise<MoveResult> {
 export async function recordLeadCreated(input: {
   organizationId: string;
   leadId: string;
-  contactId: string;
+  /** NULL en tarjetas que no nacen de un contacto (029: sistema/alerta). */
+  contactId: string | null;
   stageId: string;
   occurredAt?: Date;
   actorUserId?: string | null;

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
 import type {
   ClientConversationDto,
   ContactDto,
@@ -348,6 +349,15 @@ export function SystemClientCard({
           <Send className="mr-1.5 h-4 w-4" />
           {tgConv ? "Abrir chat Telegram" : "Telegram no disponible"}
         </Button>
+        {/* 029 — sumar el cliente del SISTEMA a mi pipeline (ventas o gestiones). */}
+        <AddToPipelineButton
+          source={{
+            kind: "sgsa_client",
+            ref: client.recordId,
+            label: nombre,
+            meta: client.estado ? { estado: client.estado } : undefined,
+          }}
+        />
       </div>
 
       <p className="mt-3 text-[11px] text-muted-foreground">
@@ -518,6 +528,8 @@ export function ContactCard({
         <Button variant="secondary" onClick={onEdit}>
           Editar
         </Button>
+        {/* 029 — sumar este contacto a mi pipeline (ventas o gestiones). */}
+        <AddToPipelineButton source={{ kind: "contact", contactId: contact.id }} />
       </div>
     </Modal>
   );

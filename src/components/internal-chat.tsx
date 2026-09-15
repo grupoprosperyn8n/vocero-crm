@@ -33,6 +33,7 @@ import { cn, initials } from "@/lib/utils";
 import { CHANNEL_LABEL, isChannel } from "@/lib/channels";
 import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import { ShareContactDialog } from "@/components/contacts/share-contact-dialog";
+import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
 import type { ChatAlertShareDto, ChatContactShareDto, ChatMessagePayloadDto } from "@/lib/types";
 import { useEvents } from "@/components/use-events";
 
@@ -487,6 +488,20 @@ function AlertShareCard({ payload }: { payload: ChatAlertShareDto }) {
               Abrir cliente
             </a>
           )}
+          {/* 029 — la alerta compartida también se puede mandar a MI pipeline. */}
+          <AddToPipelineButton
+            source={{
+              kind: "alert",
+              ref: payload.airtableRecordId ?? payload.id,
+              label: title,
+              meta: {
+                tipo: type,
+                urgencia: urgency,
+                clienteRecordId: payload.clienteRecordId ?? undefined,
+                linkRegistro: payload.linkRegistro ?? undefined,
+              },
+            }}
+          />
         </div>
       )}
     </div>

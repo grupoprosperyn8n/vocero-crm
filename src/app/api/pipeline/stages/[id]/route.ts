@@ -93,7 +93,7 @@ export const DELETE = withAuth(async (session, req: Request, ctx: Params) => {
       );
     }
     const dest = await db
-      .select({ id: schema.pipelineStage.id })
+      .select({ id: schema.pipelineStage.id, board: schema.pipelineStage.board })
       .from(schema.pipelineStage)
       .where(
         scoped(
@@ -105,6 +105,15 @@ export const DELETE = withAuth(async (session, req: Request, ctx: Params) => {
       .limit(1);
     if (!dest[0] || moveTo === id) {
       return apiError(422, "invalid_move_to", "Etapa destino inválida");
+    }
+    // Las tarjetas no cambian de tablero al reubicarlas: la etapa destino
+    // tiene que ser del mismo tablero que la que se borra (029).
+    if (dest[0].board !== stage.board) {
+      return apiError(
+        422,
+        "invalid_move_to",
+        "La etapa destino es de otro tablero"
+      );
     }
     // Por la puerta única, un evento por lead: el embudo debe poder explicar
     // por qué treinta tarjetas cambiaron de columna el mismo minuto.

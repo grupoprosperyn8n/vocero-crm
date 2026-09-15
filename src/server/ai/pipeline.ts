@@ -1,4 +1,4 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -364,6 +364,11 @@ async function moveLeadToStage(
   stageId: string
 ): Promise<void> {
   const db = getDb();
+  // 029 — el mismo contacto puede estar en el pipeline de VARIAS personas:
+  // el agente avanza todas las tarjetas de ventas de ese contacto (la
+  // conversación es una sola; que cada uno lo siga por su lado no la
+  // multiplica). Las tarjetas de gestiones no se tocan: sus etapas no son
+  // las del embudo.
   const rows = await db
     .select({ id: schema.lead.id })
     .from(schema.lead)
@@ -371,26 +376,29 @@ async function moveLeadToStage(
       scoped(
         schema.lead.organizationId,
         organizationId,
-        eq(schema.lead.contactId, contactId)
+        and(
+          eq(schema.lead.contactId, contactId),
+          eq(schema.lead.board, "ventas")
+        )
       )
-    )
-    .limit(1);
-  const leadId = rows[0]?.id;
-  if (!leadId) return;
+    );
+  if (rows.length === 0) return;
 
-  // Por la puerta única: el agente mueve tarjetas igual que el dueño, y su
-  // movimiento tiene que quedar en la bitácora o el embudo mentirá sobre
-  // quién hizo avanzar cada lead.
-  await moveLeadThroughHistory({
-    organizationId,
-    leadId,
-    toStageId: stageId,
-    source: "bot",
-    extra: { lastActivityAt: new Date() },
-    // El agente no clasifica pérdidas: si su etapa destino resultara ser la
-    // perdida, la puerta lo rechaza y el lead se queda donde está — mejor eso
-    // que un motivo inventado.
-  });
+  for (const row of rows) {
+    // Por la puerta única: el agente mueve tarjetas igual que el dueño, y su
+    // movimiento tiene que quedar en la bitácora o el embudo mentirá sobre
+    // quién hizo avanzar cada lead.
+    await moveLeadThroughHistory({
+      organizationId,
+      leadId: row.id,
+      toStageId: stageId,
+      source: "bot",
+      extra: { lastActivityAt: new Date() },
+      // El agente no clasifica pérdidas: si su etapa destino resultara ser la
+      // perdida, la puerta lo rechaza y el lead se queda donde está — mejor
+      // eso que un motivo inventado.
+    });
+  }
 }
 
 async function appendLeadNote(

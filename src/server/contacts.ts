@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { effectiveSource } from "@/server/contact-source";
@@ -46,10 +46,12 @@ export async function getContactById(
   return rows[0] ?? null;
 }
 
-/** Etapa actual del lead del contacto (si existe). */
+/** Etapa actual del lead del contacto (si existe), en el tablero de ventas
+ *  DEL USUARIO que mira: el pipeline es personal (029). */
 export async function getContactStage(
   organizationId: string,
-  contactId: string
+  contactId: string,
+  ownerUserId: string
 ) {
   const db = getDb();
   const rows = await db
@@ -63,7 +65,11 @@ export async function getContactStage(
       scoped(
         schema.lead.organizationId,
         organizationId,
-        eq(schema.lead.contactId, contactId)
+        and(
+          eq(schema.lead.contactId, contactId),
+          eq(schema.lead.ownerUserId, ownerUserId),
+          eq(schema.lead.board, "ventas")
+        )
       )
     )
     .limit(1);

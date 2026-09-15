@@ -13,9 +13,23 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { MessageSquareText, Settings2, Trophy, XCircle } from "lucide-react";
-import type { LossReason, PriorityValue, StageDto } from "@/lib/types";
+import {
+  ExternalLink,
+  MessageSquareText,
+  Settings2,
+  Trophy,
+  XCircle,
+} from "lucide-react";
+import type {
+  LossReason,
+  PipelineBoard,
+  PipelineCardDto,
+  PriorityValue,
+  StageDto,
+} from "@/lib/types";
 import { formatMoneyCents, sumable } from "@/lib/money";
+import { PIPELINE_BOARDS } from "@/lib/pipeline";
+import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
@@ -26,24 +40,28 @@ import { AmountDialog } from "./amount-dialog";
 import { PriorityBadge } from "./priority-picker";
 import { LeadDrawer } from "./lead-drawer";
 
-export type BoardLead = {
-  id: string;
-  stageId: string;
-  position: number;
-  lastActivityAt: string | null;
-  contact: { id: string; name: string; phone: string | null };
-  conversationId: string | null;
-  amountCents: number | null;
-  currency: string | null;
-  priority: PriorityValue | null;
-};
+/** Compat: antes el DTO del tablero se llamaba BoardLead. */
+export type BoardLead = PipelineCardDto;
 
-export function PipelineClient({ role }: { role: string }) {
+type StaffOption = { userId: string; name: string; role: string };
+
+/**
+ * 029 — Pipeline PERSONAL, de dos maneras: la pestaña de VENTAS (prospectos
+ * del CRM y clientes del sistema) y la de GESTIONES (tarjetas de alertas y
+ * cualquier cosa a seguir). El tablero se llena a MANO — se dejó de
+ * autocargar — y cada uno ve lo suyo; propietario, administrador y gerente
+ * ven el de todo el equipo con filtro por persona.
+ */
+export function PipelineClient({ role, meId }: { role: string; meId: string }) {
+  const [board, setBoard] = useState<PipelineBoard>("ventas");
+  const [assignee, setAssignee] = useState<string>("all");
+  const [staff, setStaff] = useState<StaffOption[]>([]);
   const [stages, setStages] = useState<StageDto[]>([]);
   const [currency, setCurrency] = useState("MXN");
-  const [leads, setLeads] = useState<BoardLead[]>([]);
-  const [activeLead, setActiveLead] = useState<BoardLead | null>(null);
+  const [cards, setCards] = useState<PipelineCardDto[]>([]);
+  const [activeLead, setActiveLead] = useState<PipelineCardDto | null>(null);
   const [managing, setManaging] = useState(false);
+  const [cargado, setCargado] = useState(false);
   /** Arrastre hacia una etapa perdida, esperando el motivo. */
   const [pendingLoss, setPendingLoss] = useState<{
     leadId: string;
@@ -51,38 +69,63 @@ export function PipelineClient({ role }: { role: string }) {
     name: string;
   } | null>(null);
   /** Tarjeta cuyo monto se está capturando. */
-  const [editandoMonto, setEditandoMonto] = useState<BoardLead | null>(null);
+  const [editandoMonto, setEditandoMonto] = useState<PipelineCardDto | null>(null);
   /**
-   * Trato abierto en el cajón. Se guarda el ID y no el objeto: así el cajón
+   * Tarjeta abierta en el cajón. Se guarda el ID y no el objeto: así el cajón
    * lee siempre del tablero y refleja al instante lo que se cambie desde
    * dentro, en vez de enseñar una copia que envejece.
    */
   const [abiertoId, setAbiertoId] = useState<string | null>(null);
-  const abierto = leads.find((l) => l.id === abiertoId) ?? null;
+  const abierto = cards.find((l) => l.id === abiertoId) ?? null;
+
+  const seesWholeTeam = role !== "member";
+  /** Con el equipo a la vista, cada tarjeta confiesa de quién es. */
+  const showsOwner = seesWholeTeam && assignee !== "me";
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
   const refetch = useCallback(async () => {
-    const res = await fetch("/api/pipeline/board").catch(() => null);
+    const qs = new URLSearchParams({ board });
+    if (seesWholeTeam) qs.set("assignee", assignee);
+    const res = await fetch(`/api/pipeline/board?${qs}`).catch(() => null);
     if (!res?.ok) return;
     const data = (await res.json()) as {
       stages: StageDto[];
-      leads: BoardLead[];
+      cards: PipelineCardDto[];
       currency?: string;
     };
     if (data.currency) setCurrency(data.currency);
     setStages(data.stages);
-    setLeads(data.leads);
-  }, []);
+    setCards(data.cards);
+    setCargado(true);
+  }, [board, assignee, seesWholeTeam]);
 
   useEffect(() => {
     void refetch();
   }, [refetch]);
 
+  // Selector de persona: solo para quien ve el equipo completo.
+  useEffect(() => {
+    if (!seesWholeTeam) return;
+    void fetch("/api/internal/staff")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { staff?: StaffOption[] } | null) => {
+        if (d?.staff) setStaff(d.staff);
+      })
+      .catch(() => null);
+  }, [seesWholeTeam]);
+
+  /** Nadie mueve la tarjeta de otro: con el equipo a la vista, solo las
+   *  propias se arrastran (las ajenas se consultan, no se tocan). */
+  const esMia = useCallback(
+    (l: PipelineCardDto) => l.ownerUserId === meId,
+    [meId]
+  );
+
   function onDragStart(event: DragStartEvent) {
-    const lead = leads.find((l) => l.id === event.active.id);
+    const lead = cards.find((l) => l.id === event.active.id);
     setActiveLead(lead ?? null);
   }
 
@@ -91,9 +134,9 @@ export function PipelineClient({ role }: { role: string }) {
     overStage: string,
     loss?: { reason: LossReason; note: string }
   ) {
-    const position = leads.filter((l) => l.stageId === overStage).length;
+    const position = cards.filter((l) => l.stageId === overStage).length;
     // Optimista + persistencia
-    setLeads((prev) =>
+    setCards((prev) =>
       prev.map((l) => (l.id === leadId ? { ...l, stageId: overStage, position } : l))
     );
     await fetch(`/api/pipeline/leads/${leadId}`, {
@@ -111,7 +154,7 @@ export function PipelineClient({ role }: { role: string }) {
   }
 
   async function guardarMonto(leadId: string, cents: number | null) {
-    setLeads((prev) =>
+    setCards((prev) =>
       prev.map((l) => (l.id === leadId ? { ...l, amountCents: cents } : l))
     );
     await fetch(`/api/pipeline/leads/${leadId}`, {
@@ -124,7 +167,7 @@ export function PipelineClient({ role }: { role: string }) {
   }
 
   async function guardarPrioridad(leadId: string, priority: PriorityValue | null) {
-    setLeads((prev) =>
+    setCards((prev) =>
       prev.map((l) => (l.id === leadId ? { ...l, priority } : l))
     );
     await fetch(`/api/pipeline/leads/${leadId}`, {
@@ -135,19 +178,30 @@ export function PipelineClient({ role }: { role: string }) {
     void refetch();
   }
 
+  /** Sacar MI tarjeta del tablero (029): se va con su bitácora. */
+  async function sacarTarjeta(leadId: string) {
+    setCards((prev) => prev.filter((l) => l.id !== leadId));
+    setAbiertoId(null);
+    await fetch(`/api/pipeline/leads/${leadId}`, { method: "DELETE" }).catch(
+      () => null
+    );
+    void refetch();
+  }
+
   async function onDragEnd(event: DragEndEvent) {
     setActiveLead(null);
     const leadId = String(event.active.id);
     const overStage = event.over ? String(event.over.id) : null;
     if (!overStage) return;
-    const lead = leads.find((l) => l.id === leadId);
+    const lead = cards.find((l) => l.id === leadId);
     if (!lead || lead.stageId === overStage) return;
+    if (!esMia(lead)) return; // tarjeta ajena: ni siquiera debió arrastrarse
 
     // Perder un trato exige motivo. Se pregunta ANTES de mover: si el dueño
     // cancela, la tarjeta ni siquiera parpadea fuera de su columna.
     const destino = stages.find((s) => s.id === overStage);
     if (destino?.kind === "lost") {
-      setPendingLoss({ leadId, stageId: overStage, name: lead.contact.name });
+      setPendingLoss({ leadId, stageId: overStage, name: lead.contact?.name ?? lead.label ?? "la tarjeta" });
       return;
     }
 
@@ -160,26 +214,77 @@ export function PipelineClient({ role }: { role: string }) {
    * esa regla aquí sería tener dos sitios donde olvidarla.
    */
   function moverDesdeCajon(leadId: string, stageId: string) {
-    const lead = leads.find((l) => l.id === leadId);
+    const lead = cards.find((l) => l.id === leadId);
     if (!lead || lead.stageId === stageId) return;
     const destino = stages.find((s) => s.id === stageId);
     if (destino?.kind === "lost") {
-      setPendingLoss({ leadId, stageId, name: lead.contact.name });
+      setPendingLoss({ leadId, stageId, name: lead.contact?.name ?? lead.label ?? "la tarjeta" });
       return;
     }
     void moverLead(leadId, stageId);
   }
 
+  const vacio = cargado && cards.length === 0;
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
-        <h2 className="text-[17px] font-bold tracking-tight">Pipeline</h2>
-        {role !== "member" && (
-          <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
-            <Settings2 className="h-4 w-4" /> Gestionar etapas
-          </Button>
-        )}
+        <div className="flex items-center gap-3">
+          <h2 className="text-[17px] font-bold tracking-tight">Pipeline</h2>
+          {/* Las dos maneras (029): ventas y gestiones, en el mismo lugar. */}
+          <div className="flex rounded-md border border-border-strong bg-subtle p-0.5">
+            {PIPELINE_BOARDS.map((b) => (
+              <button
+                key={b.value}
+                onClick={() => {
+                  setBoard(b.value);
+                  setAbiertoId(null);
+                }}
+                aria-pressed={board === b.value}
+                className={cn(
+                  "rounded px-2.5 py-1 text-[12.5px] font-semibold transition-colors",
+                  board === b.value
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {seesWholeTeam && (
+            <select
+              value={assignee}
+              onChange={(e) => setAssignee(e.target.value)}
+              aria-label="Ver el pipeline de"
+              className="h-8 rounded-md border border-border-strong bg-background px-2 text-[12.5px]"
+            >
+              <option value="all">Todo el equipo</option>
+              <option value="me">Solo míos</option>
+              {staff.map((s) => (
+                <option key={s.userId} value={s.userId}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {role !== "member" && (
+            <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
+              <Settings2 className="h-4 w-4" /> Gestionar etapas
+            </Button>
+          )}
+        </div>
       </header>
+
+      {vacio && (
+        <div className="border-b bg-subtle px-4 py-2 text-[12.5px] text-muted-foreground sm:px-6">
+          {board === "ventas"
+            ? "Este tablero se llena a mano: sumá prospectos desde el chat con el cliente, la ficha de un contacto del CRM o la de un cliente del sistema."
+            : "Sumá gestiones desde la tarjeta de una alerta (acá o en Alertas), el chat con el cliente o su ficha."}
+        </div>
+      )}
 
       {/* El tablero se arrastra en horizontal; en el teléfono cada columna
           se detiene en su sitio (snap) para no quedar a medio camino. */}
@@ -194,10 +299,13 @@ export function PipelineClient({ role }: { role: string }) {
               <StageColumn
                 key={stage.id}
                 stage={stage}
+                board={board}
                 currency={currency}
+                showsOwner={showsOwner}
+                canDrag={esMia}
                 onEditAmount={setEditandoMonto}
                 onOpen={(l) => setAbiertoId(l.id)}
-                leads={leads
+                leads={cards
                   .filter((l) => l.stageId === stage.id)
                   .sort((a, b) => a.position - b.position)}
               />
@@ -205,7 +313,12 @@ export function PipelineClient({ role }: { role: string }) {
           </div>
           <DragOverlay>
             {activeLead ? (
-              <LeadCard lead={activeLead} currency={currency} overlay />
+              <LeadCard
+                lead={activeLead}
+                board={board}
+                currency={currency}
+                overlay
+              />
             ) : null}
           </DragOverlay>
         </DndContext>
@@ -214,6 +327,7 @@ export function PipelineClient({ role }: { role: string }) {
       {managing && (
         <StageManager
           stages={stages}
+          board={board}
           onClose={() => setManaging(false)}
           onChanged={() => void refetch()}
         />
@@ -224,18 +338,21 @@ export function PipelineClient({ role }: { role: string }) {
       {abierto && (
         <LeadDrawer
           lead={abierto}
+          board={board}
           stages={stages}
           currency={currency}
+          readOnly={!esMia(abierto)}
           onClose={() => setAbiertoId(null)}
           onMoveStage={(stageId) => moverDesdeCajon(abierto.id, stageId)}
           onAmount={(cents) => void guardarMonto(abierto.id, cents)}
           onPriority={(p) => void guardarPrioridad(abierto.id, p)}
+          onRemove={() => void sacarTarjeta(abierto.id)}
         />
       )}
 
       {editandoMonto && (
         <AmountDialog
-          leadName={editandoMonto.contact.name}
+          leadName={editandoMonto.contact?.name ?? editandoMonto.label ?? "la tarjeta"}
           currency={editandoMonto.currency ?? currency}
           amountCents={editandoMonto.amountCents}
           priority={editandoMonto.priority}
@@ -272,7 +389,7 @@ export function PipelineClient({ role }: { role: string }) {
  * desincroniza en cuanto alguien mueve una tarjeta, y sumar unas decenas es
  * gratis. Todo en CENTAVOS enteros — el dinero jamás pasa por coma flotante.
  */
-function totalesDeEtapa(leads: BoardLead[], businessCurrency: string) {
+function totalesDeEtapa(leads: PipelineCardDto[], businessCurrency: string) {
   let totalCents = 0;
   let sinMonto = 0;
   let otraMoneda = 0;
@@ -294,15 +411,21 @@ function totalesDeEtapa(leads: BoardLead[], businessCurrency: string) {
 function StageColumn({
   stage,
   leads,
+  board,
   currency,
+  showsOwner,
+  canDrag,
   onEditAmount,
   onOpen,
 }: {
   stage: StageDto;
-  leads: BoardLead[];
+  leads: PipelineCardDto[];
+  board: PipelineBoard;
   currency: string;
-  onEditAmount: (lead: BoardLead) => void;
-  onOpen: (lead: BoardLead) => void;
+  showsOwner: boolean;
+  canDrag: (lead: PipelineCardDto) => boolean;
+  onEditAmount: (lead: PipelineCardDto) => void;
+  onOpen: (lead: PipelineCardDto) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   return (
@@ -330,19 +453,24 @@ function StageColumn({
           <DraggableLead
             key={lead.id}
             lead={lead}
+            board={board}
             currency={currency}
+            showsOwner={showsOwner}
+            draggable={canDrag(lead)}
             onEditAmount={onEditAmount}
             onOpen={onOpen}
           />
         ))}
       </div>
-      <StageFooter leads={leads} currency={currency} />
+      {/* En gestiones no hay plata que sumar: el pie de montos no pinta nada
+          y un "Sin montos capturados" sería ruido permanente. */}
+      {board === "ventas" && <StageFooter leads={leads} currency={currency} />}
     </div>
   );
 }
 
 /** Cuánto dinero hay en esta etapa, y qué quedó fuera de la cuenta. */
-function StageFooter({ leads, currency }: { leads: BoardLead[]; currency: string }) {
+function StageFooter({ leads, currency }: { leads: PipelineCardDto[]; currency: string }) {
   const { totalCents, sinMonto, otraMoneda } = totalesDeEtapa(leads, currency);
   const conMonto = leads.length - sinMonto - otraMoneda;
 
@@ -374,17 +502,24 @@ function StageFooter({ leads, currency }: { leads: BoardLead[]; currency: string
 
 function DraggableLead({
   lead,
+  board,
   currency,
+  showsOwner,
+  draggable,
   onEditAmount,
   onOpen,
 }: {
-  lead: BoardLead;
+  lead: PipelineCardDto;
+  board: PipelineBoard;
   currency: string;
-  onEditAmount: (lead: BoardLead) => void;
-  onOpen: (lead: BoardLead) => void;
+  showsOwner: boolean;
+  draggable: boolean;
+  onEditAmount: (lead: PipelineCardDto) => void;
+  onOpen: (lead: PipelineCardDto) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: lead.id,
+    disabled: !draggable,
   });
   return (
     <div
@@ -405,25 +540,72 @@ function DraggableLead({
           onOpen(lead);
         }
       }}
-      aria-label={`Abrir el trato de ${lead.contact.name}`}
-      className={cn(isDragging && "opacity-40")}
+      aria-label={`Abrir la tarjeta de ${tituloDeTarjeta(lead)}`}
+      className={cn(isDragging && "opacity-40", !draggable && "cursor-default")}
     >
-      <LeadCard lead={lead} currency={currency} onEditAmount={onEditAmount} />
+      <LeadCard
+        lead={lead}
+        board={board}
+        currency={currency}
+        showsOwner={showsOwner}
+        onEditAmount={draggable ? onEditAmount : undefined}
+      />
     </div>
   );
 }
 
+/** Título visible de una tarjeta: contacto > rótulo > genérico. */
+function tituloDeTarjeta(lead: PipelineCardDto): string {
+  return lead.contact?.name ?? lead.label ?? "Tarjeta";
+}
+
+/** URL externa para abrir la fuente de la tarjeta (registro/cliente). */
+function urlExterna(lead: PipelineCardDto): string | null {
+  if (lead.sourceKind === "alert") {
+    const link = typeof lead.meta?.linkRegistro === "string" ? lead.meta.linkRegistro : "";
+    const cliente =
+      typeof lead.meta?.clienteRecordId === "string" ? lead.meta.clienteRecordId : "";
+    if (!link && !cliente) return null;
+    return alertRecordInterfaceUrl(link || null, cliente || null);
+  }
+  if (lead.sourceKind === "sgsa_client" && lead.sgsaRef) {
+    return sgsaClientInterfaceUrl(lead.sgsaRef);
+  }
+  return null;
+}
+
+/** Segunda línea de la tarjeta, según de dónde venga. */
+function subtituloDeTarjeta(lead: PipelineCardDto): string {
+  if (lead.sourceKind === "sgsa_client") return "Cliente del sistema";
+  if (lead.sourceKind === "alert") {
+    const tipo = typeof lead.meta?.tipo === "string" ? lead.meta.tipo : "";
+    const urgencia =
+      typeof lead.meta?.urgencia === "string" ? lead.meta.urgencia : "";
+    const cola = [tipo, urgencia].filter(Boolean).join(" · ");
+    return cola ? `Alerta · ${cola}` : "Alerta";
+  }
+  return lead.lastActivityAt
+    ? `Actividad: ${formatTime(lead.lastActivityAt)}`
+    : "Sin actividad";
+}
+
 function LeadCard({
   lead,
+  board,
   currency,
   overlay = false,
+  showsOwner = false,
   onEditAmount,
 }: {
-  lead: BoardLead;
+  lead: PipelineCardDto;
+  board: PipelineBoard;
   currency: string;
   overlay?: boolean;
-  onEditAmount?: (lead: BoardLead) => void;
+  showsOwner?: boolean;
+  onEditAmount?: (lead: PipelineCardDto) => void;
 }) {
+  const externa = urlExterna(lead);
+  const sinContacto = !lead.contact;
   return (
     <div
       className={cn(
@@ -432,21 +614,23 @@ function LeadCard({
       )}
     >
       <div className="flex items-center gap-2.5">
-        <ContactAvatar name={lead.contact.name} seed={lead.contact.id} size="sm" />
+        <ContactAvatar
+          name={tituloDeTarjeta(lead)}
+          seed={lead.contact?.id ?? lead.id}
+          size="sm"
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <p className="truncate text-sm font-semibold">{lead.contact.name}</p>
+            <p className="truncate text-sm font-semibold">{tituloDeTarjeta(lead)}</p>
             {lead.priority && <PriorityBadge value={lead.priority} />}
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            {lead.lastActivityAt
-              ? `Actividad: ${formatTime(lead.lastActivityAt)}`
-              : "Sin actividad"}
+          <p className="truncate text-[11px] text-muted-foreground">
+            {subtituloDeTarjeta(lead)}
           </p>
         </div>
         {lead.conversationId && (
           <Link
-            href={`/inbox?contact=${lead.contact.id}`}
+            href={`/inbox?contact=${lead.contact?.id}`}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             aria-label="Abrir conversación"
@@ -455,8 +639,26 @@ function LeadCard({
             <MessageSquareText className="h-4 w-4" />
           </Link>
         )}
+        {externa && (
+          <a
+            href={externa}
+            target="_blank"
+            rel="noreferrer"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={lead.sourceKind === "alert" ? "Abrir registro" : "Abrir cliente"}
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        )}
       </div>
-      {!overlay && onEditAmount && (
+      {showsOwner && lead.ownerName && (
+        <p className="mt-1 truncate text-[10.5px] text-text-3" title={lead.ownerName}>
+          {lead.ownerName}
+        </p>
+      )}
+      {!overlay && board === "ventas" && onEditAmount && (
         <button
           // `stopPropagation` en pointerdown: sin esto, tocar el monto empieza
           // un arrastre y el diálogo nunca abre.
@@ -479,11 +681,12 @@ function LeadCard({
             : formatMoneyCents(lead.amountCents, lead.currency ?? currency)}
         </button>
       )}
-      {overlay && lead.amountCents !== null && (
+      {overlay && board === "ventas" && lead.amountCents !== null && (
         <p className="mt-1.5 text-right text-xs font-semibold tabular-nums">
           {formatMoneyCents(lead.amountCents, lead.currency ?? currency)}
         </p>
       )}
+      {sinContacto && !externa && null}
     </div>
   );
 }

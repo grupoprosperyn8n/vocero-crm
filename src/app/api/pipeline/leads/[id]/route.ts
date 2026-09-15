@@ -47,10 +47,46 @@ const patchSchema = z.object({
   priority: z.enum(["alta", "media", "baja"]).nullable().optional(),
 });
 
+/**
+ * 029 — solo el DUEÑO de la tarjeta la edita o la mueve. Ver el trabajo de
+ * los demás (propietario/administrador/gerente) nunca fue tocarlo.
+ */
+async function loadOwnCard(organizationId: string, id: string, userId: string) {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: schema.lead.id,
+      ownerUserId: schema.lead.ownerUserId,
+      board: schema.lead.board,
+      contactId: schema.lead.contactId,
+    })
+    .from(schema.lead)
+    .where(
+      scoped(schema.lead.organizationId, organizationId, eq(schema.lead.id, id))
+    )
+    .limit(1);
+  const card = rows[0];
+  if (!card) return { error: apiError(404, "not_found", "Tarjeta no encontrada") };
+  if (card.ownerUserId !== userId) {
+    return {
+      error: apiError(
+        403,
+        "not_owner",
+        "Esta tarjeta es de otra persona: cada quien mueve las suyas"
+      ),
+    };
+  }
+  return { card };
+}
+
 export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
+
+  const found = await loadOwnCard(session.organizationId, id, session.userId);
+  if (found.error) return found.error;
+  const { card } = found;
 
   // El monto viaja en el MISMO update que el movimiento: capturarlo mientras
   // se arrastra la tarjeta no debe costar dos viajes ni dejar un estado a
@@ -96,6 +132,24 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     return Response.json({ lead: updated[0] });
   }
 
+  // Una tarjeta jamás salta de tablero: las etapas de gestiones no existen en
+  // el embudo de ventas y moverla dejaría el tablero mintiendo.
+  const db = getDb();
+  const target = await db
+    .select({ board: schema.pipelineStage.board })
+    .from(schema.pipelineStage)
+    .where(
+      scoped(
+        schema.pipelineStage.organizationId,
+        session.organizationId,
+        eq(schema.pipelineStage.id, body.data.stageId)
+      )
+    )
+    .limit(1);
+  if (target[0] && target[0].board !== card.board) {
+    return apiError(422, "invalid_stage", "Esa etapa es de otro tablero");
+  }
+
   const res = await moveLeadToStage({
     organizationId: session.organizationId,
     leadId: id,
@@ -124,26 +178,48 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     );
   }
 
-  const db = getDb();
   // Notifica a la bandeja para que la etapa se refleje en vivo (panel de
-  // detalles y punto de etapa de la lista) sin recargar.
-  const convRows = await db
-    .select({ id: schema.conversation.id })
-    .from(schema.conversation)
-    .where(
-      and(
-        eq(schema.conversation.organizationId, session.organizationId),
-        eq(schema.conversation.contactId, res.lead.contactId),
-        eq(schema.conversation.isTest, false)
+  // detalles y punto de etapa de la lista) sin recargar. Las tarjetas sin
+  // contacto (sistema/alerta) no tienen conversación que avisar.
+  if (res.lead.contactId) {
+    const convRows = await db
+      .select({ id: schema.conversation.id })
+      .from(schema.conversation)
+      .where(
+        and(
+          eq(schema.conversation.organizationId, session.organizationId),
+          eq(schema.conversation.contactId, res.lead.contactId),
+          eq(schema.conversation.isTest, false)
+        )
       )
-    )
-    .limit(1);
-  if (convRows[0]) {
-    publish(session.organizationId, {
-      type: "conversation.updated",
-      data: { conversation: { id: convRows[0].id } },
-    });
+      .limit(1);
+    if (convRows[0]) {
+      publish(session.organizationId, {
+        type: "conversation.updated",
+        data: { conversation: { id: convRows[0].id } },
+      });
+    }
   }
 
   return Response.json({ lead: res.lead });
+});
+
+/**
+ * 029 — sacar la tarjeta de MI pipeline. Los eventos de bitácora se van con
+ * ella (FK cascade): su historia es parte de la tarjeta, no del embudo.
+ */
+export const DELETE = withAuth(async (session, _req: Request, ctx: Params) => {
+  const { id } = await ctx.params;
+  const found = await loadOwnCard(session.organizationId, id, session.userId);
+  if (found.error) return found.error;
+
+  const db = getDb();
+  const deleted = await db
+    .delete(schema.lead)
+    .where(
+      scoped(schema.lead.organizationId, session.organizationId, eq(schema.lead.id, id))
+    )
+    .returning({ id: schema.lead.id });
+  if (!deleted[0]) return apiError(404, "not_found", "Tarjeta no encontrada");
+  return Response.json({ deleted: true });
 });

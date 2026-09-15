@@ -1,4 +1,4 @@
-import { desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
@@ -7,7 +7,6 @@ import { scoped } from "@/lib/db/tenant";
 import { normalizeMx } from "@/lib/meta/client";
 import { digitsOnly, normalizeText } from "@/lib/search";
 import { serializeContact } from "@/server/contacts";
-import { createLeadForContact } from "@/server/inbox/lead-activity";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +30,8 @@ export const GET = withAuth(async (session, req: Request) => {
   // Etapa de cada contacto en una consulta aparte: una subconsulta
   // correlacionada aquí choca con el `id` de `lead` ("column reference id is
   // ambiguous"), y un join duplicaría contactos con más de un lead.
+  // 029 — la etapa que se muestra es la de MIS tarjetas (pipeline personal):
+  // el pipeline de otro no pinta nada en mi lista de Contactos.
   const leadStages = await db
     .select({
       contactId: schema.lead.contactId,
@@ -42,13 +43,23 @@ export const GET = withAuth(async (session, req: Request) => {
       schema.pipelineStage,
       eq(schema.pipelineStage.id, schema.lead.stageId)
     )
-    .where(scoped(schema.lead.organizationId, session.organizationId));
-  const stageByContact = new Map(
-    leadStages.map((r) => [r.contactId, r.stageName])
-  );
-  const priorityByContact = new Map(
-    leadStages.map((r) => [r.contactId, r.priority])
-  );
+    .where(
+      scoped(
+        schema.lead.organizationId,
+        session.organizationId,
+        and(
+          eq(schema.lead.board, "ventas"),
+          eq(schema.lead.ownerUserId, session.userId)
+        )
+      )
+    );
+  const stageByContact = new Map<string, string>();
+  const priorityByContact = new Map<string, (typeof leadStages)[number]["priority"]>();
+  for (const r of leadStages) {
+    if (!r.contactId) continue;
+    stageByContact.set(r.contactId, r.stageName);
+    priorityByContact.set(r.contactId, r.priority);
+  }
 
   const qDigits = q ? digitsOnly(q) : "";
   // El patrón viaja normalizado igual que la columna, y con los comodines de
@@ -70,7 +81,9 @@ export const GET = withAuth(async (session, req: Request) => {
   // El filtro de etapa se aplica ANTES del límite: si no, un contacto de la
   // etapa buscada podría quedar fuera por el corte de 200.
   const stageContactIds = stage
-    ? leadStages.filter((r) => r.stageName === stage).map((r) => r.contactId)
+    ? leadStages
+        .filter((r) => r.stageName === stage && r.contactId)
+        .map((r) => r.contactId as string)
     : null;
   if (stageContactIds?.length === 0) return Response.json({ contacts: [] });
 
@@ -121,8 +134,6 @@ const createSchema = z.object({
     .regex(/^\d{7,15}$/, "Teléfono en dígitos, con código de país (ej. 5215512345678)"),
   notes: z.string().max(4000).optional(),
   source: z.enum(["anuncio", "organico", "referido", "conocido", "otro"]).optional(),
-  /** Etapa inicial del lead; si no viene, la primera abierta del tablero. */
-  stageId: z.string().min(1).optional(),
 });
 
 export const POST = withAuth(async (session, req: Request) => {
@@ -159,26 +170,8 @@ export const POST = withAuth(async (session, req: Request) => {
     return apiError(409, "duplicate", "Ya existe un contacto con ese teléfono");
   }
 
-  // Y su lead: un contacto sin lead es invisible en el Pipeline, que es la
-  // pantalla donde se trabaja el embudo. Dar de alta a alguien y no verlo ahí
-  // es la mitad de la función.
-  const lead = await createLeadForContact({
-    organizationId: session.organizationId,
-    contactId: inserted[0].id,
-    stageId: body.data.stageId,
-    source: "dueno",
-    actorUserId: session.userId,
-  });
-  if (!lead) {
-    return apiError(
-      422,
-      "no_stage",
-      "El tablero no tiene etapas abiertas donde colocar al prospecto"
-    );
-  }
-
-  return Response.json(
-    { contact: serializeContact(inserted[0]), lead: { id: lead.id } },
-    { status: 201 }
-  );
+  // 029 — el pipeline es PERSONAL y se llena a mano: dar de alta un contacto
+  // NO lo mete en ningún tablero. Se agrega desde el chat, su ficha o la
+  // tarjeta de origen, que es donde el gesto significa algo.
+  return Response.json({ contact: serializeContact(inserted[0]) }, { status: 201 });
 });

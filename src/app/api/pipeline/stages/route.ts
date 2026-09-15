@@ -1,25 +1,41 @@
-import { asc, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { teamGate } from "@/server/settings/access";
+import type { PipelineBoard } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withAuth(async (session) => {
+const BOARDS = ["ventas", "gestiones"] as const;
+
+/** Etapas de un tablero (default: ventas — los llamadores viejos esperan eso). */
+export const GET = withAuth(async (session, req: Request) => {
+  const url = new URL(req.url);
+  const boardParam = url.searchParams.get("board") ?? "ventas";
+  if (!BOARDS.includes(boardParam as (typeof BOARDS)[number])) {
+    return apiError(422, "invalid_board", "Tablero inexistente");
+  }
   const db = getDb();
   const stages = await db
     .select()
     .from(schema.pipelineStage)
-    .where(scoped(schema.pipelineStage.organizationId, session.organizationId))
+    .where(
+      scoped(
+        schema.pipelineStage.organizationId,
+        session.organizationId,
+        eq(schema.pipelineStage.board, boardParam as PipelineBoard)
+      )
+    )
     .orderBy(asc(schema.pipelineStage.position));
   return Response.json({ stages });
 });
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(60),
+  board: z.enum(BOARDS).optional(),
 });
 
 export const POST = withAuth(async (session, req: Request) => {
@@ -28,13 +44,22 @@ export const POST = withAuth(async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 
+  const board: PipelineBoard = body.data.board ?? "ventas";
   const db = getDb();
+  // La posición es POR tablero: dos "Nuevo" (uno en cada pestaña) no pelean
+  // por el mismo lugar.
   const maxPos = await db
     .select({
       max: sql<number>`coalesce(max(${schema.pipelineStage.position}), -1)`,
     })
     .from(schema.pipelineStage)
-    .where(scoped(schema.pipelineStage.organizationId, session.organizationId));
+    .where(
+      scoped(
+        schema.pipelineStage.organizationId,
+        session.organizationId,
+        eq(schema.pipelineStage.board, board)
+      )
+    );
 
   const inserted = await db
     .insert(schema.pipelineStage)
@@ -44,6 +69,7 @@ export const POST = withAuth(async (session, req: Request) => {
       name: body.data.name,
       position: (maxPos[0]?.max ?? -1) + 1,
       kind: "open",
+      board,
     })
     .returning();
   return Response.json({ stage: inserted[0] }, { status: 201 });

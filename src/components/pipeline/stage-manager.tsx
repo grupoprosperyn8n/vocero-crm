@@ -10,10 +10,13 @@ import { Input } from "@/components/ui/input";
 /** Gestión de etapas: renombrar, reordenar, agregar, eliminar (con reasignación). */
 export function StageManager({
   stages,
+  board,
   onClose,
   onChanged,
 }: {
   stages: StageDto[];
+  /** 029 — las etapas se gestionan POR tablero. */
+  board: "ventas" | "gestiones";
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -57,7 +60,7 @@ export function StageManager({
     await fetch("/api/pipeline/stages", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: newName.trim() }),
+      body: JSON.stringify({ name: newName.trim(), board }),
     }).catch(() => null);
     setNewName("");
     onChanged();
@@ -97,7 +100,9 @@ export function StageManager({
         className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-4 font-semibold">Etapas del pipeline</h3>
+        <h3 className="mb-4 font-semibold">
+          Etapas del pipeline · {board === "ventas" ? "Ventas" : "Gestiones"}
+        </h3>
         <ul className="space-y-2">
           {sorted.map((s, i) => (
             <li key={s.id} className="flex items-center gap-2">

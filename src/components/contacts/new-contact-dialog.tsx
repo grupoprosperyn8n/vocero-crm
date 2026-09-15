@@ -1,7 +1,7 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
-import type { SourceValue, StageDto } from "@/lib/types";
+import { useState } from "react";
+import type { SourceValue } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,24 +33,11 @@ export function NewContactDialog({
   const [phone, setPhone] = useState("");
   const [source, setSource] = useState<SourceValue>("referido");
   const [notes, setNotes] = useState("");
-  const [stages, setStages] = useState<StageDto[]>([]);
-  const [stageId, setStageId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [duplicado, setDuplicado] = useState<{ id: string; name: string } | null>(
     null
   );
-
-  useEffect(() => {
-    void (async () => {
-      const res = await fetch("/api/pipeline/stages").catch(() => null);
-      if (!res?.ok) return;
-      const data = (await res.json()) as { stages: StageDto[] };
-      const abiertas = data.stages.filter((s) => s.kind === "open");
-      setStages(abiertas);
-      setStageId(abiertas[0]?.id ?? "");
-    })();
-  }, []);
 
   async function guardar() {
     setSaving(true);
@@ -64,7 +51,6 @@ export function NewContactDialog({
         phone: phone.trim(),
         source,
         notes: notes.trim() || undefined,
-        stageId: stageId || undefined,
       }),
     }).catch(() => null);
     setSaving(false);
@@ -141,41 +127,22 @@ export function NewContactDialog({
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium" htmlFor="nc-source">
-                ¿De dónde salió?
-              </label>
-              <select
-                id="nc-source"
-                value={source}
-                onChange={(e) => setSource(e.target.value as SourceValue)}
-                className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"
-              >
-                {SOURCES.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium" htmlFor="nc-stage">
-                Etapa inicial
-              </label>
-              <select
-                id="nc-stage"
-                value={stageId}
-                onChange={(e) => setStageId(e.target.value)}
-                className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"
-              >
-                {stages.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium" htmlFor="nc-source">
+              ¿De dónde salió?
+            </label>
+            <select
+              id="nc-source"
+              value={source}
+              onChange={(e) => setSource(e.target.value as SourceValue)}
+              className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"
+            >
+              {SOURCES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="space-y-1.5">
@@ -209,19 +176,19 @@ export function NewContactDialog({
           </div>
         )}
         {error && <p className="mt-3 text-xs text-danger-text">{error}</p>}
-        {stages.length === 0 && (
-          <p className="mt-3 text-xs text-warning-text">
-            Tu embudo no tiene etapas abiertas. Crea una en el Pipeline antes de
-            capturar contactos.
-          </p>
-        )}
+        {/* 029 — el contacto ya no entra solo al pipeline: se suma a mano
+            desde su tarjeta, con el botón «+ Pipeline». */}
+        <p className="mt-3 text-[11px] text-text-3">
+          Después podés sumarlo a tu pipeline (ventas o gestiones) desde su
+          tarjeta, con «+ Pipeline».
+        </p>
 
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
           <Button
-            disabled={!listo || saving || stages.length === 0}
+            disabled={!listo || saving}
             onClick={() => void guardar()}
           >
             {saving ? "Guardando…" : "Crear contacto"}

@@ -18,8 +18,20 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const contact = await getContactById(session.organizationId, id);
   if (!contact) return apiError(404, "not_found", "Contacto no encontrado");
-  const stageRow = await getContactStage(session.organizationId, id);
+  const stageRow = await getContactStage(session.organizationId, id, session.userId);
   const db = getDb();
+  // 029 — qué tarjetas de ESTE contacto tiene el usuario (una por tablero):
+  // el panel de la conversación las muestra para sumar o sacar sin adivinar.
+  const myCards = await db
+    .select({ id: schema.lead.id, board: schema.lead.board })
+    .from(schema.lead)
+    .where(
+      scoped(
+        schema.lead.organizationId,
+        session.organizationId,
+        sql`${schema.lead.contactId} = ${id} and ${schema.lead.ownerUserId} = ${session.userId}`
+      )
+    );
   // Tarjeta del contacto: además de los datos, sus conversaciones por canal
   // (para poder abrir el chat desde ahí, pedido Diego 2026-09-12).
   const conversations = await db
@@ -59,9 +71,11 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
           name: stageRow.stage.name,
           position: stageRow.stage.position,
           kind: stageRow.stage.kind,
+          board: stageRow.stage.board,
         }
       : null,
     lead: stageRow ? { id: stageRow.lead.id } : null,
+    pipelineCards: myCards,
   });
 });
 

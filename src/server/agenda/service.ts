@@ -700,6 +700,10 @@ async function advanceLeadStage(
   source: "bot" | "dueno"
 ): Promise<void> {
   const db = getDb();
+  // 029 — el mismo contacto puede estar en el pipeline de VARIAS personas:
+  // se avanza cada tarjeta de ventas (las de gestiones no van por estas
+  // etapas). Y las etapas que valen son las del tablero de ventas: mezclar
+  // los dos tableros en el índice correría la fila hacia la etapa equivocada.
   const leads = await db
     .select({ id: schema.lead.id, stageId: schema.lead.stageId })
     .from(schema.lead)
@@ -707,12 +711,13 @@ async function advanceLeadStage(
       scoped(
         schema.lead.organizationId,
         organizationId,
-        eq(schema.lead.contactId, contactId)
+        and(
+          eq(schema.lead.contactId, contactId),
+          eq(schema.lead.board, "ventas")
+        )
       )
-    )
-    .limit(1);
-  const lead = leads[0];
-  if (!lead) return;
+    );
+  if (leads.length === 0) return;
 
   const stages = await db
     .select({
@@ -721,21 +726,29 @@ async function advanceLeadStage(
       kind: schema.pipelineStage.kind,
     })
     .from(schema.pipelineStage)
-    .where(scoped(schema.pipelineStage.organizationId, organizationId))
+    .where(
+      scoped(
+        schema.pipelineStage.organizationId,
+        organizationId,
+        eq(schema.pipelineStage.board, "ventas")
+      )
+    )
     .orderBy(asc(schema.pipelineStage.position));
 
-  const currentIdx = stages.findIndex((s) => s.id === lead.stageId);
-  if (currentIdx < 0) return;
-  const nextOpen = stages.find((s, i) => i > currentIdx && s.kind === "open");
-  if (!nextOpen) return; // ya está en la última etapa abierta (o en un ancla)
+  for (const lead of leads) {
+    const currentIdx = stages.findIndex((s) => s.id === lead.stageId);
+    if (currentIdx < 0) continue;
+    const nextOpen = stages.find((s, i) => i > currentIdx && s.kind === "open");
+    if (!nextOpen) continue; // ya está en la última etapa abierta (o en un ancla)
 
-  await moveLeadToStage({
-    organizationId,
-    leadId: lead.id,
-    toStageId: nextOpen.id,
-    source,
-    extra: { lastActivityAt: new Date() },
-  });
+    await moveLeadToStage({
+      organizationId,
+      leadId: lead.id,
+      toStageId: nextOpen.id,
+      source,
+      extra: { lastActivityAt: new Date() },
+    });
+  }
 }
 
 /** Citas que ocupan agenda de verdad. */

@@ -81,6 +81,46 @@ export type StageDto = {
   name: string;
   position: number;
   kind: "open" | "won" | "lost";
+  /** 029 — tablero al que pertenece la etapa. */
+  board: PipelineBoard;
+};
+
+/* ============================================================
+ * 029 — Pipeline personal de dos tableros (ventas / gestiones)
+ * ============================================================ */
+
+/** Un tablero del pipeline: el comercial o el de gestiones. */
+export type PipelineBoard = "ventas" | "gestiones";
+
+/** De dónde salió una tarjeta del pipeline. */
+export type PipelineSourceKind = "contact" | "sgsa_client" | "alert";
+
+/**
+ * Una tarjeta del tablero. Cada usuario tiene las SUYAS: `ownerUserId` es el
+ * dueño, y solo él la mueve. Los roles de gestión (no «member») pueden ver las
+ * de todos y filtrar por empleado, igual que la bandeja.
+ */
+export type PipelineCardDto = {
+  id: string;
+  board: PipelineBoard;
+  stageId: string;
+  position: number;
+  ownerUserId: string | null;
+  ownerName: string | null;
+  sourceKind: PipelineSourceKind;
+  /** Referencia externa: cliente del sistema (rec…) o alerta (rec…). */
+  sgsaRef: string | null;
+  /** Rótulo para tarjetas sin contacto (cliente del sistema / alerta). */
+  label: string | null;
+  /** Foto mínima de la fuente (tipo/urgencia/cliente de una alerta). */
+  meta: Record<string, unknown> | null;
+  lastActivityAt: string | null;
+  amountCents: number | null;
+  currency: string | null;
+  priority: PriorityValue | null;
+  /** Contacto del CRM; NULL si la tarjeta es un cliente del sistema o alerta. */
+  contact: { id: string; name: string; phone: string | null } | null;
+  conversationId: string | null;
 };
 
 /** Un dato de la ficha. Escalar a propósito: ver `server/bot/ficha`. */

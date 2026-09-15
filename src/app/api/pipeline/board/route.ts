@@ -1,65 +1,52 @@
-import { and, asc, eq } from "drizzle-orm";
-import { withAuth } from "@/lib/api";
-import { getDb, schema } from "@/lib/db";
-import { scoped } from "@/lib/db/tenant";
+import { apiError, withAuth } from "@/lib/api";
+import { isOrgMember, listBoardCards } from "@/server/pipeline/board";
 import { getBranding } from "@/server/branding";
+import { seesWholeTeam } from "@/lib/pipeline";
+import type { PipelineBoard } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-/** Datos completos del kanban: etapas ordenadas + tarjetas con su contacto. */
-export const GET = withAuth(async (session) => {
-  const db = getDb();
+const BOARDS = ["ventas", "gestiones"] as const;
 
-  const stages = await db
-    .select()
-    .from(schema.pipelineStage)
-    .where(scoped(schema.pipelineStage.organizationId, session.organizationId))
-    .orderBy(asc(schema.pipelineStage.position));
+/**
+ * 029 — el tablero del pipeline personal.
+ * `board` elige la pestaña; `assignee` (solo para quien ve todo el equipo)
+ * filtra "me" | "all" | <userId>. Un member no tiene parámetro que lo saque
+ * de sus propias tarjetas.
+ */
+export const GET = withAuth(async (session, req: Request) => {
+  const url = new URL(req.url);
+  const boardParam = url.searchParams.get("board") ?? "ventas";
+  if (!BOARDS.includes(boardParam as (typeof BOARDS)[number])) {
+    return apiError(422, "invalid_board", "Tablero inexistente");
+  }
+  const board = boardParam as PipelineBoard;
 
-  const leads = await db
-    .select({
-      lead: schema.lead,
-      contact: schema.contact,
-      conversationId: schema.conversation.id,
-    })
-    .from(schema.lead)
-    .innerJoin(schema.contact, eq(schema.lead.contactId, schema.contact.id))
-    .leftJoin(
-      schema.conversation,
-      and(
-        eq(schema.conversation.contactId, schema.contact.id),
-        eq(schema.conversation.isTest, false)
-      )
-    )
-    .where(scoped(schema.lead.organizationId, session.organizationId))
-    .orderBy(asc(schema.lead.position));
+  let assignee = url.searchParams.get("assignee");
+  if (!seesWholeTeam(session.role)) {
+    assignee = null; // un member jamás sale de lo suyo, aunque lo pida
+  } else if (assignee && assignee !== "me" && assignee !== "all") {
+    const ok = await isOrgMember(session.organizationId, assignee);
+    if (!ok) return apiError(422, "invalid_assignee", "Ese usuario no es del equipo");
+  }
+
+  const { stages, cards } = await listBoardCards({
+    organizationId: session.organizationId,
+    viewerUserId: session.userId,
+    viewerRole: session.role,
+    board,
+    assignee,
+  });
 
   // La moneda del negocio viaja con el tablero: el cliente suma sus columnas y
   // necesita saber cuál es la única sumable, sin adivinarla ni pedirla aparte.
   const { currency } = await getBranding(session.organizationId);
 
   return Response.json({
+    board,
     currency,
-    stages: stages.map((s) => ({
-      id: s.id,
-      name: s.name,
-      position: s.position,
-      kind: s.kind,
-    })),
-    leads: leads.map((r) => ({
-      id: r.lead.id,
-      stageId: r.lead.stageId,
-      position: r.lead.position,
-      lastActivityAt: r.lead.lastActivityAt?.toISOString() ?? null,
-      amountCents: r.lead.amountCents,
-      currency: r.lead.currency,
-      priority: r.lead.priority,
-      contact: {
-        id: r.contact.id,
-        name: r.contact.name,
-        phone: r.contact.phone,
-      },
-      conversationId: r.conversationId,
-    })),
+    stages,
+    cards,
+    seesWholeTeam: seesWholeTeam(session.role),
   });
 });

@@ -21,7 +21,6 @@ import {
 import { applyStatusUpdate } from "@/server/inbox/status";
 import { atribucionEnabled } from "@/server/attribution/flag";
 import { recordAttribution } from "@/server/attribution/store";
-import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
 
 /** Tipos de contenido soportados; el resto se ignora sin error. */
@@ -485,8 +484,11 @@ export async function ingestInboundMessage(input: {
     })
     .where(eq(schema.conversation.id, conversation.id));
 
-  await onLeadActivity(organizationId, contact.id, waTimestamp);
-
+  // 029 — el pipeline se llena A MANO: un mensaje entrante ya no crea la
+  // tarjeta del lead (pedido Diego 2026-09-15: «no quiero que se autocargue,
+  // sino desde el chat con el cliente se pueda agregar al pipeline»). Se
+  // agrega desde el panel de la conversación, la ficha del contacto o la
+  // tarjeta del cliente del sistema.
   publish(organizationId, {
     type: "message.new",
     data: {

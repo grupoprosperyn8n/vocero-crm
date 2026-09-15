@@ -22,6 +22,7 @@ import {
 import { ShareAlertDialog } from "@/components/alerts/share-alert-dialog";
 import { AssignAlertDialog } from "@/components/alerts/assign-alert-dialog";
 import { AlertRulesDialog } from "@/components/alerts/alert-rules-dialog";
+import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
 import { alertDate, alertEstadoLabel, parseAlertDetalle } from "@/lib/alerts";
 import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import type { SgsaAlertDto } from "@/lib/types";
@@ -685,6 +686,21 @@ export function AlertsClient() {
                           <Share2 className="h-3.5 w-3.5" strokeWidth={1.8} />
                           Compartir
                         </button>
+                        {/* 029 — mandar la alerta a MI pipeline de gestiones. */}
+                        <AddToPipelineButton
+                          source={{
+                            kind: "alert",
+                            ref: a.airtableRecordId ?? a.id,
+                            label: a.titulo,
+                            meta: {
+                              tipo: a.tipo,
+                              urgencia: a.urgenciaLabel,
+                              clienteNombre: a.clienteNombre ?? undefined,
+                              clienteRecordId: a.clienteRecordId ?? undefined,
+                              linkRegistro: safeLink(a.linkRegistro) ?? undefined,
+                            },
+                          }}
+                        />
                       </div>
                     </div>
                   )}

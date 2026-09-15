@@ -14,6 +14,7 @@ import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FichaPanel } from "@/components/ficha-panel";
+import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
 
 const HANDOFF_LABELS: Record<string, string> = {
   cliente: "El cliente pidió un humano",
@@ -45,6 +46,10 @@ export function ContactPanel({
   const [stages, setStages] = useState<StageDto[]>([]);
   const [currentStageId, setCurrentStageId] = useState<string | null>(null);
   const [leadId, setLeadId] = useState<string | null>(null);
+  /** 029 — mis tarjetas de este contacto (una por tablero del pipeline). */
+  const [pipelineCards, setPipelineCards] = useState<
+    Array<{ id: string; board: string }>
+  >([]);
   // Estado global del agente: sin esto, el toggle "Respondiendo" mentiría
   // cuando el agente aún no se ha configurado/encendido.
   const [agentEnabled, setAgentEnabled] = useState(false);
@@ -70,6 +75,7 @@ export function ContactPanel({
       setFicha(detail.contact?.ficha ?? {});
       setCurrentStageId(detail.stage?.id ?? null);
       setLeadId(detail.lead?.id ?? null);
+      setPipelineCards(detail.pipelineCards ?? []);
     }
     if (stagesRes) setStages(stagesRes.stages);
     setAgentEnabled(Boolean(agentRes?.profile?.enabled));
@@ -91,6 +97,7 @@ export function ContactPanel({
       setFicha(detail.contact?.ficha ?? {});
       setCurrentStageId(detail.stage?.id ?? null);
       setLeadId(detail.lead?.id ?? null);
+      setPipelineCards(detail.pipelineCards ?? []);
     }
     if (agentRes) {
       setAgentEnabled(Boolean(agentRes.profile?.enabled));
@@ -116,6 +123,19 @@ export function ContactPanel({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ stageId, position: 0 }),
     }).catch(() => null);
+    void refreshLive();
+  }
+
+  /** La tarjeta de gestiones de este contacto, si la tengo (029). */
+  const gestionCard =
+    pipelineCards.find((c) => c.board === "gestiones") ?? null;
+
+  /** Sacar MI tarjeta del pipeline (029): se va con su historial. */
+  async function sacarDeMiPipeline(cardId: string) {
+    setPipelineCards((prev) => prev.filter((c) => c.id !== cardId));
+    await fetch(`/api/pipeline/leads/${cardId}`, { method: "DELETE" }).catch(
+      () => null
+    );
     void refreshLive();
   }
 
@@ -262,10 +282,11 @@ export function ContactPanel({
           </div>
         </section>
 
-        {/* Stepper de etapa */}
-        {stages.length > 0 && leadId && (
-          <section className="border-b p-4">
-            <p className="kicker mb-3">Etapa del pipeline</p>
+        {/* Pipeline personal (029): ventas con su stepper, gestiones como fila.
+            Si todavía no está, se suma desde acá — ya no se autocarga. */}
+        <section className="border-b p-4">
+          <p className="kicker mb-3">Pipeline</p>
+          {stages.length > 0 && leadId ? (
             <ol>
               {stages.map((s, i) => {
                 const done = currentIndex >= 0 && i < currentIndex;
@@ -305,8 +326,49 @@ export function ContactPanel({
                 );
               })}
             </ol>
-          </section>
-        )}
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[12.5px] text-muted-foreground">
+                No está en tu pipeline de ventas.
+              </p>
+              <AddToPipelineButton
+                source={{ kind: "contact", contactId }}
+                fixedBoard="ventas"
+                texto="Sumar"
+              />
+            </div>
+          )}
+
+          <div
+            className={cn(
+              "flex items-center justify-between gap-2",
+              leadId && "mt-3 border-t pt-3"
+            )}
+          >
+            {gestionCard ? (
+              <>
+                <p className="text-[12.5px]">En tu pipeline de gestiones ✓</p>
+                <button
+                  onClick={() => void sacarDeMiPipeline(gestionCard.id)}
+                  className="text-[11.5px] text-text-3 underline underline-offset-2 hover:text-foreground"
+                >
+                  Sacar
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-[12.5px] text-muted-foreground">
+                  No está en tu pipeline de gestiones.
+                </p>
+                <AddToPipelineButton
+                  source={{ kind: "contact", contactId }}
+                  fixedBoard="gestiones"
+                  texto="Sumar"
+                />
+              </>
+            )}
+          </div>
+        </section>
 
         {/* Ficha: lo que se SABE del lead. Va antes de Notas —lo que alguien
             OPINA— porque es lo que se consulta a mitad de una conversación. */}

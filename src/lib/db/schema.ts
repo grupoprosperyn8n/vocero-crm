@@ -222,9 +222,16 @@ export const pipelineStage = pgTable(
     kind: text("kind", { enum: ["open", "won", "lost"] })
       .notNull()
       .default("open"),
+    /** 029 — tablero al que pertenece la etapa: comercial o de gestiones. */
+    board: text("board", { enum: ["ventas", "gestiones"] })
+      .notNull()
+      .default("ventas"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (t) => [index("stage_org_pos_idx").on(t.organizationId, t.position)]
+  (t) => [
+    index("stage_org_pos_idx").on(t.organizationId, t.position),
+    index("stage_org_board_pos_idx").on(t.organizationId, t.board, t.position),
+  ]
 );
 
 export const lead = pgTable(
@@ -234,9 +241,33 @@ export const lead = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    contactId: text("contact_id")
+    /**
+     * 029 — contacto del CRM. NULL cuando la tarjeta NO es un contacto
+     * (cliente del sistema o alerta): una alerta no siempre tiene ficha.
+     */
+    contactId: text("contact_id").references(() => contact.id, {
+      onDelete: "cascade",
+    }),
+    /** 029 — la tarjeta pertenece a UN usuario: el pipeline es personal. */
+    ownerUserId: text("owner_user_id").references(() => user.id, {
+      onDelete: "cascade",
+    }),
+    /** 029 — tablero: ventas (comercial) o gestiones. */
+    board: text("board", { enum: ["ventas", "gestiones"] })
       .notNull()
-      .references(() => contact.id, { onDelete: "cascade" }),
+      .default("ventas"),
+    /** 029 — de dónde salió la tarjeta. */
+    sourceKind: text("source_kind", {
+      enum: ["contact", "sgsa_client", "alert"],
+    })
+      .notNull()
+      .default("contact"),
+    /** 029 — referencia externa: cliente del sistema o alerta de Airtable. */
+    sgsaRef: text("sgsa_ref"),
+    /** 029 — rótulo para tarjetas sin contacto (cliente del sistema / alerta). */
+    label: text("label"),
+    /** 029 — foto mínima de la fuente (tipo/urgencia/nombre del cliente). */
+    meta: jsonb("meta").$type<Record<string, unknown>>(),
     stageId: text("stage_id")
       .notNull()
       .references(() => pipelineStage.id),
@@ -261,7 +292,17 @@ export const lead = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("lead_contact_uq").on(t.contactId),
+    // 029 — el pipeline es personal: la unicidad es POR DUEÑO, no por contacto.
+    // Los NULL no chocan entre sí (Postgres los distingue en índices únicos),
+    // así que las tarjetas sin contacto o sin dueño jamás bloquean a nadie.
+    uniqueIndex("lead_owner_contact_uq").on(t.ownerUserId, t.contactId),
+    uniqueIndex("lead_owner_ref_uq").on(
+      t.organizationId,
+      t.ownerUserId,
+      t.board,
+      t.sgsaRef
+    ),
+    index("lead_board_owner_idx").on(t.organizationId, t.board, t.ownerUserId),
     index("lead_org_stage_idx").on(t.organizationId, t.stageId, t.position),
   ]
 );
@@ -289,10 +330,11 @@ export const leadStageEvent = pgTable(
       .notNull()
       .references(() => lead.id, { onDelete: "cascade" }),
     /** Denormalizado a propósito: casi toda agregación cruza con el contacto,
-     *  y el join extra se pagaría en cada consulta. */
-    contactId: text("contact_id")
-      .notNull()
-      .references(() => contact.id, { onDelete: "cascade" }),
+     *  y el join extra se pagaría en cada consulta. NULL en tarjetas que no
+     *  nacen de un contacto (cliente del sistema / alerta — 029). */
+    contactId: text("contact_id").references(() => contact.id, {
+      onDelete: "cascade",
+    }),
     /** NULL = el lead nació en `toStage` (evento de creación). */
     fromStageId: text("from_stage_id").references(() => pipelineStage.id, {
       onDelete: "set null",

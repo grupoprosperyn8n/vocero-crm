@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { getDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
@@ -170,14 +170,28 @@ export async function seedDemo(
     .delete(schema.agentTestRun)
     .where(eq(schema.agentTestRun.organizationId, organizationId));
 
-  // --- Etapas (por nombre) ---
+  // --- Etapas (por nombre; solo el tablero de ventas: 029) ---
   const stages = await db
     .select()
     .from(schema.pipelineStage)
-    .where(eq(schema.pipelineStage.organizationId, organizationId));
+    .where(
+      and(
+        eq(schema.pipelineStage.organizationId, organizationId),
+        eq(schema.pipelineStage.board, "ventas")
+      )
+    );
   const stageByName = new Map(stages.map((s) => [s.name, s.id]));
   const fallbackStage = stages[0]?.id;
   if (!fallbackStage) throw new Error("La organización no tiene etapas");
+
+  // 029 — el pipeline es PERSONAL: los leads de demo quedan a nombre del
+  // propietario, que es quien mira la demo.
+  const ownerRow = await db
+    .select({ userId: schema.member.userId })
+    .from(schema.member)
+    .where(eq(schema.member.organizationId, organizationId))
+    .limit(1);
+  const ownerUserId = ownerRow[0]?.userId ?? null;
 
   // --- Contactos + conversaciones + mensajes + leads ---
   const now = Date.now();
@@ -232,6 +246,7 @@ export async function seedDemo(
     await db.insert(schema.lead).values({
       id: newId("lead"),
       organizationId,
+      ownerUserId,
       contactId,
       stageId: stageByName.get(demo.stage) ?? fallbackStage,
       position: position++,

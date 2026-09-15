@@ -2,13 +2,24 @@ import { count, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 
-/** Etapas sembradas del pipeline (US2). */
+/** Etapas sembradas del pipeline (US2) — tablero de ventas. */
 const SEED_STAGES: { name: string; kind: "open" | "won" | "lost" }[] = [
   { name: "Nuevo", kind: "open" },
   { name: "En conversación", kind: "open" },
   { name: "Interesado", kind: "open" },
   { name: "Cliente", kind: "won" },
   { name: "Perdido", kind: "lost" },
+];
+
+/**
+ * 029 — etapas del tablero de GESTIONES. Sin «descartada» a propósito: una
+ * gestión se resuelve o queda en curso, y un estado "perdido" pediría motivos
+ * de venta que aquí no significan nada.
+ */
+const SEED_GESTION_STAGES: { name: string; kind: "open" | "won" }[] = [
+  { name: "Nueva", kind: "open" },
+  { name: "En curso", kind: "open" },
+  { name: "Resuelta", kind: "won" },
 ];
 
 /**
@@ -42,15 +53,24 @@ export async function onUserCreated(userId: string, userName: string) {
       userId,
       role: "owner",
     });
-    await tx.insert(schema.pipelineStage).values(
-      SEED_STAGES.map((s, i) => ({
+    await tx.insert(schema.pipelineStage).values([
+      ...SEED_STAGES.map((s, i) => ({
         id: newId("stage"),
         organizationId: orgId,
         name: s.name,
         position: i,
         kind: s.kind,
-      }))
-    );
+        board: "ventas" as const,
+      })),
+      ...SEED_GESTION_STAGES.map((s, i) => ({
+        id: newId("stage"),
+        organizationId: orgId,
+        name: s.name,
+        position: i,
+        kind: s.kind,
+        board: "gestiones" as const,
+      })),
+    ]);
     await tx.insert(schema.agentProfile).values({
       id: newId("agentProfile"),
       organizationId: orgId,
