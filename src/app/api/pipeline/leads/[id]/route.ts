@@ -1,11 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { prioridadForPriorityValue } from "@/lib/alerts";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { publish } from "@/server/events/bus";
 import { moveLeadToStage } from "@/server/leads/stage-history";
-import { pushCardAlertEstado } from "@/server/pipeline/alert-sync";
+import { REC_ID_RE, airtablePatchRecord } from "@/server/alerts/airtable-read";
+import { invalidateAlertEstadoCache, pushCardAlertEstado } from "@/server/pipeline/alert-sync";
 import { getBranding } from "@/server/branding";
 
 export const dynamic = "force-dynamic";
@@ -113,6 +115,32 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     // La fecha acompaña al valor: sirve para saber si la decisión es de hoy o
     // de hace tres semanas, que es lo que vuelve útil mirarla.
     extra.priorityUpdatedAt = body.data.priority === null ? null : new Date();
+
+    // 031c — tarjeta de alerta: la prioridad vive en la TABLA y va en las dos
+    // direcciones. Se escribe allá ANTES de darla por buena: si la tabla la
+    // rechaza, el 502 lo dice y el refetch del tablero deja la vista como
+    // estaba — prometer una prioridad que el sistema no tiene sería peor.
+    if (
+      card.sourceKind === "alert" &&
+      typeof card.sgsaRef === "string" &&
+      REC_ID_RE.test(card.sgsaRef)
+    ) {
+      const pushed = await airtablePatchRecord("ALERTAS", card.sgsaRef, {
+        PRIORIDAD: prioridadForPriorityValue(body.data.priority),
+      });
+      if (!pushed.ok) {
+        console.warn(
+          `[pipeline] prioridad no aceptada por Airtable (${pushed.status}): ${pushed.detail}`
+        );
+        return apiError(
+          502,
+          "sgsa_priority_failed",
+          "El sistema no aceptó la prioridad de la alerta — reintentá en un momento"
+        );
+      }
+      // La caché del pull tenía la prioridad vieja: que la próxima lectura la vea.
+      invalidateAlertEstadoCache();
+    }
   }
 
   // Sin etapa: solo se actualizan los campos del lead. No pasa por la puerta

@@ -8,6 +8,8 @@
  * importarse desde componentes de cliente.
  */
 
+import type { PriorityValue } from "@/lib/types";
+
 /** 3 = urgente, 2 = alta, 1 = media, 0 = info (mismas reglas que la PWA). */
 export type AlertUrgency = 0 | 1 | 2 | 3;
 
@@ -128,6 +130,32 @@ export function stageForEstado<
   if (exact) return exact;
   if (e === "CONCLUIDA") return stages.find((s) => s.kind === "won") ?? null;
   if (e === "ANULADA") return stages.find((s) => s.kind === "lost") ?? null;
+  return null;
+}
+
+/**
+ * 031c — Prioridad de la ALERTA ↔ prioridad del CRM.
+ *
+ * La tabla usa texto con emoji («🔴 Alta», «🟠 Media», «🟣 Baja», «🟡 Baja»);
+ * el pipeline del CRM usa alta/media/baja/null. Estos dos mapeos son la única
+ * traducción permitida entre los dos vocabularios: un valor desconocido se
+ * ignora (null) en vez de inventar un escalón — la prioridad jamás se adivina.
+ */
+export function priorityValueForPrioridad(
+  prioridad: string | null | undefined
+): PriorityValue | null {
+  const p = (prioridad ?? "").toLowerCase();
+  if (p.includes("alta")) return "alta";
+  if (p.includes("media")) return "media";
+  if (p.includes("baja")) return "baja";
+  return null;
+}
+
+/** Valor del CRM → cadena EXACTA de la tabla (no se inventan opciones nuevas). */
+export function prioridadForPriorityValue(value: PriorityValue | null): string | null {
+  if (value === "alta") return "🔴 Alta";
+  if (value === "media") return "🟠 Media";
+  if (value === "baja") return "🟣 Baja";
   return null;
 }
 

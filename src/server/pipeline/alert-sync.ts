@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { estadoForStage, stageForEstado } from "@/lib/alerts";
+import { estadoForStage, priorityValueForPrioridad, stageForEstado } from "@/lib/alerts";
 import type { PipelineCardDto, StageDto } from "@/lib/types";
 import { REC_ID_RE, airtableRecordsByIds } from "@/server/alerts/airtable-read";
 import { listAlerts } from "@/server/alerts/service";
@@ -105,7 +105,13 @@ export async function pullAlertSync(input: {
     const meta = (card.meta ?? {}) as Record<string, unknown>;
     const prioridad =
       info.prioridad ?? (typeof meta.prioridad === "string" ? meta.prioridad : null);
-    if (meta.estado === info.estado && meta.prioridad === prioridad) continue; // ya macheada
+    // 031c — la prioridad del CRM (cajón y chip) es ESPEJO de la de la alerta:
+    // alta/media/baja/null. Si difiere, este mismo pase la corrige acá.
+    const priority = priorityValueForPrioridad(prioridad);
+    const priorityChanged = card.priority !== priority;
+    if (meta.estado === info.estado && meta.prioridad === prioridad && !priorityChanged) {
+      continue; // ya macheada
+    }
 
     // El estado del sistema elige la columna; DESACTIVADA / REVISADA no tienen
     // columna propia: la tarjeta queda donde está y solo se refresca el chip.
@@ -116,6 +122,9 @@ export async function pullAlertSync(input: {
       prioridad,
       estadoAt: new Date().toISOString(),
     };
+    const priorityExtra: Record<string, unknown> = priorityChanged
+      ? { priority, priorityUpdatedAt: priority === null ? null : new Date() }
+      : {};
     let newStageId = card.stageId;
 
     if (target && target.id !== card.stageId) {
@@ -128,16 +137,20 @@ export async function pullAlertSync(input: {
           source: "sistema",
           lossReason: target.kind === "lost" ? "otro" : null,
           lossNote: target.kind === "lost" ? "Alerta anulada en el sistema" : null,
-          extra: { meta: newMeta },
+          extra: { meta: newMeta, ...priorityExtra },
         });
         if (res.ok) newStageId = target.id;
       } catch {
         // el estado igual se refleja; la próxima apertura reintenta el movimiento
       }
     }
-    if (newStageId === card.stageId) await updateCardMeta(input.organizationId, card.id, newMeta);
+    if (newStageId === card.stageId) {
+      await updateCardSync(input.organizationId, card.id, newMeta, priorityExtra);
+    }
     const idx = cards.findIndex((c) => c.id === card.id);
-    if (idx >= 0) cards[idx] = { ...cards[idx]!, stageId: newStageId, meta: newMeta };
+    if (idx >= 0) {
+      cards[idx] = { ...cards[idx]!, stageId: newStageId, meta: newMeta, priority };
+    }
     changes.push({
       cardId: card.id,
       from: (meta.estado as string | undefined) ?? null,
@@ -148,15 +161,16 @@ export async function pullAlertSync(input: {
   return { cards, changes };
 }
 
-async function updateCardMeta(
+async function updateCardSync(
   organizationId: string,
   leadId: string,
-  meta: Record<string, unknown>
+  meta: Record<string, unknown>,
+  extra: Record<string, unknown>
 ): Promise<void> {
   try {
     await getDb()
       .update(schema.lead)
-      .set({ meta, updatedAt: new Date() })
+      .set({ meta, ...extra, updatedAt: new Date() })
       .where(scoped(schema.lead.organizationId, organizationId, eq(schema.lead.id, leadId)));
   } catch (err) {
     console.error("[pipeline] no se pudo guardar el estado de la tarjeta:", err);

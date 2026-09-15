@@ -71,3 +71,39 @@ export async function airtableRecordsByIds(
   }
   return out;
 }
+
+/**
+ * 031c — PATCH puntual de campos de UN registro (con typecast: si el valor
+ * matchea una opción existente la usa tal cual; null limpia el campo).
+ * Se usa para la prioridad, que va en ambas direcciones: la tarjeta la manda
+ * a la tabla y la tabla la manda a la tarjeta. Devuelve el resultado en vez
+ * de tirar: el llamador decide si el cambio se acepta o se rechaza.
+ */
+export async function airtablePatchRecord(
+  table: string,
+  recordId: string,
+  fields: Record<string, unknown>,
+  timeoutMs = 12000
+): Promise<{ ok: true } | { ok: false; status: number; detail: string }> {
+  try {
+    const res = await fetch(
+      `https://api.airtable.com/v0/${airtableBaseId()}/${encodeURIComponent(table)}/${recordId}`,
+      {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ fields, typecast: true }),
+        signal: AbortSignal.timeout(timeoutMs),
+        cache: "no-store",
+      }
+    );
+    if (res.ok) return { ok: true };
+    const detail = await res.text().catch(() => "");
+    return { ok: false, status: res.status, detail: detail.slice(0, 200) };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      detail: err instanceof Error ? err.message : "network",
+    };
+  }
+}
