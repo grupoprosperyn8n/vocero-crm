@@ -10,6 +10,7 @@ import {
   withClientParam,
 } from "@/lib/sgsa-links";
 import {
+  pickClientId,
   resolveAlertClientRecords,
   withClientRecordIds,
 } from "@/server/alerts/client-record";
@@ -83,7 +84,42 @@ describe("enlaces a la interface (028c — registro y cliente en uno)", () => {
   });
 });
 
+describe("pickClientId — todas las alertas, no solo póliza", () => {
+  it("link CLIENTE (array) tiene prioridad", () => {
+    expect(
+      pickClientId({ CLIENTE: ["recCLI00000000001"], CLIENTES: "recCLI00000000002" })
+    ).toBe("recCLI00000000001");
+  });
+
+  it("cae a CLIENTES (string rec… de GESTIÓN GENERAL)", () => {
+    expect(pickClientId({ CLIENTES: "rec3zNjrl8iumrarY" })).toBe(
+      "rec3zNjrl8iumrarY"
+    );
+  });
+
+  it("CLIENTES con texto (p.ej. «TEST IA») o vacío → null", () => {
+    expect(pickClientId({ CLIENTES: "TEST IA" })).toBeNull();
+    expect(pickClientId({})).toBeNull();
+    expect(pickClientId({ CLIENTE: [] })).toBeNull();
+  });
+});
+
 describe("resolveAlertClientRecords", () => {
+  it("resuelve también por CLIENTES cuando CLIENTE está vacío", async () => {
+    vi.stubEnv("SGSA_AIRTABLE_PAT", "test-pat");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          records: [{ id: "recG1", fields: { CLIENTES: "recCLI00000000003" } }],
+        }),
+      }))
+    );
+    const out = await resolveAlertClientRecords(["recG1"]);
+    expect(out.get("recG1")).toBe("recCLI00000000003");
+  });
+
   it("sin PAT devuelve vacío (no llama a Airtable)", async () => {
     const spy = vi.fn();
     vi.stubGlobal("fetch", spy);
@@ -99,7 +135,7 @@ describe("resolveAlertClientRecords", () => {
       ok: true,
       json: async () => ({
         records: [
-          { id: "recA", fields: { CLIENTE: ["recCLI1"] } },
+          { id: "recA", fields: { CLIENTE: ["recCLI00000000001"] } },
           { id: "recB", fields: {} },
         ],
       }),
@@ -107,7 +143,7 @@ describe("resolveAlertClientRecords", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const first = await resolveAlertClientRecords(["recA", "recB"]);
-    expect(first.get("recA")).toBe("recCLI1");
+    expect(first.get("recA")).toBe("recCLI00000000001");
     expect(first.has("recB")).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const calledUrl = String(fetchMock.mock.calls[0]?.[0] ?? "");
@@ -115,7 +151,7 @@ describe("resolveAlertClientRecords", () => {
     expect(calledUrl).toContain("CLIENTE");
 
     const second = await resolveAlertClientRecords(["recA"]);
-    expect(second.get("recA")).toBe("recCLI1");
+    expect(second.get("recA")).toBe("recCLI00000000001");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
@@ -128,7 +164,7 @@ describe("withClientRecordIds", () => {
       vi.fn(async () => ({
         ok: true,
         json: async () => ({
-          records: [{ id: "recZ", fields: { CLIENTE: ["recCLIZ"] } }],
+          records: [{ id: "recZ", fields: { CLIENTE: ["recCLI00000000009"] } }],
         }),
       }))
     );
@@ -136,7 +172,7 @@ describe("withClientRecordIds", () => {
       alert({ airtableRecordId: "recZ" }),
       alert({ id: "2" }),
     ]);
-    expect(withCli?.clienteRecordId).toBe("recCLIZ");
+    expect(withCli?.clienteRecordId).toBe("recCLI00000000009");
     expect(without?.clienteRecordId).toBeUndefined();
   });
 

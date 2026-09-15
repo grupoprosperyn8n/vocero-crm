@@ -1,11 +1,13 @@
 /**
- * 028b — Resolución del CLIENTE de cada alerta (Airtable ALERTAS → CLIENTE[]).
+ * 028b/028d — Resolución del CLIENTE de cada alerta (Airtable ALERTAS).
  *
- * Las alertas del backend traen el nombre del cliente (`clienteNombre`) pero
- * no el registro de CLIENTES al que pertenece; el LINK_REGISTRO que arma SGSA
- * apunta al registro origen (póliza/gestión), no al cliente. Para el botón
- * «Abrir cliente» (ficha del cliente en la interface) hace falta el recordId
- * del cliente, así que se lee el campo link `CLIENTE` de la tabla ALERTAS.
+ * Las alertas traen `clienteNombre` (a veces null) pero no el registro del
+ * cliente; el LINK_REGISTRO que arma SGSA apunta al registro origen
+ * (póliza/gestión), no al cliente. Para «Abrir registro» CON el cliente por
+ * debajo (merge `?detail` + `?DSjXA`) hace falta el recordId del cliente: se
+ * lee el campo link `CLIENTE` de ALERTAS y, si está vacío, el campo
+ * `CLIENTES` (string `rec…` que traen las alertas de GESTIÓN GENERAL) — así
+ * TODAS las alertas con cliente quedan cubiertas, no solo las de póliza.
  *
  * Lectura SOLO con el PAT de servidor (SGSA_AIRTABLE_PAT); caché en memoria
  * con TTL para no pegarle a Airtable en cada listado del badge/contador.
@@ -25,6 +27,41 @@ let cacheAt = 0;
 
 function baseId(): string {
   return process.env.SGSA_BASE_ID?.trim() || DEFAULT_BASE_ID;
+}
+
+/** Record IDs de Airtable: `rec` + exactamente 14 alfanuméricos. */
+const REC_ID_RE = /^rec[A-Za-z0-9]{14}$/;
+
+function asRecId(v: unknown): string | null {
+  if (typeof v === "string" && REC_ID_RE.test(v.trim())) return v.trim();
+  return null;
+}
+
+/**
+ * Cliente de un record de ALERTAS: el campo link `CLIENTE` (array) y, si está
+ * vacío, `CLIENTES` (string `rec…`, el que usan las alertas de GESTIÓN
+ * GENERAL) — cubre TODAS las alertas, no solo las de póliza.
+ */
+export function pickClientId(fields: Record<string, unknown>): string | null {
+  const link = fields["CLIENTE"];
+  if (Array.isArray(link)) {
+    for (const v of link) {
+      const id = asRecId(v);
+      if (id) return id;
+    }
+  } else {
+    const id = asRecId(link);
+    if (id) return id;
+  }
+  const text = fields["CLIENTES"];
+  if (Array.isArray(text)) {
+    for (const v of text) {
+      const id = asRecId(v);
+      if (id) return id;
+    }
+    return null;
+  }
+  return asRecId(text);
 }
 
 /**
@@ -63,6 +100,7 @@ export async function resolveAlertClientRecords(
     params.set("maxRecords", String(BATCH));
     params.set("filterByFormula", formula);
     params.append("fields[]", "CLIENTE");
+    params.append("fields[]", "CLIENTES");
     const url = new URL(
       `https://api.airtable.com/v0/${baseId()}/${ALERTAS_TABLE}`
     );
@@ -76,14 +114,10 @@ export async function resolveAlertClientRecords(
       throw new Error(`Airtable respondió ${res.status} leyendo CLIENTE de alertas`);
     }
     const data = (await res.json()) as {
-      records?: { id: string; fields?: { CLIENTE?: unknown } }[];
+      records?: { id: string; fields?: Record<string, unknown> }[];
     };
     for (const rec of data.records ?? []) {
-      const links = rec.fields?.CLIENTE;
-      const cliente =
-        Array.isArray(links) && links.length && typeof links[0] === "string"
-          ? links[0]
-          : null;
+      const cliente = pickClientId(rec.fields ?? {});
       cache.set(rec.id, cliente);
       if (cliente) out.set(rec.id, cliente);
     }
