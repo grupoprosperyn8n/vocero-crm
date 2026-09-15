@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
 import { CHANNEL_LABEL, isChannel } from "@/lib/channels";
-import { sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
+import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import { ShareContactDialog } from "@/components/contacts/share-contact-dialog";
 import type { ChatAlertShareDto, ChatContactShareDto, ChatMessagePayloadDto } from "@/lib/types";
 import { useEvents } from "@/components/use-events";
@@ -437,7 +437,10 @@ function AlertShareCard({ payload }: { payload: ChatAlertShareDto }) {
   const body = payload.body || payload.cuerpo;
   const type = payload.type || payload.tipo;
   const urgency = payload.urgencyLabel || payload.urgenciaLabel;
-  const url = payload.recordUrl || payload.linkRegistro;
+  const url = alertRecordInterfaceUrl(
+    payload.recordUrl || payload.linkRegistro,
+    payload.clienteRecordId
+  );
   const clienteUrl = payload.clienteRecordId
     ? sgsaClientInterfaceUrl(payload.clienteRecordId)
     : null;

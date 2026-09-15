@@ -23,7 +23,7 @@ import { ShareAlertDialog } from "@/components/alerts/share-alert-dialog";
 import { AssignAlertDialog } from "@/components/alerts/assign-alert-dialog";
 import { AlertRulesDialog } from "@/components/alerts/alert-rules-dialog";
 import { alertDate, alertEstadoLabel, parseAlertDetalle } from "@/lib/alerts";
-import { sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
+import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import type { SgsaAlertDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -500,7 +500,10 @@ export function AlertsClient() {
             {filtered.map((a) => {
               const styles = URG_STYLES[a.urgencia] ?? URG_FALLBACK;
               const open = expanded.has(a.id);
-              const link = safeLink(a.linkRegistro);
+              const link = alertRecordInterfaceUrl(
+                safeLink(a.linkRegistro),
+                a.clienteRecordId
+              );
               const clienteUrl = a.clienteRecordId
                 ? sgsaClientInterfaceUrl(a.clienteRecordId)
                 : null;
