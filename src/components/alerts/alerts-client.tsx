@@ -393,12 +393,11 @@ export function AlertsClient() {
         </button>
       </header>
 
-      <div
-        className={cn(
-          "items-center gap-2 border-b px-4 py-2.5",
-          verEstado ? "hidden" : "flex flex-wrap"
-        )}
-      >
+      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
+        {/* En «Estado» la barra queda solo con Reglas/Estado: los filtros de
+            la lista no aplican a las gráficas (y el botón Estado sigue a mano). */}
+        {!verEstado && (
+          <>
         <div className="relative min-w-[180px] flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-3" />
           <input
@@ -448,6 +447,8 @@ export function AlertsClient() {
             Solo las derivadas a vos
           </span>
         )}
+          </>
+        )}
         <div className="flex-1" />
         {canManage && (
           <button
@@ -473,15 +474,17 @@ export function AlertsClient() {
             Estado
           </button>
         )}
-        <button
-          onClick={() => setHist((h) => !h)}
-          className={cn(
-            "rounded-md border px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
-            hist ? "border-brand bg-brand-tint text-brand-text" : "text-text-2 hover:bg-accent"
-          )}
-        >
-          {hist ? "Ver pendientes" : "Historial"}
-        </button>
+        {!verEstado && (
+          <button
+            onClick={() => setHist((h) => !h)}
+            className={cn(
+              "rounded-md border px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
+              hist ? "border-brand bg-brand-tint text-brand-text" : "text-text-2 hover:bg-accent"
+            )}
+          >
+            {hist ? "Ver pendientes" : "Historial"}
+          </button>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
