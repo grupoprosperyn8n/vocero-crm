@@ -15,6 +15,7 @@ import {
 } from "@dnd-kit/core";
 import {
   AlertTriangle,
+  BarChart3,
   CheckCircle2,
   Circle,
   ExternalLink,
@@ -49,6 +50,7 @@ import { LeadDrawer } from "./lead-drawer";
 import { TaskDialog, type TaskOrigin } from "./task-dialog";
 import { TaskDueChip } from "./entity-tasks";
 import { TaskRequestDialog } from "./task-request-dialog";
+import { TaskStatsPanel } from "./task-stats-panel";
 
 /** Compat: antes el DTO del tablero se llamaba BoardLead. */
 export type BoardLead = PipelineCardDto;
@@ -81,6 +83,8 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
   } | null>(null);
   /** 037b — «pedir tarea» a un empleado (la tarjeta va a su chat). */
   const [pedirTarea, setPedirTarea] = useState(false);
+  /** 037c — el tablero de tareas visto como tablero de gestión (gerente+). */
+  const [verMetricas, setVerMetricas] = useState(false);
   /** 030 — aviso del tablero (p. ej. el sistema no aceptó sincronizar). */
   const [aviso, setAviso] = useState<string | null>(null);
   /** 030 — mover una tarjeta-alerta puede cambiar el estado EN EL SISTEMA. */
@@ -313,6 +317,7 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
                 onClick={() => {
                   setBoard(b.value);
                   setAbiertoId(null);
+                  setVerMetricas(false);
                 }}
                 aria-pressed={board === b.value}
                 className={cn(
@@ -367,6 +372,17 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
               <Send className="h-4 w-4" /> Pedir tarea
             </Button>
           )}
+          {board === "tareas" && seesWholeTeam && (
+            <Button
+              variant="outline"
+              size="sm"
+              aria-pressed={verMetricas}
+              className={cn(verMetricas && "bg-accent")}
+              onClick={() => setVerMetricas((v) => !v)}
+            >
+              <BarChart3 className="h-4 w-4" /> Métricas
+            </Button>
+          )}
           {role !== "member" && (
             <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
               <Settings2 className="h-4 w-4" /> Gestionar etapas
@@ -394,9 +410,15 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
       )}
 
       {/* El tablero se arrastra en horizontal; en el teléfono cada columna
-          se detiene en su sitio (snap) para no quedar a medio camino. */}
-      <div className="flex-1 snap-x snap-mandatory overflow-x-auto p-3 sm:snap-none sm:p-4">
-        <DndContext
+          se detiene en su sitio (snap) para no quedar a medio camino.
+          037c — con «Métricas» activas, esta área muestra el dashboard. */}
+      {board === "tareas" && verMetricas ? (
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+          <TaskStatsPanel />
+        </div>
+      ) : (
+        <div className="flex-1 snap-x snap-mandatory overflow-x-auto p-3 sm:snap-none sm:p-4">
+          <DndContext
           sensors={sensors}
           onDragStart={onDragStart}
           onDragEnd={(e) => void onDragEnd(e)}
@@ -429,8 +451,9 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
               />
             ) : null}
           </DragOverlay>
-        </DndContext>
-      </div>
+          </DndContext>
+        </div>
+      )}
 
       {managing && (
         <StageManager
