@@ -591,7 +591,7 @@ function ReviewCard({
     ? [
         fmtTime(payload.decididoEl),
         payload.via
-          ? `vía ${payload.via === "telegram" ? "Telegram" : "chat interno"}`
+          ? `vía ${payload.via === "telegram" ? "Telegram" : payload.via === "chat" ? "chat interno" : payload.via}`
           : null,
       ]
         .filter(Boolean)
