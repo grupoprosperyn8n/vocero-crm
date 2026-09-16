@@ -254,6 +254,7 @@ suite("033 — revisión de envío SGSA (tarjeta y decisión en el chat interno)
     expect(url).toContain("decision=approve");
     expect(url).toContain(`record_id=${recReview(2)}`);
     expect(url).toContain("k=e2e-hook-key");
+    expect(url).toContain("via=chat");
     vi.unstubAllGlobals();
 
     const rows = await sql<
@@ -337,13 +338,26 @@ suite("033 — revisión de envío SGSA (tarjeta y decisión en el chat interno)
       },
     });
     expect(ok.updated).toBe(true);
-    const msg = await sql<{ payload: { estado: string; detalle: string }; body: string }[]>`
+    const msg = await sql<
+      {
+        payload: {
+          estado: string;
+          detalle: string;
+          via: string | null;
+          decididoPor: string | null;
+        };
+        body: string;
+      }[]
+    >`
       SELECT payload, body FROM chat_message
       WHERE room_id = ${groupId} AND kind = 'review'
         AND payload->>'cliente' = 'CLIENTE GRUPO'`;
     expect(msg[0]!.payload.estado).toBe("enviado");
     expect(msg[0]!.payload.detalle).toContain("audio por WhatsApp");
     expect(msg[0]!.body).toContain("Envío despachado");
+    // El hito del flujo NO pisa quién decidió ni por dónde: sigue «chat».
+    expect(msg[0]!.payload.via).toBe("chat");
+    expect(msg[0]!.payload.decididoPor).toContain("Empleado 033");
 
     // r3 seguía pendiente: la decisión llegó por TELEGRAM → la tarjeta lo refleja.
     const byTg = await service.markReviewStatus({
@@ -357,6 +371,11 @@ suite("033 — revisión de envío SGSA (tarjeta y decisión en el chat interno)
       WHERE organization_id = ${orgId} AND record_id = ${recReview(3)}`;
     expect(r3[0]!.status).toBe("detenido");
     expect(r3[0]!.decided_via).toBe("telegram");
+    const msgTg = await sql<{ payload: { decididoEl: string | null } }[]>`
+      SELECT payload FROM chat_message
+      WHERE room_id = ${groupId} AND kind = 'review'
+        AND payload->>'cliente' = 'CLIENTE TRES'`;
+    expect(msgTg[0]!.payload.decididoEl).toBeTruthy();
   });
 
   it("G — avisos del monitoreo (error de envío / ya procesado): espejo fiel en el chat", async () => {

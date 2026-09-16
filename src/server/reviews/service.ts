@@ -391,7 +391,7 @@ export async function decideReview(input: {
     );
   }
   const decisionParam = input.decision === "approve" ? "approve" : "hold";
-  const url = `${hook.url}?k=${encodeURIComponent(hook.key)}&decision=${decisionParam}&record_id=${encodeURIComponent(input.recordId)}`;
+  const url = `${hook.url}?k=${encodeURIComponent(hook.key)}&decision=${decisionParam}&record_id=${encodeURIComponent(input.recordId)}&via=chat`;
   try {
     const res = await fetch(url, {
       cache: "no-store",
@@ -417,6 +417,19 @@ export async function decideReview(input: {
     .where(eq(schema.user.id, userId))
     .limit(1);
   const decidedPor = byRows[0]?.name ?? "Empleado";
+  const base = (row.payload ?? null) as ChatReviewShareDto | null;
+  // El payload se persiste también en la fila: markReviewStatus lo usa como
+  // base para los hitos posteriores y no debe perder «quién/por dónde».
+  const nextPayload = base
+    ? {
+        ...base,
+        estado: status,
+        detalle: null,
+        decididoPor: decidedPor,
+        decididoEl: now.toISOString(),
+        via: "chat",
+      }
+    : null;
   await db
     .update(schema.reviewRequest)
     .set({
@@ -425,21 +438,14 @@ export async function decideReview(input: {
       decidedAt: now,
       decidedVia: "chat",
       updatedAt: now,
+      ...(nextPayload ? { payload: nextPayload } : {}),
     })
     .where(eq(schema.reviewRequest.id, row.id));
-  const base = (row.payload ?? null) as ChatReviewShareDto | null;
-  if (base) {
+  if (nextPayload) {
     await updateReviewMessage({
       organizationId,
       messageId: row.messageId,
-      payload: {
-        ...base,
-        estado: status,
-        detalle: null,
-        decididoPor: decidedPor,
-        decididoEl: now.toISOString(),
-        via: "chat",
-      },
+      payload: nextPayload,
       body:
         status === "aprobado"
           ? `✅ SGSA | Aprobado — Registro ${input.recordId}`
@@ -497,21 +503,26 @@ export async function markReviewStatus(input: {
     typeof input.update.detalle === "string" && input.update.detalle.trim()
       ? input.update.detalle.trim().slice(0, 300)
       : null;
-  const via =
+  // La `via` solo se acepta al aplicar la DECISIÓN sobre una fila pendiente:
+  // en hitos posteriores (enviado/trabado) se conserva la de la decisión para
+  // no pisar «quién decidió y por dónde».
+  const cleanVia =
     typeof input.update.via === "string" && input.update.via.trim()
       ? input.update.via.trim().slice(0, 20)
-      : base.via;
+      : null;
+  const deciding =
+    row.status === "pendiente" &&
+    (input.update.estado === "aprobado" || input.update.estado === "detenido");
+  const via = deciding ? (cleanVia ?? "telegram") : base.via;
   const payload: ChatReviewShareDto = {
     ...base,
     estado: input.update.estado,
     detalle,
     via,
+    decididoEl: deciding ? new Date().toISOString() : base.decididoEl,
   };
   const patch: Record<string, unknown> = { updatedAt: new Date() };
-  if (
-    row.status === "pendiente" &&
-    (input.update.estado === "aprobado" || input.update.estado === "detenido")
-  ) {
+  if (deciding) {
     patch.status = input.update.estado;
     patch.decidedVia = via ?? "telegram";
     patch.decidedAt = new Date();
