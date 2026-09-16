@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { avatarUrlsForContacts } from "@/server/avatars";
 import type { PipelineBoard, PipelineCardDto, StageDto } from "@/lib/types";
 
 /**
@@ -50,6 +51,8 @@ export async function listBoardCards(input: {
         id: schema.contact.id,
         name: schema.contact.name,
         phone: schema.contact.phone,
+        channel: schema.contact.channel,
+        waIdentity: schema.contact.waIdentity,
       },
       ownerName: schema.user.name,
     })
@@ -98,6 +101,24 @@ export async function listBoardCards(input: {
     }
   }
 
+  // 036 — foto de cada contacto: misma regla que la bandeja (cliente del
+  // sistema por teléfono, o foto real de Telegram); sin foto, la UI cae a
+  // las iniciales. Nunca se inventa una cara.
+  const avatares = await avatarUrlsForContacts(
+    rows.flatMap((r) =>
+      r.contact?.id
+        ? [
+            {
+              id: r.contact.id,
+              channel: r.contact.channel,
+              waIdentity: r.contact.waIdentity,
+              phone: r.contact.phone,
+            },
+          ]
+        : []
+    )
+  );
+
   return {
     stages: stageRows.map((s) => ({
       id: s.id,
@@ -125,7 +146,12 @@ export async function listBoardCards(input: {
         currency: l.currency,
         priority: l.priority,
         contact: r.contact?.id
-          ? { id: r.contact.id, name: r.contact.name, phone: r.contact.phone }
+          ? {
+              id: r.contact.id,
+              name: r.contact.name,
+              phone: r.contact.phone,
+              avatarUrl: avatares.get(r.contact.id) ?? null,
+            }
           : null,
         conversationId: l.contactId
           ? convByContact.get(l.contactId) ?? null

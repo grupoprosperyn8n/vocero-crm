@@ -790,6 +790,7 @@ function LeadCard({
           name={tituloDeTarjeta(lead)}
           seed={lead.contact?.id ?? lead.id}
           size="sm"
+          src={lead.contact?.avatarUrl ?? null}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">

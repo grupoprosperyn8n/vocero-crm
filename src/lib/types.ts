@@ -145,8 +145,16 @@ export type PipelineCardDto = {
   amountCents: number | null;
   currency: string | null;
   priority: PriorityValue | null;
-  /** Contacto del CRM; NULL si la tarjeta es un cliente del sistema o alerta. */
-  contact: { id: string; name: string; phone: string | null } | null;
+  /**
+   * Contacto del CRM; NULL si la tarjeta es un cliente del sistema o alerta.
+   * `avatarUrl` (036): foto si la hay (/api/avatars/...), null → iniciales.
+   */
+  contact: {
+    id: string;
+    name: string;
+    phone: string | null;
+    avatarUrl?: string | null;
+  } | null;
   conversationId: string | null;
 };
 

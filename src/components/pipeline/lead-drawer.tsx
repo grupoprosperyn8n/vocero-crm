@@ -167,7 +167,12 @@ export function LeadDrawer({
           {/* Quién / de dónde viene */}
           <section className="border-b p-4">
             <div className="flex items-center gap-3">
-              <ContactAvatar name={titulo} seed={lead.contact?.id ?? lead.id} size="md" />
+              <ContactAvatar
+                name={titulo}
+                seed={lead.contact?.id ?? lead.id}
+                size="md"
+                src={lead.contact?.avatarUrl ?? null}
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-[650]">{titulo}</p>
                 <p className="text-xs text-text-3">
