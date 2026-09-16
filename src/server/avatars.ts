@@ -45,7 +45,14 @@ const FOTO_TTL_MS = 60 * 60 * 1000;
 /** Telegram no expone URL de origen: se revalida seguido. Sin foto: menos. */
 const TG_FOTO_TTL_MS = 5 * 60 * 1000;
 const TG_SIN_TTL_MS = 3 * 60 * 1000;
-const PHOTO_FIELD = "FOTO DE PERFIL";
+/**
+ * OJO con los nombres: EMPLEADOS usa «FOTO DE PERFIL» y CLIENTES usa
+ * «FOTO PERFIL» (sin «DE») — son campos distintos en tablas distintas.
+ * Mezclarlos devuelve 422 UNKNOWN_FIELD_NAME y deja el índice vacío (bug
+ * detectado en prod: 035 usaba el nombre de EMPLEADOS contra CLIENTES).
+ */
+const PHOTO_FIELD_EMPLEADOS = "FOTO DE PERFIL";
+const PHOTO_FIELD_CLIENTES = "FOTO PERFIL";
 
 type Foto = { data: Buffer; type: string };
 
@@ -126,7 +133,7 @@ async function leerIndice(forzar = false): Promise<IndiceEmpleados> {
       "ID_UNICO_EMPLEADO",
       "NOMBRE Y APELLIDO",
       "EMAIL",
-      PHOTO_FIELD,
+      PHOTO_FIELD_EMPLEADOS,
     ]) {
       params.append("fields[]", f);
     }
@@ -149,7 +156,7 @@ async function leerIndice(forzar = false): Promise<IndiceEmpleados> {
       // 035 — fichas sin email cargado: el nombre desempata (mismo formato
       // «APELLIDO NOMBRE» en las dos puntas).
       const nombre = normNombre(String(f["NOMBRE Y APELLIDO"] ?? ""));
-      const url = fotoDeAdjunto(f[PHOTO_FIELD]);
+      const url = fotoDeAdjunto(f[PHOTO_FIELD_EMPLEADOS]);
       if (!idUnico || !url) continue;
       const entry: EmpleadoFoto = { idUnico, recId: r.id, url };
       idx.porIdUnico.set(idUnico, entry);
@@ -221,12 +228,12 @@ async function leerIndiceClientes(forzar = false): Promise<IndiceClientes> {
     do {
       const params = new URLSearchParams();
       params.set("pageSize", "100");
-      params.set("filterByFormula", `NOT({${PHOTO_FIELD}} = '')`);
+      params.set("filterByFormula", `NOT({${PHOTO_FIELD_CLIENTES}} = '')`);
       for (const f of [
         "ID_UNICO_CLIENTE",
         "TELEFONO NORMALIZADO",
         "TELEFONO",
-        PHOTO_FIELD,
+        PHOTO_FIELD_CLIENTES,
       ]) {
         params.append("fields[]", f);
       }
@@ -246,7 +253,7 @@ async function leerIndiceClientes(forzar = false): Promise<IndiceClientes> {
       };
       for (const r of data.records ?? []) {
         const f = r.fields;
-        const url = fotoDeAdjunto(f[PHOTO_FIELD]);
+        const url = fotoDeAdjunto(f[PHOTO_FIELD_CLIENTES]);
         if (!url) continue;
         const entry: ClienteFoto = { recId: r.id, url };
         idx.porRec.set(r.id.toLowerCase(), entry);
