@@ -410,6 +410,32 @@ suite("033 — revisión de envío SGSA (tarjeta y decisión en el chat interno)
     expect(msg[0]!.body.includes("\n")).toBe(true);
   });
 
+  it("C2 — con regla de empleado: la tarjeta cae al DM del usuario de sistema con ese empleado", async () => {
+    await sql`UPDATE alert_assignment_rule
+      SET target_kind = 'employee', target_id = ${uids.emp}, target_name = ${`Empleado 033 ${tag}`}, updated_at = now()
+      WHERE id = ${ruleId}`;
+    const res = await service.ingestReviewRequest({
+      organizationId: orgId,
+      review: mkReview(5, "CLIENTE EMPLEADO"),
+    });
+    expect(res.duplicate).toBe(false);
+    createdRooms.push(res.roomId);
+
+    const rooms = await sql<{ kind: string }[]>`
+      SELECT kind FROM chat_room WHERE id = ${res.roomId}`;
+    expect(rooms[0]!.kind).toBe("dm");
+    const members = await sql<{ user_id: string }[]>`
+      SELECT user_id FROM chat_room_member WHERE room_id = ${res.roomId}`;
+    expect(members.map((m) => m.user_id).sort()).toEqual(
+      [uids.emp, systemUserId].sort()
+    );
+
+    // Restaurar la regla de grupo (el test de avisos espera el grupo).
+    await sql`UPDATE alert_assignment_rule
+      SET target_kind = 'group', target_id = ${groupId}, target_name = ${`Grupo E2E 033 ${tag}`}, updated_at = now()
+      WHERE id = ${ruleId}`;
+  });
+
   it("H — registro desconocido: el estado del flujo no inventa filas", async () => {
     const res = await service.markReviewStatus({
       organizationId: orgId,

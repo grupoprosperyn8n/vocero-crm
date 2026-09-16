@@ -23,6 +23,7 @@ import { ShareAlertDialog } from "@/components/alerts/share-alert-dialog";
 import { AssignAlertDialog } from "@/components/alerts/assign-alert-dialog";
 import { AlertRulesDialog } from "@/components/alerts/alert-rules-dialog";
 import { AlertStatsPanel } from "@/components/alerts/alert-stats-panel";
+import { ReviewStatsPanel } from "@/components/reviews/review-stats-panel";
 import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
 import { alertDate, alertEstadoLabel, isLiveAssignmentStatus, parseAlertDetalle } from "@/lib/alerts";
 import { REVIEW_ENVIO_ALERT_TYPE } from "@/lib/reviews";
@@ -480,7 +481,7 @@ export function AlertsClient() {
         {canManage && (
           <button
             onClick={() => setRulesOpen(true)}
-            title="Reglas por tipo de alerta: quién ve y gestiona cada tipo"
+            title="Reglas por tipo de alerta: a quién le llega cada tipo (un destino: empleado o grupo)"
             className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent"
           >
             <Settings2 className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -518,7 +519,10 @@ export function AlertsClient() {
         {/* 030 — Estado general (admin, propietario y gerente): el MISMO
             tablero de situación para los tres, con filtro por empleado. */}
         {verEstado ? (
-          <AlertStatsPanel />
+          <div className="space-y-8">
+            <AlertStatsPanel />
+            <ReviewStatsPanel />
+          </div>
         ) : (
           <>
         {error && (

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Hash, Loader2, Search, Settings2, X } from "lucide-react";
+import { REVIEW_ENVIO_ALERT_LABEL, REVIEW_ENVIO_ALERT_TYPE } from "@/lib/reviews";
 import { cn } from "@/lib/utils";
 
 type Rule = {
@@ -69,13 +70,17 @@ export function AlertRulesDialog({
 
   const knownTypes = Array.from(new Set([...alertTypes, ...rules.map((r) => r.alertType)])).sort();
   const total = selEmps.size + selGroups.size;
-  const toggle = (set: (fn: (prev: Set<string>) => Set<string>) => void, id: string) =>
-    set((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  // 033 — un destino por tipo (lo exige el backend): elegir uno reemplaza al anterior.
+  const pickEmployee = (id: string) => {
+    setSelEmps((prev) => (prev.has(id) ? new Set() : new Set([id])));
+    setSelGroups(new Set());
+  };
+  const pickGroup = (id: string) => {
+    setSelGroups((prev) => (prev.has(id) ? new Set() : new Set([id])));
+    setSelEmps(new Set());
+  };
+  const typeDisplay =
+    alertType === REVIEW_ENVIO_ALERT_TYPE ? REVIEW_ENVIO_ALERT_LABEL : alertType;
 
   async function save() {
     setSaving(true);
@@ -92,7 +97,7 @@ export function AlertRulesDialog({
         return;
       }
       setRules(data.rules ?? []);
-      setDone(total ? `Regla guardada para ${alertType}.` : `Regla vaciada para ${alertType}.`);
+      setDone(total ? `Regla guardada para ${typeDisplay}.` : `Regla vaciada para ${typeDisplay}.`);
       onSaved?.();
     } finally {
       setSaving(false);
@@ -107,7 +112,7 @@ export function AlertRulesDialog({
             <Settings2 className="h-4 w-4 text-brand" strokeWidth={1.9} />
             <div>
               <p className="text-[13.5px] font-bold">Reglas por tipo de alerta</p>
-              <p className="text-[11.5px] text-text-3">Define quién ve y gestiona cada tipo.</p>
+              <p className="text-[11.5px] text-text-3">Un destino por tipo: quién ve y gestiona esas alertas.</p>
             </div>
           </div>
           <button onClick={onClose} aria-label="Cerrar" className="rounded-md p-1.5 text-text-3 hover:bg-accent hover:text-foreground">
@@ -119,9 +124,16 @@ export function AlertRulesDialog({
           <label className="block text-[12px] font-semibold text-text-2">Tipo de alerta</label>
           <select value={alertType} onChange={(e) => setAlertType(e.target.value)} className="h-9 w-full rounded-md border bg-card px-2.5 text-[13px] outline-none focus-visible:ring-1 focus-visible:ring-ring">
             {knownTypes.map((t) => (
-              <option key={t} value={t}>{t}</option>
+              <option key={t} value={t}>
+                {t === REVIEW_ENVIO_ALERT_TYPE ? `${REVIEW_ENVIO_ALERT_LABEL} — ${t}` : t}
+              </option>
             ))}
           </select>
+          {alertType === REVIEW_ENVIO_ALERT_TYPE && (
+            <p className="text-[11.5px] text-text-3">
+              Las tarjetas de aprobación de siniestros del chat interno llegan a este destino. Sin regla: al Propietario.
+            </p>
+          )}
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-3" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar empleado..." className="h-9 w-full rounded-md border bg-card py-1.5 pl-8 pr-2.5 text-[13px] outline-none placeholder:text-text-3 focus-visible:ring-1 focus-visible:ring-ring" />
@@ -136,7 +148,7 @@ export function AlertRulesDialog({
               <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-text-3">Empleados</p>
               <div className="space-y-1.5">
                 {filteredEmps.map((e) => (
-                  <button key={e.airtableId} type="button" onClick={() => toggle(setSelEmps, e.airtableId)} className={cn("flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 text-left text-[12.5px]", selEmps.has(e.airtableId) ? "border-brand bg-brand-tint" : "hover:bg-accent")}>
+                  <button key={e.airtableId} type="button" onClick={() => pickEmployee(e.airtableId)} className={cn("flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 text-left text-[12.5px]", selEmps.has(e.airtableId) ? "border-brand bg-brand-tint" : "hover:bg-accent")}>
                     <span className={cn("flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold", selEmps.has(e.airtableId) ? "border-brand bg-brand text-brand-fg" : "border-border-strong")}>{selEmps.has(e.airtableId) ? "✓" : ""}</span>
                     <span className="truncate">{e.nombre}</span>
                   </button>
@@ -145,7 +157,7 @@ export function AlertRulesDialog({
               <p className="mb-1.5 mt-4 text-[11px] font-bold uppercase tracking-wide text-text-3">Grupos</p>
               <div className="space-y-1.5">
                 {targets.groups.map((g) => (
-                  <button key={g.id} type="button" onClick={() => toggle(setSelGroups, g.id)} className={cn("flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 text-left text-[12.5px]", selGroups.has(g.id) ? "border-brand bg-brand-tint" : "hover:bg-accent")}>
+                  <button key={g.id} type="button" onClick={() => pickGroup(g.id)} className={cn("flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 text-left text-[12.5px]", selGroups.has(g.id) ? "border-brand bg-brand-tint" : "hover:bg-accent")}>
                     <span className={cn("flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold", selGroups.has(g.id) ? "border-brand bg-brand text-brand-fg" : "border-border-strong")}>{selGroups.has(g.id) ? "✓" : ""}</span>
                     <Hash className="h-3.5 w-3.5 shrink-0 text-text-3" strokeWidth={1.9} />
                     <span className="truncate">{g.nombre}</span>
@@ -157,7 +169,7 @@ export function AlertRulesDialog({
         </div>
 
         <footer className="flex items-center gap-2 border-t px-4 py-3">
-          {error ? <p className="mr-auto text-[12px] text-danger-text">{error}</p> : done ? <p className="mr-auto inline-flex items-center gap-1 text-[12px] text-success-text"><CheckCircle2 className="h-3.5 w-3.5" />{done}</p> : <p className="mr-auto text-[12px] text-text-3">{total ? `${total} destino${total === 1 ? "" : "s"}` : "Sin destinos: este tipo queda sin asignación automática"}</p>}
+          {error ? <p className="mr-auto text-[12px] text-danger-text">{error}</p> : done ? <p className="mr-auto inline-flex items-center gap-1 text-[12px] text-success-text"><CheckCircle2 className="h-3.5 w-3.5" />{done}</p> : <p className="mr-auto text-[12px] text-text-3">{total ? `${total} destino${total === 1 ? "" : "s"}` : alertType === REVIEW_ENVIO_ALERT_TYPE ? "Sin destino: las revisiones de siniestro caen al Propietario" : "Sin destinos: este tipo queda sin asignación automática"}</p>}
           <button onClick={() => void save()} disabled={saving} className="rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-fg hover:opacity-90 disabled:opacity-40">
             {saving ? "Guardando…" : "Guardar regla"}
           </button>

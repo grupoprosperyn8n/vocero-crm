@@ -60,6 +60,7 @@ suite("chat interno — integración con copia de la BD real", () => {
       SELECT m.user_id, u.name FROM member m
       JOIN "user" u ON u.id = m.user_id
       WHERE m.organization_id = ${orgId} AND m.role = 'member'
+        AND u.email NOT LIKE '%@e2e.test' AND u.email NOT LIKE '%@test.local'
       ORDER BY u.name LIMIT 1`;
     memberId = memberRows[0]!.user_id;
     memberName = memberRows[0]!.name;
