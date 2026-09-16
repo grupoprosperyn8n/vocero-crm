@@ -4,6 +4,7 @@ import {
   ChatError,
   deleteGroupRoom,
   setRoomArchivedForUser,
+  setRoomPinnedForUser,
   updateGroupRoom,
 } from "@/server/internal/chat";
 
@@ -20,6 +21,8 @@ const patchSchema = z.object({
   unpauseUserIds: z.array(z.string().trim().min(1)).max(50).optional(),
   /** 026 — archivar la sala SOLO para mí (cualquier miembro). */
   archived: z.boolean().optional(),
+  /** 034 — fijar la sala arriba de MI lista (cualquier miembro). */
+  pinned: z.boolean().optional(),
 });
 
 /**
@@ -39,6 +42,22 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
         roomId: id,
         userId: session.userId,
         archived: body.data.archived,
+      });
+      return Response.json({ ok: true, ...r });
+    } catch (err) {
+      if (err instanceof ChatError) return apiError(err.status, err.code, err.message);
+      throw err;
+    }
+  }
+
+  // 034 — fijar/desfijar MI vista de la sala (no requiere ser admin).
+  if (body.data.pinned !== undefined) {
+    try {
+      const r = await setRoomPinnedForUser({
+        organizationId: session.organizationId,
+        roomId: id,
+        userId: session.userId,
+        pinned: body.data.pinned,
       });
       return Response.json({ ok: true, ...r });
     } catch (err) {

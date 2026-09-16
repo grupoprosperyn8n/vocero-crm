@@ -44,6 +44,8 @@ const prefixes = {
   staffOfficeDay: "ofd",
   // 026 — bandeja por usuario
   conversationArchive: "carch",
+  // 034 — pin personal (chat interno + bandeja del CRM)
+  conversationPin: "cpin",
   // 028 — reglas/derivación de alertas
   alertAssignmentRule: "alrule",
   alertAssignment: "alassn",

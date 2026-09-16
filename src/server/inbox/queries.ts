@@ -94,6 +94,10 @@ export async function listConversations(
       },
       preview: previewSql,
       stageName: stageSql,
+      // 034 — ¿la tengo fijada? (pin personal; sin viewer no hay pin).
+      pinned: viewer
+        ? sql<boolean>`exists (select 1 from conversation_pin cp where cp.conversation_id = ${schema.conversation.id} and cp.user_id = ${viewer.userId})`
+        : sql<boolean>`false`,
     })
     .from(schema.conversation)
     .innerJoin(
@@ -124,7 +128,7 @@ export async function listConversations(
           )
     );
 
-  return rows.map((r) => {
+  const dtos = rows.map((r) => {
     const asg = r.assignee;
     return serializeConversation(
       r.conversation,
@@ -132,9 +136,16 @@ export async function listConversations(
       asg?.id ? { id: asg.id, name: asg.name } : null,
       r.preview,
       r.stageName,
-      r.closer?.name ?? null
+      r.closer?.name ?? null,
+      r.pinned === true
     );
   });
+  // 034 — mis fijadas van arriba (sort estable: adentro se conserva el orden).
+  // En «Cerradas» (archivo GLOBAL, 2A) no aplica: manda la fecha de cierre.
+  if (status !== "closed") {
+    dtos.sort((a, b) => Number(b.pinned) - Number(a.pinned));
+  }
+  return dtos;
 }
 
 /** 2A: total de conversaciones en un estado, para los contadores de las tabs. */
@@ -211,7 +222,9 @@ export function serializeConversation(
   assignee: { id: string; name: string } | null = null,
   preview: string | null = null,
   stageName: string | null = null,
-  closedByName: string | null = null
+  closedByName: string | null = null,
+  /** 034 — pin personal (lo resuelve el caller por viewer). */
+  pinned: boolean = false
 ): ConversationDto {
   return {
     id: c.id,
@@ -232,6 +245,7 @@ export function serializeConversation(
     closedByName,
     lastInboundAt: c.lastInboundAt?.toISOString() ?? null,
     lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
+    pinned,
     unreadCount: c.unreadCount,
     windowOpen: isWindowOpen(c.lastInboundAt),
     windowRemainingMs: windowRemainingMs(c.lastInboundAt),
@@ -327,4 +341,52 @@ export async function setConversationArchived(input: {
       );
   }
   return { archived: input.archived };
+}
+
+/**
+ * 034 — Fija/desfija una conversación SOLO para mí (pedido Diego: «se deben de
+ * poder pinear y despinear aparte de archivar»). Personal e independiente del
+ * archivo y del cierre. Devuelve null si la conversación no existe en la org.
+ */
+export async function setConversationPinned(input: {
+  organizationId: string;
+  conversationId: string;
+  userId: string;
+  pinned: boolean;
+}): Promise<{ pinned: boolean } | null> {
+  const db = getDb();
+  const conv = await db
+    .select({ id: schema.conversation.id })
+    .from(schema.conversation)
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        input.organizationId,
+        eq(schema.conversation.id, input.conversationId)
+      )
+    )
+    .limit(1);
+  if (!conv[0]) return null;
+  if (input.pinned) {
+    await db
+      .insert(schema.conversationPin)
+      .values({
+        id: newId("conversationPin"),
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        userId: input.userId,
+      })
+      .onConflictDoNothing();
+  } else {
+    await db
+      .delete(schema.conversationPin)
+      .where(
+        and(
+          eq(schema.conversationPin.organizationId, input.organizationId),
+          eq(schema.conversationPin.conversationId, input.conversationId),
+          eq(schema.conversationPin.userId, input.userId)
+        )
+      );
+  }
+  return { pinned: input.pinned };
 }

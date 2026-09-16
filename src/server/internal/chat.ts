@@ -275,6 +275,8 @@ export type ChatRoomSummary = {
   createdByName: string | null;
   /** 026 — archivada SOLO para mí (bandeja personal); a los demás no los toca. */
   archived: boolean;
+  /** 034 — fijada arriba de MI lista (personal, aparte del archivo). */
+  pinned: boolean;
   members: ChatMemberView[];
 };
 
@@ -335,6 +337,7 @@ export async function listRoomsForUser(
     .select({
       roomId: schema.chatRoomMember.roomId,
       archivedAt: schema.chatRoomMember.archivedAt,
+      pinnedAt: schema.chatRoomMember.pinnedAt,
     })
     .from(schema.chatRoomMember)
     .where(
@@ -350,6 +353,10 @@ export async function listRoomsForUser(
   // 026 — archivo personal: mi fila de membresía guarda si la archivé.
   const archivedByRoom = new Map(
     myRows.map((r) => [r.roomId, Boolean(r.archivedAt)])
+  );
+  // 034 — pin personal: misma fila, campo aparte (independiente del archivo).
+  const pinnedByRoom = new Map(
+    myRows.map((r) => [r.roomId, Boolean(r.pinnedAt)])
   );
 
   const roomRows = await db
@@ -478,11 +485,14 @@ export async function listRoomsForUser(
       createdAt: room.createdAt.toISOString(),
       createdByName,
       archived: archivedByRoom.get(room.id) ?? false,
+      pinned: pinnedByRoom.get(room.id) ?? false,
       members,
     };
   });
 
   summaries.sort((a, b) => {
+    // 034 — fijadas primero; adentro se conserva el orden por último mensaje.
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     const at = a.lastMessage?.createdAt ?? a.updatedAt;
     const bt = b.lastMessage?.createdAt ?? b.updatedAt;
     return bt.localeCompare(at);
@@ -913,6 +923,40 @@ export async function setRoomArchivedForUser(input: {
     .set({ archivedAt: input.archived ? new Date() : null })
     .where(eq(schema.chatRoomMember.id, mine.id));
   return { archived: input.archived };
+}
+
+/**
+ * 034 — Fija la sala arriba de MI lista (pedido Diego: «se deben de poder
+ * pinear y despinear... los grupos también»). Personal y aparte del archivo:
+ * archivada Y fijada = queda fijada dentro de mis archivadas.
+ */
+export async function setRoomPinnedForUser(input: {
+  organizationId: string;
+  roomId: string;
+  userId: string;
+  pinned: boolean;
+}): Promise<{ pinned: boolean }> {
+  const db = getDb();
+  const rows = await db
+    .select({ id: schema.chatRoomMember.id })
+    .from(schema.chatRoomMember)
+    .where(
+      and(
+        eq(schema.chatRoomMember.organizationId, input.organizationId),
+        eq(schema.chatRoomMember.roomId, input.roomId),
+        eq(schema.chatRoomMember.userId, input.userId)
+      )
+    )
+    .limit(1);
+  const mine = rows[0];
+  if (!mine) {
+    throw new ChatError(404, "not_found", "No participás de esta sala");
+  }
+  await db
+    .update(schema.chatRoomMember)
+    .set({ pinnedAt: input.pinned ? new Date() : null })
+    .where(eq(schema.chatRoomMember.id, mine.id));
+  return { pinned: input.pinned };
 }
 
 /**

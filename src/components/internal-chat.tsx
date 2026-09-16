@@ -19,6 +19,8 @@ import {
   MessageSquareText,
   PauseCircle,
   Pencil,
+  Pin,
+  PinOff,
   PlayCircle,
   Plus,
   Search,
@@ -89,6 +91,8 @@ type ChatRoom = {
   createdByName: string | null;
   /** 026 — archivada SOLO para mí (bandeja personal persistente). */
   archived: boolean;
+  /** 034 — fijada arriba de MI lista (personal, aparte del archivo). */
+  pinned: boolean;
   members: {
     userId: string;
     name: string;
@@ -1271,10 +1275,14 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
 
   // 026 — activas vs archivadas: la sala archivada sale de MI lista (a los
   // demás no los toca) y se recupera desde la pestaña «Archivadas».
-  const visibleRooms = useMemo(
-    () => filteredRooms.filter((r) => (showArchived ? r.archived : !r.archived)),
-    [filteredRooms, showArchived]
-  );
+  // 034 — mis fijadas van arriba (en las dos pestañas); adentro se conserva
+  // el orden por último mensaje.
+  const visibleRooms = useMemo(() => {
+    const list = filteredRooms.filter((r) =>
+      showArchived ? r.archived : !r.archived
+    );
+    return [...list].sort((a, b) => Number(b.pinned) - Number(a.pinned));
+  }, [filteredRooms, showArchived]);
   const archivedCount = useMemo(
     () => rooms.filter((r) => r.archived).length,
     [rooms]
@@ -1301,6 +1309,29 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
     }
     setRooms((prev) =>
       prev.map((r) => (r.id === roomId ? { ...r, archived } : r))
+    );
+  }, []);
+
+  /**
+   * 034 — Fija/desfija la sala arriba de MI lista (pedido Diego: «se deben de
+   * poder pinear y despinear... los grupos también»). Personal, aparte del
+   * archivo.
+   */
+  const pinRoom = useCallback(async (roomId: string, pinned: boolean) => {
+    const res = await fetch(`/api/internal/rooms/${roomId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned }),
+    }).catch(() => null);
+    const data = (await res?.json().catch(() => null)) as
+      | { ok?: boolean; error?: { message?: string } }
+      | null;
+    if (!res?.ok || !data?.ok) {
+      setFormError(data?.error?.message ?? "No se pudo fijar la conversación");
+      return;
+    }
+    setRooms((prev) =>
+      prev.map((r) => (r.id === roomId ? { ...r, pinned } : r))
     );
   }, []);
 
@@ -1526,8 +1557,17 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-[13.5px] font-semibold">
-                      {room.displayName}
+                    <span className="flex min-w-0 items-center gap-1">
+                      {room.pinned && (
+                        <Pin
+                          className="h-3 w-3 shrink-0 text-brand-text"
+                          strokeWidth={2}
+                          aria-label="Fijada"
+                        />
+                      )}
+                      <span className="truncate text-[13.5px] font-semibold">
+                        {room.displayName}
+                      </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-1.5">
                       {last && (
@@ -1535,6 +1575,40 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                           {fmtListTime(last.createdAt)}
                         </span>
                       )}
+                      {/* 034 — fijar/desfijar SOLO para mí (aparte del archivo) */}
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        title={
+                          room.pinned
+                            ? "Desfijar"
+                            : "Fijar arriba (solo para mí)"
+                        }
+                        aria-label={room.pinned ? "Desfijar" : "Fijar"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void pinRoom(room.id, !room.pinned);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void pinRoom(room.id, !room.pinned);
+                          }
+                        }}
+                        className={cn(
+                          "rounded p-0.5 transition-opacity hover:bg-accent focus:opacity-100",
+                          room.pinned
+                            ? "text-brand-text opacity-100 hover:text-text-1"
+                            : "text-text-3 opacity-0 hover:text-text-1 group-hover/row:opacity-100"
+                        )}
+                      >
+                        {room.pinned ? (
+                          <PinOff className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        ) : (
+                          <Pin className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        )}
+                      </span>
                       {/* 026 — archivar/desarchivar SOLO para mí */}
                       <span
                         role="button"

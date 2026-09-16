@@ -174,6 +174,35 @@ export function InboxClient({
     [refetchConversations]
   );
 
+  /**
+   * 034 — Fija/desfija la conversación SOLO para mí (pedido Diego: «se deben
+   * de poder pinear y despinear aparte de archivar»). La fila sube a lo alto
+   * de mi bandeja; para los demás no cambia nada.
+   */
+  const pinConversation = useCallback(
+    async (id: string, pinned: boolean) => {
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pinned }),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as
+        | { ok?: boolean }
+        | null;
+      if (!res?.ok || !data?.ok) {
+        setClosureNotice({
+          kind: "failed",
+          text: pinned
+            ? "No se pudo fijar la conversación"
+            : "No se pudo desfijar la conversación",
+        });
+        return;
+      }
+      void refetchConversations();
+    },
+    [refetchConversations]
+  );
+
   const refetchMessages = useCallback(async (conversationId: string) => {
     const res = await fetch(
       `/api/conversations/${conversationId}/messages`
@@ -511,6 +540,7 @@ export function InboxClient({
           assigneeFilter={assigneeFilter}
           onAssigneeFilterChange={setAssigneeFilter}
           onArchive={(id, archived) => void archiveConversation(id, archived)}
+          onPin={(id, pinned) => void pinConversation(id, pinned)}
         />
       </section>
 

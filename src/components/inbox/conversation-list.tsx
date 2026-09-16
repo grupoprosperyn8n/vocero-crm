@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, CheckCheck, Plus, Search, Sparkles, UserRound, X } from "lucide-react";
+import { Archive, ArchiveRestore, CheckCheck, Pin, PinOff, Plus, Search, Sparkles, UserRound, X } from "lucide-react";
 import type { ConversationDto } from "@/lib/types";
 import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
 import { ChannelBadge } from "@/components/channel-badge";
@@ -90,6 +90,7 @@ export function ConversationList({
   assigneeFilter,
   onAssigneeFilterChange,
   onArchive,
+  onPin,
 }: {
   conversations: ConversationDto[] | null;
   /** Canales encendidos en esta instancia (ADR-001). */
@@ -113,6 +114,8 @@ export function ConversationList({
   onAssigneeFilterChange: (v: string) => void;
   /** 026 — archivar/desarchivar MI vista de una conversación. */
   onArchive: (id: string, archived: boolean) => void;
+  /** 034 — fijar/desfijar MI vista (aparte del archivo). */
+  onPin: (id: string, pinned: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "unread">("all");
@@ -524,6 +527,13 @@ export function ConversationList({
                       <span className="flex items-center justify-between gap-2">
                         <span className="flex min-w-0 items-center gap-1.5">
                           {multiChannel && <ChannelBadge channel={c.channel} />}
+                          {c.pinned && (
+                            <Pin
+                              className="h-3 w-3 shrink-0 text-brand-text"
+                              strokeWidth={2}
+                              aria-label="Fijada"
+                            />
+                          )}
                           <span
                             className={cn(
                               "truncate text-sm",
@@ -548,6 +558,43 @@ export function ConversationList({
                               ? `Cerrada ${formatTime(c.closedAt)}`
                               : formatTime(c.lastMessageAt)}
                           </span>
+                          {/* 034 — fijar/desfijar SOLO para mí: la fila sube a
+                              lo alto de mi lista (sigue viva para el resto). */}
+                          {!closed && (
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              title={
+                                c.pinned
+                                  ? "Desfijar"
+                                  : "Fijar arriba (solo para mí)"
+                              }
+                              aria-label={c.pinned ? "Desfijar" : "Fijar"}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onPin(c.id, !c.pinned);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  onPin(c.id, !c.pinned);
+                                }
+                              }}
+                              className={cn(
+                                "rounded p-0.5 transition-opacity hover:bg-accent focus:opacity-100",
+                                c.pinned
+                                  ? "text-brand-text opacity-100 hover:text-foreground"
+                                  : "text-text-3 opacity-0 hover:text-foreground group-hover/row:opacity-100"
+                              )}
+                            >
+                              {c.pinned ? (
+                                <PinOff className="h-3.5 w-3.5" strokeWidth={1.8} />
+                              ) : (
+                                <Pin className="h-3.5 w-3.5" strokeWidth={1.8} />
+                              )}
+                            </span>
+                          )}
                           {/* 026 — archivar/desarchivar SOLO para mí (la
                               conversación sigue viva para el resto). */}
                           {!closed && (

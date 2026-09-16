@@ -24,6 +24,8 @@ export type ConversationDto = {
   closedByName: string | null;
   lastInboundAt: string | null;
   lastMessageAt: string | null;
+  /** 034 — fijada arriba de MI bandeja (personal; independiente del archivo). */
+  pinned: boolean;
   unreadCount: number;
   windowOpen: boolean;
   windowRemainingMs: number;

@@ -1362,6 +1362,8 @@ export const chatRoomMember = pgTable(
     }),
     /** 026 — archivo PERSONAL de la sala: me la saco de mi lista sin salir. */
     archivedAt: timestamp("archived_at"),
+    /** 034 — pin PERSONAL de la sala: fijada arriba de MI lista. */
+    pinnedAt: timestamp("pinned_at"),
   },
   (t) => [
     uniqueIndex("chat_room_member_uq").on(t.roomId, t.userId),
@@ -1392,6 +1394,33 @@ export const conversationArchive = pgTable(
   (t) => [
     uniqueIndex("conversation_archive_uq").on(t.conversationId, t.userId),
     index("conversation_archive_user_idx").on(t.organizationId, t.userId),
+  ]
+);
+
+/**
+ * 034 — pin PERSONAL de una conversación del CRM (pedido Diego: «se deben de
+ * poder pinear y despinear aparte de archivar»). Fijar es independiente de
+ * archivar y del cierre: la fila sube a lo alto de MI bandeja (o de MIS
+ * archivadas) sin tocar la vista de los demás.
+ */
+export const conversationPin = pgTable(
+  "conversation_pin",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    pinnedAt: timestamp("pinned_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("conversation_pin_uq").on(t.conversationId, t.userId),
+    index("conversation_pin_user_idx").on(t.organizationId, t.userId),
   ]
 );
 

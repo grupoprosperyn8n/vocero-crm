@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { publish } from "@/server/events/bus";
-import { serializeConversation, getConversation, setConversationArchived, updateConversation } from "@/server/inbox/queries";
+import { serializeConversation, getConversation, setConversationArchived, setConversationPinned, updateConversation } from "@/server/inbox/queries";
 import { closeConversation } from "@/server/inbox/closure";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +17,8 @@ const patchSchema = z.object({
   close: z.boolean().optional(),
   // 026 — archivar/desarchivar SOLO para mí (bandeja personal del empleado).
   archived: z.boolean().optional(),
+  // 034 — fijar/desfijar arriba de MI bandeja (personal, aparte del archivo).
+  pinned: z.boolean().optional(),
 });
 
 type Params = { params: Promise<{ id: string }> };
@@ -34,6 +36,18 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
       conversationId: id,
       userId: session.userId,
       archived: body.data.archived,
+    });
+    if (!r) return apiError(404, "not_found", "Conversación no encontrada");
+    return Response.json({ ok: true, ...r });
+  }
+
+  // 034 — fijar/desfijar MI vista (independiente del archivo y del cierre).
+  if (body.data.pinned !== undefined) {
+    const r = await setConversationPinned({
+      organizationId: session.organizationId,
+      conversationId: id,
+      userId: session.userId,
+      pinned: body.data.pinned,
     });
     if (!r) return apiError(404, "not_found", "Conversación no encontrada");
     return Response.json({ ok: true, ...r });
