@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ContactAvatar } from "@/components/avatar";
 import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
 import type {
   ClientConversationDto,
@@ -298,12 +299,22 @@ export function SystemClientCard({
   return (
     <Modal label={`Cliente ${nombre}`} onClose={onClose}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-lg font-semibold">{nombre}</h3>
-          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-            <span>Cliente del sistema de seguros</span>
-            {client.estado && <Badge variant="outline">{client.estado}</Badge>}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          <ContactAvatar
+            name={nombre}
+            seed={client.recordId}
+            size="md"
+            src={client.fotoUrl ?? null}
+          />
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-semibold">{nombre}</h3>
+            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <span>Cliente del sistema de seguros</span>
+              {client.estado && (
+                <Badge variant="outline">{client.estado}</Badge>
+              )}
+            </p>
+          </div>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose}>
           Cerrar
@@ -484,22 +495,30 @@ export function ContactCard({
   return (
     <Modal label={`Contacto ${contact.name}`} onClose={onClose}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-lg font-semibold">{contact.name}</h3>
-          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-            {contact.channel && (
-              <Badge variant="outline">
-                {CHANNEL_LABEL[contact.channel] ?? contact.channel}
-              </Badge>
-            )}
-            {contact.isTest && <Badge variant="secondary">Prueba</Badge>}
-            {contact.archivedAt && (
-              <Badge variant="secondary">Archivado</Badge>
-            )}
-            {contact.stageName && (
-              <Badge variant="outline">{contact.stageName}</Badge>
-            )}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          <ContactAvatar
+            name={contact.name}
+            seed={contact.id}
+            size="md"
+            src={contact.avatarUrl ?? null}
+          />
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-semibold">{contact.name}</h3>
+            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              {contact.channel && (
+                <Badge variant="outline">
+                  {CHANNEL_LABEL[contact.channel] ?? contact.channel}
+                </Badge>
+              )}
+              {contact.isTest && <Badge variant="secondary">Prueba</Badge>}
+              {contact.archivedAt && (
+                <Badge variant="secondary">Archivado</Badge>
+              )}
+              {contact.stageName && (
+                <Badge variant="outline">{contact.stageName}</Badge>
+              )}
+            </p>
+          </div>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose}>
           Cerrar

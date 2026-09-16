@@ -17,10 +17,11 @@ import {
  * 032/035 — Fotos de perfil en el CRM.
  *
  * 032: empleados (Airtable EMPLEADOS «FOTO DE PERFIL»). La imagen se baja
- * FRESCA (las URLs de los adjuntos de Airtable expiran ~2 h) y se cachea un
- * rato. El índice email/nombre/empleado→foto se refresca cada 10 minutos; el
- * binario dura 1 hora. Empleado sin foto cargada = sin URL (la UI muestra
- * iniciales, no se inventa).
+ * FRESCA (las URLs de los adjuntos de Airtable expiran ~2 h) y se cachea.
+ * DINÁMICO: el índice email/nombre/empleado→foto se refresca cada 30 s y el
+ * binario se reusa solo mientras su URL de origen no cambie — una foto recién
+ * cargada en Airtable aparece sola en el CRM en ~1 min. Empleado sin foto
+ * cargada = sin URL (la UI muestra iniciales, no se inventa).
  *
  * 035: los CONTACTOS de la bandeja, según su conversación:
  *   - Telegram: la foto real del perfil del usuario, vía Bot API
@@ -32,10 +33,18 @@ import {
  *     (misma llave que el buscador) o por registro cuando se conoce.
  */
 
-const IDX_TTL_MS = 10 * 60 * 1000;
+/**
+ * DINÁMICO (pedido Diego: «siempre que se cargue una foto de perfil en el
+ * backend se tiene que ver, cacheado, en el CRM»): los índices se refrescan
+ * cada 30 s, así una foto nueva se ve sola en ~1 min (índice + caché corta del
+ * navegador) sin deploy ni botón. El binario se sirve de memoria SOLO mientras
+ * su URL de origen no cambie; si cambia, se rebaja al toque.
+ */
+const IDX_TTL_MS = 30 * 1000;
 const FOTO_TTL_MS = 60 * 60 * 1000;
-/** "No tiene foto": no golpear la fuente en cada render, reintentar cada 30'. */
-const FOTO_SIN_TTL_MS = 30 * 60 * 1000;
+/** Telegram no expone URL de origen: se revalida seguido. Sin foto: menos. */
+const TG_FOTO_TTL_MS = 5 * 60 * 1000;
+const TG_SIN_TTL_MS = 3 * 60 * 1000;
 const PHOTO_FIELD = "FOTO DE PERFIL";
 
 type Foto = { data: Buffer; type: string };
@@ -97,8 +106,8 @@ type IndiceEmpleados = {
 
 let indiceCache: IndiceEmpleados | null = null;
 
-async function leerIndice(): Promise<IndiceEmpleados> {
-  if (indiceCache && Date.now() - indiceCache.at < IDX_TTL_MS) {
+async function leerIndice(forzar = false): Promise<IndiceEmpleados> {
+  if (!forzar && indiceCache && Date.now() - indiceCache.at < IDX_TTL_MS) {
     return indiceCache;
   }
   const idx: IndiceEmpleados = {
@@ -195,8 +204,8 @@ let indiceClientesCache: IndiceClientes | null = null;
  * Índice de clientes CON foto. El filtro de Airtable deja afuera al resto:
  * la tabla es de miles de filas y solo interesan los que tienen imagen.
  */
-async function leerIndiceClientes(): Promise<IndiceClientes> {
-  if (indiceClientesCache && Date.now() - indiceClientesCache.at < IDX_TTL_MS) {
+async function leerIndiceClientes(forzar = false): Promise<IndiceClientes> {
+  if (!forzar && indiceClientesCache && Date.now() - indiceClientesCache.at < IDX_TTL_MS) {
     return indiceClientesCache;
   }
   const idx: IndiceClientes = {
@@ -311,7 +320,10 @@ export async function avatarUrlForContact(
  * Proxy de imágenes: /api/avatars/<key> (032/035)
  * ============================================================ */
 
-const fotoCache = new Map<string, { at: number; data: Buffer; type: string }>();
+const fotoCache = new Map<
+  string,
+  { at: number; url: string; data: Buffer; type: string }
+>();
 /** Marca de "no tiene foto" por llave: evita golpear la fuente en cada render. */
 const sinFotoCache = new Map<string, number>();
 
@@ -320,31 +332,48 @@ async function fotoDeEmpleado(
 ): Promise<{ data: Buffer; type: string } | null> {
   const k = String(key ?? "").trim().toLowerCase();
   if (!k) return null;
-  const idx = await leerIndice();
-  let hit: EmpleadoFoto | undefined;
-  if (k.startsWith("rec")) {
-    hit = idx.porRec.get(k);
-  } else if (k.startsWith("usr")) {
+  let idx = await leerIndice();
+  let hit = await empleadoPorLlave(idx, k);
+  if (!hit) return null;
+
+  const cached = fotoCache.get(hit.idUnico);
+  if (cached && cached.url === hit.url && Date.now() - cached.at < FOTO_TTL_MS) {
+    return cached;
+  }
+
+  let img = await bajarImagen(hit.url);
+  if (!img) {
+    // La URL del adjunto puede haber vencido (~2 h): refrescar el índice
+    // forzado y reintentar una vez con la URL nueva.
+    idx = await leerIndice(true);
+    const hit2 = await empleadoPorLlave(idx, k);
+    if (hit2 && hit2.url !== hit.url) {
+      hit = hit2;
+      img = await bajarImagen(hit.url);
+    }
+    if (!img) return cached ?? null;
+  }
+  const entry = { at: Date.now(), url: hit.url, ...img };
+  fotoCache.set(hit.idUnico, entry);
+  return entry;
+}
+
+/** Resuelve la ficha de un empleado por `rec…` / `usr_…` / idUnico. */
+async function empleadoPorLlave(
+  idx: IndiceEmpleados,
+  k: string
+): Promise<EmpleadoFoto | undefined> {
+  if (k.startsWith("rec")) return idx.porRec.get(k);
+  if (k.startsWith("usr")) {
     const rows = await getDb()
       .select({ email: schema.user.email })
       .from(schema.user)
       .where(eq(schema.user.id, k))
       .limit(1);
     const email = String(rows[0]?.email ?? "").trim().toLowerCase();
-    hit = email ? idx.porEmail.get(email) : undefined;
-  } else {
-    hit = idx.porIdUnico.get(k);
+    return email ? idx.porEmail.get(email) : undefined;
   }
-  if (!hit) return null;
-
-  const cached = fotoCache.get(hit.idUnico);
-  if (cached && Date.now() - cached.at < FOTO_TTL_MS) return cached;
-
-  const img = await bajarImagen(hit.url);
-  if (!img) return cached ?? null;
-  const entry = { at: Date.now(), ...img };
-  fotoCache.set(hit.idUnico, entry);
-  return entry;
+  return idx.porIdUnico.get(k);
 }
 
 /** Foto del cliente del sistema: `cli:<llave de teléfono>` o `cli:<rec…>`. */
@@ -353,15 +382,26 @@ async function fotoDeCliente(
 ): Promise<{ data: Buffer; type: string } | null> {
   const k = String(keyPart ?? "").trim().toLowerCase();
   if (!k) return null;
-  const idx = await leerIndiceClientes();
-  const hit = k.startsWith("rec") ? idx.porRec.get(k) : idx.porTelefono.get(k);
+  let idx = await leerIndiceClientes();
+  let hit = k.startsWith("rec") ? idx.porRec.get(k) : idx.porTelefono.get(k);
   if (!hit) return null;
   const ck = `cli:${k}`;
   const cached = fotoCache.get(ck);
-  if (cached && Date.now() - cached.at < FOTO_TTL_MS) return cached;
-  const img = await bajarImagen(hit.url);
-  if (!img) return cached ?? null;
-  const entry = { at: Date.now(), ...img };
+  if (cached && cached.url === hit.url && Date.now() - cached.at < FOTO_TTL_MS) {
+    return cached;
+  }
+  let img = await bajarImagen(hit.url);
+  if (!img) {
+    // URL vencida o foto recién cambiada: refrescar el índice y reintentar.
+    idx = await leerIndiceClientes(true);
+    const hit2 = k.startsWith("rec") ? idx.porRec.get(k) : idx.porTelefono.get(k);
+    if (hit2 && hit2.url !== hit.url) {
+      hit = hit2;
+      img = await bajarImagen(hit.url);
+    }
+    if (!img) return cached ?? null;
+  }
+  const entry = { at: Date.now(), url: hit.url, ...img };
   fotoCache.set(ck, entry);
   return entry;
 }
@@ -379,9 +419,9 @@ async function fotoDeTelegrama(
   if (!chatId) return null;
   const ck = `tg:${chatId}`;
   const cached = fotoCache.get(ck);
-  if (cached && Date.now() - cached.at < FOTO_TTL_MS) return cached;
+  if (cached && Date.now() - cached.at < TG_FOTO_TTL_MS) return cached;
   const sin = sinFotoCache.get(ck);
-  if (sin && Date.now() - sin < FOTO_SIN_TTL_MS) return cached ?? null;
+  if (sin && Date.now() - sin < TG_SIN_TTL_MS) return cached ?? null;
 
   const creds = await getTelegramCredentialsByOrg(organizationId);
   if (!creds || creds.status !== "connected") return cached ?? null;
@@ -399,7 +439,7 @@ async function fotoDeTelegrama(
       return cached ?? null;
     }
     const data = await downloadFile(creds.token, file.file_path);
-    const entry = { at: Date.now(), data, type: "image/jpeg" };
+    const entry = { at: Date.now(), url: "", data, type: "image/jpeg" };
     fotoCache.set(ck, entry);
     return entry;
   } catch (err) {

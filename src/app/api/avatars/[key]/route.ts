@@ -12,6 +12,8 @@ type Params = { params: Promise<{ key: string }> };
  * (`tg:<chat id>`, vía Bot API de la organización) y cliente del sistema
  * (`cli:<llave de teléfono>` o `cli:rec…`, Airtable CLIENTES «FOTO PERFIL»).
  * 404 = ese perfil no tiene foto: la UI cae a las iniciales, sin inventar nada.
+ * La caché del navegador es corta (60 s) para que una foto cargada/cambiada en
+ * el backend se refleje sola, sin recargar nada a mano.
  */
 export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
   const { key } = await ctx.params;
@@ -20,7 +22,7 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
   return new Response(new Uint8Array(foto.data), {
     headers: {
       "Content-Type": foto.type,
-      "Cache-Control": "private, max-age=1800, stale-while-revalidate=3600",
+      "Cache-Control": "private, max-age=60",
     },
   });
 });
