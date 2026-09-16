@@ -521,7 +521,10 @@ export async function markReviewStatus(input: {
     via,
     decididoEl: deciding ? new Date().toISOString() : base.decididoEl,
   };
-  const patch: Record<string, unknown> = { updatedAt: new Date() };
+  // Persistimos el payload también en la FILA (no solo en el mensaje): es la
+  // base de los hitos posteriores (enviado/trabado). Sin esto, una decisión
+  // por Telegram perdía su `via` en el primer hito siguiente.
+  const patch: Record<string, unknown> = { updatedAt: new Date(), payload };
   if (deciding) {
     patch.status = input.update.estado;
     patch.decidedVia = via ?? "telegram";

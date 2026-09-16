@@ -376,6 +376,24 @@ suite("033 — revisión de envío SGSA (tarjeta y decisión en el chat interno)
       WHERE room_id = ${groupId} AND kind = 'review'
         AND payload->>'cliente' = 'CLIENTE TRES'`;
     expect(msgTg[0]!.payload.decididoEl).toBeTruthy();
+
+    // Un hito posterior (trabado) conserva la via de la decisión por Telegram:
+    // el payload se persiste también en la FILA al decidir.
+    const post = await service.markReviewStatus({
+      organizationId: orgId,
+      recordId: recReview(3),
+      update: {
+        estado: "trabado",
+        detalle: "WhatsApp bloqueado por ventana de 24 horas.",
+      },
+    });
+    expect(post.updated).toBe(true);
+    const msgTg2 = await sql<{ payload: { estado: string; via: string | null } }[]>`
+      SELECT payload FROM chat_message
+      WHERE room_id = ${groupId} AND kind = 'review'
+        AND payload->>'cliente' = 'CLIENTE TRES'`;
+    expect(msgTg2[0]!.payload.estado).toBe("trabado");
+    expect(msgTg2[0]!.payload.via).toBe("telegram");
   });
 
   it("G — avisos del monitoreo (error de envío / ya procesado): espejo fiel en el chat", async () => {
