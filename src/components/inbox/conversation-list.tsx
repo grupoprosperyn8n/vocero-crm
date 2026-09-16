@@ -518,7 +518,12 @@ export function ConversationList({
                     )}
                   >
                     <span className="relative shrink-0">
-                      <ContactAvatar name={c.contact.name} seed={c.contact.id} size="lg" />
+                      <ContactAvatar
+                        name={c.contact.name}
+                        seed={c.contact.id}
+                        size="lg"
+                        src={c.contactAvatarUrl}
+                      />
                       {c.windowOpen && (
                         <span className="absolute bottom-0 right-0 h-[11px] w-[11px] rounded-full border-[2.5px] border-background bg-success" />
                       )}

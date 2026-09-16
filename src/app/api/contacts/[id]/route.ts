@@ -8,6 +8,7 @@ import {
   getContactStage,
   serializeContact,
 } from "@/server/contacts";
+import { avatarUrlForContact } from "@/server/avatars";
 import { upsertFicha } from "@/server/bot/ficha";
 
 export const dynamic = "force-dynamic";
@@ -56,8 +57,14 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
       )
     )
     .limit(10);
+  const avatarUrl = await avatarUrlForContact({
+    id: contact.id,
+    channel: contact.channel,
+    waIdentity: contact.waIdentity,
+    phone: contact.phone,
+  });
   return Response.json({
-    contact: serializeContact(contact),
+    contact: serializeContact(contact, null, null, avatarUrl),
     conversations: conversations.map((c) => ({
       id: c.id,
       channel: c.channel,
@@ -133,5 +140,17 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     )
     .returning();
   if (!updated[0]) return apiError(404, "not_found", "Contacto no encontrado");
-  return Response.json({ contact: serializeContact(updated[0]) });
+  return Response.json({
+    contact: serializeContact(
+      updated[0],
+      null,
+      null,
+      await avatarUrlForContact({
+        id: updated[0].id,
+        channel: updated[0].channel,
+        waIdentity: updated[0].waIdentity,
+        phone: updated[0].phone,
+      })
+    ),
+  });
 });

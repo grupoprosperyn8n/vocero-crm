@@ -4,6 +4,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { canSeeAllInbox } from "@/lib/roles";
+import { avatarUrlsForContacts } from "@/server/avatars";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
 import type { ConversationDto } from "@/lib/types";
 
@@ -128,6 +129,16 @@ export async function listConversations(
           )
     );
 
+  // 035 — foto de cada contacto (una sola lectura para toda la bandeja).
+  const avatares = await avatarUrlsForContacts(
+    rows.map((r) => ({
+      id: r.contact.id,
+      channel: r.contact.channel,
+      waIdentity: r.contact.waIdentity,
+      phone: r.contact.phone,
+    }))
+  );
+
   const dtos = rows.map((r) => {
     const asg = r.assignee;
     return serializeConversation(
@@ -137,7 +148,8 @@ export async function listConversations(
       r.preview,
       r.stageName,
       r.closer?.name ?? null,
-      r.pinned === true
+      r.pinned === true,
+      avatares.get(r.contact.id) ?? null
     );
   });
   // 034 — mis fijadas van arriba (sort estable: adentro se conserva el orden).
@@ -224,12 +236,15 @@ export function serializeConversation(
   stageName: string | null = null,
   closedByName: string | null = null,
   /** 034 — pin personal (lo resuelve el caller por viewer). */
-  pinned: boolean = false
+  pinned: boolean = false,
+  /** 035 — foto del contacto (la resuelve el caller); null = iniciales. */
+  contactAvatarUrl: string | null = null
 ): ConversationDto {
   return {
     id: c.id,
     channel: c.channel,
     contact: { id: contact.id, name: contact.name, phone: contact.phone },
+    contactAvatarUrl,
     stageName,
     aiEnabled: c.aiEnabled,
     handoffAt: c.handoffAt?.toISOString() ?? null,

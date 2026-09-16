@@ -8,7 +8,7 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { SISTEMA_SGSA_EMAIL } from "@/lib/reviews";
 import { teamGate } from "@/server/settings/access";
-import { avatarUrlsForEmails } from "@/server/avatars";
+import { avatarUrlsForPeople } from "@/server/avatars";
 
 export const dynamic = "force-dynamic";
 
@@ -52,12 +52,14 @@ export const GET = withAuth(async (session) => {
         ne(schema.user.email, SISTEMA_SGSA_EMAIL)
       )
     );
-  // 032 — foto de perfil (misma fuente que el chat: EMPLEADOS en Airtable).
-  const avatares = await avatarUrlsForEmails(members.map((m) => m.email));
+  // 032/035 — foto de perfil por email y, si la ficha no lo tiene, por nombre.
+  const avatares = await avatarUrlsForPeople(
+    members.map((m) => ({ email: m.email, name: m.name }))
+  );
   return Response.json({
     // Quién mira: la UI decide qué controles mostrar (el server igual valida).
     viewer: { userId: session.userId, role: session.role },
-    members: members.map((m) => ({
+    members: members.map((m, i) => ({
       id: m.id,
       userId: m.userId,
       role: m.role,
@@ -70,7 +72,7 @@ export const GET = withAuth(async (session) => {
       offlineAt: m.offlineAt ? m.offlineAt.toISOString() : null,
       offlineByName: m.offlineByName,
       createdAt: m.createdAt.toISOString(),
-      avatarUrl: avatares.get(m.email.trim().toLowerCase()) ?? null,
+      avatarUrl: avatares[i] ?? null,
     })),
   });
 });

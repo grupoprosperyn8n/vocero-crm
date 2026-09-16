@@ -190,6 +190,7 @@ export function ContactPanel({
               name={conversation.contact.name}
               seed={conversation.contact.id}
               size="md"
+              src={conversation.contactAvatarUrl}
             />
             <div className="min-w-0">
               <p className="truncate text-sm font-bold tracking-tight">

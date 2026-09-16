@@ -3,7 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { publish } from "@/server/events/bus";
 import { onlineUserIds } from "@/server/events/presence";
-import { avatarUrlsForEmails } from "@/server/avatars";
+import { avatarUrlsForPeople } from "@/server/avatars";
 import { artDayKey } from "./office-day";
 import type {
   ChatAlertShareDto,
@@ -443,16 +443,18 @@ export async function listRoomsForUser(
   // 022 — presencia: conexión SSE viva = en línea (in-process).
   const online = new Set(onlineUserIds(organizationId));
   // 032 — foto de perfil de los integrantes (una lectura para todas las salas).
-  const avataresMiembros = await avatarUrlsForEmails(memberRows.map((m) => m.email));
+  const avataresMiembros = await avatarUrlsForPeople(
+    memberRows.map((m) => ({ email: m.email, name: m.name }))
+  );
   const membersByRoom = new Map<string, ChatMemberView[]>();
-  for (const m of memberRows) {
+  for (const [miembroIdx, m] of memberRows.entries()) {
     const list = membersByRoom.get(m.roomId) ?? [];
     list.push({
       userId: m.userId,
       name: m.name,
       online: online.has(m.userId) && !m.pausedAt,
       paused: Boolean(m.pausedAt),
-      avatarUrl: avataresMiembros.get(m.email.trim().toLowerCase()) ?? null,
+      avatarUrl: avataresMiembros[miembroIdx] ?? null,
     });
     membersByRoom.set(m.roomId, list);
   }
@@ -1207,9 +1209,12 @@ export async function listStaff(
     .orderBy(asc(schema.user.name));
   // 022 — presencia: el selector muestra quién está en línea ahora mismo.
   const online = new Set(onlineUserIds(organizationId));
-  // 032 — foto de perfil de cada uno (si la tiene en EMPLEADOS).
-  const avatares = await avatarUrlsForEmails(rows.map((row) => row.email));
-  return rows.map((row) => ({
+  // 032/035 — foto de perfil de cada uno: por email y, si la ficha no lo
+  // trae, por nombre normalizado.
+  const avatares = await avatarUrlsForPeople(
+    rows.map((row) => ({ email: row.email, name: row.name }))
+  );
+  return rows.map((row, i) => ({
     userId: row.userId,
     name: row.name,
     role: row.role,
@@ -1220,6 +1225,6 @@ export async function listStaff(
     locality: row.locality,
     officeName: (row.officeCleanName ?? row.officeName)?.trim() ?? null,
     officeSince: row.officeSince ? row.officeSince.toISOString() : null,
-    avatarUrl: avatares.get(row.email.trim().toLowerCase()) ?? null,
+    avatarUrl: avatares[i] ?? null,
   }));
 }

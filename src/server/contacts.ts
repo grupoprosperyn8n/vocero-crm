@@ -7,12 +7,15 @@ import type { FichaDto, PriorityValue } from "@/lib/types";
 export function serializeContact(
   c: typeof schema.contact.$inferSelect,
   stageName: string | null = null,
-  priority: PriorityValue | null = null
+  priority: PriorityValue | null = null,
+  /** 035 — foto del contacto (la resuelve el caller); null = iniciales. */
+  avatarUrl: string | null = null
 ) {
   return {
     id: c.id,
     name: c.name,
     phone: c.phone,
+    avatarUrl,
     notes: c.notes,
     channel: c.channel,
     isTest: c.isTest,

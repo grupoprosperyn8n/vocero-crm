@@ -6,6 +6,7 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { normalizeMx } from "@/lib/meta/client";
 import { digitsOnly, normalizeText } from "@/lib/search";
+import { avatarUrlsForContacts } from "@/server/avatars";
 import { serializeContact } from "@/server/contacts";
 
 export const dynamic = "force-dynamic";
@@ -107,15 +108,24 @@ export const GET = withAuth(async (session, req: Request) => {
     .orderBy(desc(schema.contact.updatedAt))
     .limit(200);
 
-  const contacts = rows
-    .filter((c) => includeArchived || !c.archivedAt)
-    .map((c) =>
-      serializeContact(
-        c,
-        stageByContact.get(c.id) ?? null,
-        priorityByContact.get(c.id) ?? null
-      )
-    );
+  const visibles = rows.filter((c) => includeArchived || !c.archivedAt);
+  // 035 — foto de cada contacto (una sola lectura para toda la lista).
+  const avatares = await avatarUrlsForContacts(
+    visibles.map((c) => ({
+      id: c.id,
+      channel: c.channel,
+      waIdentity: c.waIdentity,
+      phone: c.phone,
+    }))
+  );
+  const contacts = visibles.map((c) =>
+    serializeContact(
+      c,
+      stageByContact.get(c.id) ?? null,
+      priorityByContact.get(c.id) ?? null,
+      avatares.get(c.id) ?? null
+    )
+  );
   return Response.json({ contacts });
 });
 

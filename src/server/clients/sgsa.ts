@@ -43,6 +43,7 @@ const CLIENTE_FIELDS = [
   "📆 LA_POLIZAS VENCE EN 7 DIAS",
   "OFICINAS",
   "PERFIL_DE_RIESGO_IA",
+  "FOTO PERFIL",
 ] as const;
 
 type AirtableRecord = { id: string; fields: Record<string, unknown> };
@@ -158,6 +159,16 @@ function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
+/** Primera foto de un campo Adjuntos (miniatura grande si existe). */
+function fotoDeAdjunto(v: unknown): string {
+  const list = Array.isArray(v) ? v : [];
+  const primera = list[0] as
+    | { url?: unknown; thumbnails?: { large?: { url?: unknown } } }
+    | undefined;
+  if (!primera) return "";
+  return String(primera.thumbnails?.large?.url ?? primera.url ?? "").trim();
+}
+
 function str(v: unknown): string | null {
   if (typeof v === "string" && v.trim()) return v.trim();
   if (typeof v === "number") return String(v);
@@ -208,6 +219,7 @@ export async function searchClients(
       estado: str(f["🏷️ ESTADO_CLIENTE"]),
       oficina: oficinaId ? (oficinas.get(oficinaId) ?? null) : null,
       idUnico: str(f["ID_UNICO_CLIENTE"]),
+      fotoUrl: fotoDeAdjunto(f["FOTO PERFIL"]) ? `/api/avatars/cli:${r.id}` : null,
       fechaAlta: str(f["FECHA DE ALTA"]),
       perfilRiesgo: perfil ? perfil.slice(0, 1500) : null,
       polizas: {

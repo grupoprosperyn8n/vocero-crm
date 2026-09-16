@@ -100,6 +100,34 @@ export async function getMe(token: string): Promise<TelegramMe> {
   return request<TelegramMe>(token, "getMe", { json: {} });
 }
 
+export type TelegramPhotoSize = {
+  file_id: string;
+  file_unique_id?: string;
+  width?: number;
+  height?: number;
+  file_size?: number;
+};
+
+export type TelegramUserProfilePhotos = {
+  total_count: number;
+  /** Juegos de tamaños por foto (el más grande de cada juego va último). */
+  photos: TelegramPhotoSize[][];
+};
+
+/**
+ * 035 — Foto de perfil de un usuario (vacío = no tiene, o su privacidad no se
+ * lo permite al bot). El archivo se baja después con `getFile`+`downloadFile`.
+ */
+export async function getUserProfilePhotos(
+  token: string,
+  userId: string
+): Promise<TelegramUserProfilePhotos> {
+  const id = Number(userId);
+  return request<TelegramUserProfilePhotos>(token, "getUserProfilePhotos", {
+    json: { user_id: Number.isFinite(id) ? id : userId, limit: 1 },
+  });
+}
+
 /**
  * Apunta el webhook del bot a nuestra URL. El `secret_token` viaja además
  * como segmento de la URL (las dos capas las elegimos nosotros) y Telegram lo

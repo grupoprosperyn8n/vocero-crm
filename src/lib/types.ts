@@ -7,6 +7,8 @@ export type ConversationDto = {
   /** 014: canal de la conversacion, para el distintivo de la bandeja. */
   channel: Channel;
   contact: { id: string; name: string; phone: string | null };
+  /** 035 — foto de perfil del contacto (Telegram / cliente del sistema); null = iniciales. */
+  contactAvatarUrl: string | null;
   stageName: string | null;
   aiEnabled: boolean;
   handoffAt: string | null;
@@ -179,6 +181,8 @@ export type ContactDto = {
   isTest?: boolean;
   /** Alta del contacto en el CRM (ISO). */
   createdAt?: string;
+  /** 035 — foto de perfil (Telegram / cliente del sistema); null = iniciales. */
+  avatarUrl?: string | null;
 };
 
 /* ============================================================
@@ -209,6 +213,8 @@ export type SystemClientDto = {
   estado: string | null;
   oficina: string | null;
   idUnico: string | null;
+  /** 035 — foto cargada en el sistema (proxy /api/avatars); null si no tiene. */
+  fotoUrl: string | null;
   fechaAlta: string | null;
   perfilRiesgo: string | null;
   polizas: SystemClientPolizasDto;

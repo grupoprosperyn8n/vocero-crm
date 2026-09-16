@@ -2,6 +2,7 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { publish } from "@/server/events/bus";
 import { serializeConversation, getConversation, setConversationArchived, setConversationPinned, updateConversation } from "@/server/inbox/queries";
+import { avatarUrlForContact } from "@/server/avatars";
 import { closeConversation } from "@/server/inbox/closure";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +74,21 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
 
   const row = await getConversation(session.organizationId, id);
   if (row) {
-    const dto = serializeConversation(row.conversation, row.contact);
+    const dto = serializeConversation(
+      row.conversation,
+      row.contact,
+      null,
+      null,
+      null,
+      null,
+      false,
+      await avatarUrlForContact({
+        id: row.contact.id,
+        channel: row.contact.channel,
+        waIdentity: row.contact.waIdentity,
+        phone: row.contact.phone,
+      })
+    );
     publish(session.organizationId, {
       type: "conversation.updated",
       data: { conversation: dto },

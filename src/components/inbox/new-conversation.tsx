@@ -343,7 +343,7 @@ export function NewConversationDialog({
         }}
         className="flex w-full items-center gap-2.5 rounded-lg border bg-card px-3 py-2.5 text-left transition-colors hover:border-brand hover:bg-accent"
       >
-        <ContactAvatar name={c.name} seed={c.id} size="sm" />
+        <ContactAvatar name={c.name} seed={c.id} size="sm" src={c.avatarUrl} />
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="truncate text-[13px] font-medium">{c.name}</span>
@@ -372,7 +372,7 @@ export function NewConversationDialog({
         }}
         className="flex w-full items-center gap-2.5 rounded-lg border bg-card px-3 py-2.5 text-left transition-colors hover:border-brand hover:bg-accent"
       >
-        <ContactAvatar name={nombre} seed={r.client.recordId} size="sm" />
+        <ContactAvatar name={nombre} seed={r.client.recordId} size="sm" src={r.client.fotoUrl} />
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="truncate text-[13px] font-medium">{nombre}</span>
@@ -477,6 +477,11 @@ export function NewConversationDialog({
                     : picked.result.client.recordId
                 }
                 size="sm"
+                src={
+                  picked.kind === "crm"
+                    ? picked.contact.avatarUrl
+                    : picked.result.client.fotoUrl
+                }
               />
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">{pickedName}</p>

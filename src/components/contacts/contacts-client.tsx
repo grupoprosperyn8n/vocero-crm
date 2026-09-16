@@ -241,6 +241,7 @@ export function ContactsClient() {
                   <ContactAvatar
                     name={systemClientName(r.client)}
                     seed={r.client.recordId}
+                    src={r.client.fotoUrl}
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
@@ -304,7 +305,7 @@ export function ContactsClient() {
                 key={c.id}
                 className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border bg-card px-3 py-3 sm:flex-nowrap sm:gap-x-4 sm:px-4"
               >
-                <ContactAvatar name={c.name} seed={c.id} />
+                <ContactAvatar name={c.name} seed={c.id} src={c.avatarUrl} />
                 {/* El 60% mínimo es lo que empuja los botones a su propio
                     renglón en el teléfono en vez de exprimir el nombre. */}
                 <button

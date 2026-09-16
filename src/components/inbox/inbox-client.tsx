@@ -566,6 +566,7 @@ export function InboxClient({
                   name={selected.contact.name}
                   seed={selected.contact.id}
                   size="md"
+                  src={selected.contactAvatarUrl}
                 />
                 <div className="min-w-0">
                   <p className="flex min-w-0 items-center gap-1.5 text-[15px] font-bold leading-tight tracking-tight">
