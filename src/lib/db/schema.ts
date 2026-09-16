@@ -10,7 +10,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { ChatMessagePayloadDto, ChatReviewShareDto } from "@/lib/types";
+import type { ChatMessagePayloadDto, ChatReviewShareDto, ReviewDelivery } from "@/lib/types";
 
 /* ============================================================
  * Auth (Better Auth + plugin organization)
@@ -1523,6 +1523,12 @@ export const reviewRequest = pgTable(
     messageId: text("message_id")
       .notNull()
       .references(() => chatMessage.id, { onDelete: "cascade" }),
+    /**
+     * 033b — TODAS las salas que recibieron copia de la tarjeta (multi-destino:
+     * varias reglas activas del tipo). `room_id`/`message_id` son la entrega
+     * principal; la decisión y cada hito del flujo actualizan todas las copias.
+     */
+    deliveries: jsonb("deliveries").$type<ReviewDelivery[] | null>(),
     /** pendiente → decidiendo → aprobado | detenido (los finales de envío viven en payload.estado). */
     status: text("status").notNull().default("pendiente"),
     decidedBy: text("decided_by").references(() => user.id, {

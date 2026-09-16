@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   BellOff,
   BellRing,
@@ -13,6 +14,7 @@ import {
   GitBranch,
   Hourglass,
   Inbox,
+  MessageSquare,
   RefreshCw,
   Search,
   Settings2,
@@ -26,7 +28,7 @@ import { AlertStatsPanel } from "@/components/alerts/alert-stats-panel";
 import { ReviewStatsPanel } from "@/components/reviews/review-stats-panel";
 import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
 import { alertDate, alertEstadoLabel, isLiveAssignmentStatus, parseAlertDetalle } from "@/lib/alerts";
-import { REVIEW_ENVIO_ALERT_TYPE } from "@/lib/reviews";
+import { REVIEW_ENVIO_ALERT_LABEL, REVIEW_ENVIO_ALERT_TYPE } from "@/lib/reviews";
 import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import type { SgsaAlertDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -150,6 +152,7 @@ const ACTION_DEFS: {
 ];
 
 export function AlertsClient() {
+  const router = useRouter();
   const [alerts, setAlerts] = useState<SgsaAlertDto[] | null>(null);
   const [pendientes, setPendientes] = useState(0);
   const [hist, setHist] = useState(false);
@@ -481,7 +484,7 @@ export function AlertsClient() {
         {canManage && (
           <button
             onClick={() => setRulesOpen(true)}
-            title="Reglas por tipo de alerta: a quién le llega cada tipo (un destino: empleado o grupo)"
+            title="Reglas por tipo de alerta: a quién le llega cada tipo (en siniestros, los empleados entran al grupo «Alerta de Siniestro»)"
             className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent"
           >
             <Settings2 className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -610,7 +613,7 @@ export function AlertsClient() {
                         <div className="mt-1.5 flex items-center gap-2 text-[11px] text-text-3">
                           <span>{alertDate(a.fecha)}</span>
                           <span className="rounded bg-accent px-1.5 py-0.5 font-medium">
-                            {a.tipo}
+                            {a.review ? REVIEW_ENVIO_ALERT_LABEL : a.tipo}
                           </span>
                           {a.estado !== "PENDIENTE" && (
                             <span className="rounded bg-accent px-1.5 py-0.5 font-medium">
@@ -711,6 +714,22 @@ export function AlertsClient() {
                           )}
                         </div>
                       )}
+                      {a.review ? (
+                        // 033c — la revisión de envío se decide en el chat
+                        // interno: la acción es abrir la conversación.
+                        <button
+                          data-alert-action="open-chat"
+                          onClick={() =>
+                            router.push(
+                              `/chat?room=${encodeURIComponent(a.review!.roomId)}`
+                            )
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-md bg-brand px-2.5 py-1.5 text-[12px] font-semibold text-brand-fg transition-opacity hover:opacity-90"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
+                          Abrir conversación
+                        </button>
+                      ) : (
                       <div className="flex flex-wrap gap-1.5">
                         {ACTION_DEFS.filter(
                           (d) => !d.turnoOnly || a.tipo.startsWith("TURNO_")
@@ -791,6 +810,7 @@ export function AlertsClient() {
                           }}
                         />
                       </div>
+                      )}
                     </div>
                   )}
                 </div>

@@ -19,6 +19,15 @@ export const REVIEW_ENVIO_ALERT_TYPE = "REVISION_ENVIO_SINIESTRO";
 /** Nombre humano del tipo (selectores y fichas). */
 export const REVIEW_ENVIO_ALERT_LABEL = "Revisión de envío SGSA";
 
+/**
+ * 033c — Grupo del chat interno donde vive el flujo completo: la tarjeta de
+ * revisión (demo + botones ✅/🛑), los avisos y los cambios de estado. Los
+ * empleados designados en Reglas entran acá como miembros (decisión grupal,
+ * no copias individuales) y la gestión (dueño/administrador/gerente) siempre
+ * participa del grupo macro.
+ */
+export const REVIEW_GROUP_NAME = "Alerta de Siniestro";
+
 /** Usuario de sistema que firma las tarjetas (no es una persona del equipo). */
 export const SISTEMA_SGSA_EMAIL = "sistema-sgsa@vocero.local";
 export const SISTEMA_SGSA_NAME = "SGSA · Avisos";

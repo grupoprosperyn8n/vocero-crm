@@ -102,10 +102,16 @@ suite("028 — derivación de alertas (reglas, visibilidad, trazabilidad)", () =
   afterAll(async () => {
     // Mensajes y salas de la corrida (el grupo + los DMs creados), luego
     // asignaciones/reglas y por último las cuentas sintéticas.
-    const myRoomRows = await sql<{ room_id: string }[]>`
-      SELECT DISTINCT room_id FROM chat_room_member
-      WHERE user_id IN ${sql([uids.empA, uids.empB, uids.mgr])}`;
-    const myRooms = myRoomRows.map((r) => r.room_id);
+    // Solo las salas PROPIAS de la corrida: el grupo del escenario y los DMs
+    // que abre el flujo. Ojo: no usar «salas donde participan mis usuarios»
+    // —los usuarios de gestión también entran como miembros al grupo
+    // «Alerta de Siniestro» del flujo 033c, que NO es de esta suite.
+    const dmRows = await sql<{ id: string }[]>`
+      SELECT DISTINCT r.id FROM chat_room r
+      JOIN chat_room_member m ON m.room_id = r.id
+      WHERE r.organization_id = ${orgId} AND r.kind = 'dm'
+        AND m.user_id IN ${sql([uids.empA, uids.empB, uids.mgr])}`;
+    const myRooms = [...new Set([groupId, ...dmRows.map((r) => r.id)])];
     if (myRooms.length) {
       await sql`DELETE FROM chat_message WHERE room_id IN ${sql(myRooms)}`;
       await sql`DELETE FROM chat_room_member WHERE room_id IN ${sql(myRooms)}`;

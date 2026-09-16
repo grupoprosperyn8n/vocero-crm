@@ -789,6 +789,8 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const [shareOpen, setShareOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /** 033c — deep link desde Alertas: /chat?room=<id> abre esa conversación. */
+  const wantRoomRef = useRef<string | null>(null);
 
   const activeIdRef = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -864,6 +866,22 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
     },
     [mergeOnline]
   );
+
+  // 033c — «Abrir conversación» desde Alertas (/chat?room=…): con las salas
+  // cargadas se abre esa conversación una sola vez; si no participo de esa
+  // sala, no hace nada.
+  useEffect(() => {
+    const rid = new URLSearchParams(window.location.search).get("room");
+    if (rid) wantRoomRef.current = rid;
+  }, []);
+
+  useEffect(() => {
+    if (loading || !wantRoomRef.current) return;
+    const rid = wantRoomRef.current;
+    if (!rooms.some((r) => r.id === rid)) return;
+    wantRoomRef.current = null;
+    void openRoom(rid);
+  }, [loading, rooms, openRoom]);
 
   const backToList = useCallback(() => {
     activeIdRef.current = null;

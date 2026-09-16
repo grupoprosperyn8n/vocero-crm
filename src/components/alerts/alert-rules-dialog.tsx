@@ -70,12 +70,33 @@ export function AlertRulesDialog({
 
   const knownTypes = Array.from(new Set([...alertTypes, ...rules.map((r) => r.alertType)])).sort();
   const total = selEmps.size + selGroups.size;
-  // 033 — un destino por tipo (lo exige el backend): elegir uno reemplaza al anterior.
+  // 033b — la revisión de envío admite VARIOS destinos (cada uno recibe su
+  // propia copia de la tarjeta en el chat interno); el resto de los tipos
+  // mantiene un destino único (lo exige el backend: un ejecutor por vez).
+  const multi = alertType === REVIEW_ENVIO_ALERT_TYPE;
   const pickEmployee = (id: string) => {
+    if (multi) {
+      setSelEmps((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+      return;
+    }
     setSelEmps((prev) => (prev.has(id) ? new Set() : new Set([id])));
     setSelGroups(new Set());
   };
   const pickGroup = (id: string) => {
+    if (multi) {
+      setSelGroups((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+      return;
+    }
     setSelGroups((prev) => (prev.has(id) ? new Set() : new Set([id])));
     setSelEmps(new Set());
   };
@@ -112,7 +133,7 @@ export function AlertRulesDialog({
             <Settings2 className="h-4 w-4 text-brand" strokeWidth={1.9} />
             <div>
               <p className="text-[13.5px] font-bold">Reglas por tipo de alerta</p>
-              <p className="text-[11.5px] text-text-3">Un destino por tipo: quién ve y gestiona esas alertas.</p>
+              <p className="text-[11.5px] text-text-3">Elegí quién recibe cada tipo de alerta.</p>
             </div>
           </div>
           <button onClick={onClose} aria-label="Cerrar" className="rounded-md p-1.5 text-text-3 hover:bg-accent hover:text-foreground">
@@ -131,7 +152,9 @@ export function AlertRulesDialog({
           </select>
           {alertType === REVIEW_ENVIO_ALERT_TYPE && (
             <p className="text-[11.5px] text-text-3">
-              Las tarjetas de aprobación de siniestros del chat interno llegan a este destino. Sin regla: al Propietario.
+              El flujo de siniestros vive en el grupo «Alerta de Siniestro» del chat interno (siempre con dueño
+              y gerencias): los EMPLEADOS que marques entran a ese grupo; los GRUPOS que marques reciben además
+              su copia. Podés elegir varios.
             </p>
           )}
           <div className="relative">
@@ -169,7 +192,7 @@ export function AlertRulesDialog({
         </div>
 
         <footer className="flex items-center gap-2 border-t px-4 py-3">
-          {error ? <p className="mr-auto text-[12px] text-danger-text">{error}</p> : done ? <p className="mr-auto inline-flex items-center gap-1 text-[12px] text-success-text"><CheckCircle2 className="h-3.5 w-3.5" />{done}</p> : <p className="mr-auto text-[12px] text-text-3">{total ? `${total} destino${total === 1 ? "" : "s"}` : alertType === REVIEW_ENVIO_ALERT_TYPE ? "Sin destino: las revisiones de siniestro caen al Propietario" : "Sin destinos: este tipo queda sin asignación automática"}</p>}
+          {error ? <p className="mr-auto text-[12px] text-danger-text">{error}</p> : done ? <p className="mr-auto inline-flex items-center gap-1 text-[12px] text-success-text"><CheckCircle2 className="h-3.5 w-3.5" />{done}</p> : <p className="mr-auto text-[12px] text-text-3">{total ? `${total} destino${total === 1 ? "" : "s"}` : alertType === REVIEW_ENVIO_ALERT_TYPE ? "Sin destinos: el flujo cae igual al grupo «Alerta de Siniestro» (con dueño y gerencias)" : "Sin destinos: este tipo queda sin asignación automática"}</p>}
           <button onClick={() => void save()} disabled={saving} className="rounded-md bg-brand px-3 py-1.5 text-[13px] font-semibold text-brand-fg hover:opacity-90 disabled:opacity-40">
             {saving ? "Guardando…" : "Guardar regla"}
           </button>

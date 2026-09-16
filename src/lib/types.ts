@@ -281,6 +281,18 @@ export type SgsaAlertDto = {
   }[];
   /** true cuando la alerta está asignada directa o por grupo al usuario actual. */
   asignadaParaMi?: boolean;
+  /** 033c — «review»: la tarjeta de revisión de envío SGSA (vive en el chat interno). */
+  source?: "sgsa" | "review";
+  review?: {
+    /** Registro en revisión (Airtable DENUNCIA DE ACCIDENTE). */
+    recordId: string;
+    /** Sala donde vive la tarjeta (se abre con «Abrir conversación»). */
+    roomId: string;
+    /** Nombres de los destinos que recibieron el flujo. */
+    recipients: string[];
+    /** Cantidad de salas con copia de la tarjeta. */
+    deliveries: number;
+  };
 };
 
 /* ============================================================
@@ -401,6 +413,23 @@ export type ChatReviewShareDto = {
   decididoEl: string | null;
   /** `chat` | `telegram` */
   via: string | null;
+};
+
+/**
+ * 033b — Un destino de entrega de la tarjeta de revisión: cada regla activa
+ * del tipo REVISION_ENVIO_SINIESTRO recibe su propia copia de la tarjeta en
+ * su sala (DM del usuario de sistema con el empleado, o el grupo elegido) y
+ * todas las copias se actualizan juntas (decisión + hitos del flujo).
+ */
+export type ReviewDelivery = {
+  /** Sala que recibió la copia de la tarjeta. */
+  roomId: string;
+  /** Mensaje (tarjeta) publicado en esa sala. */
+  messageId: string;
+  kind?: "employee" | "group" | null;
+  targetId?: string | null;
+  /** Nombre visible del destino (diagnóstico; la UI no lo usa). */
+  name?: string | null;
 };
 
 export type ChatMessagePayloadDto =

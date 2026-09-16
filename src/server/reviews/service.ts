@@ -1,16 +1,16 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import {
   REVIEW_ENVIO_ALERT_TYPE,
+  REVIEW_GROUP_NAME,
   SISTEMA_SGSA_EMAIL,
   SISTEMA_SGSA_NAME,
 } from "@/lib/reviews";
-import type { ChatReviewShareDto } from "@/lib/types";
+import type { ChatReviewShareDto, ReviewDelivery } from "@/lib/types";
 import {
   ChatError,
   assertRoomMember,
-  createDmRoom,
   postChatMessage,
   updateReviewMessage,
 } from "@/server/internal/chat";
@@ -26,6 +26,12 @@ import {
  * flujo (`sgsa-aprobacion-envio`) que usan los botones de Telegram: el lock
  * del flujo evita el doble envío y acá queda registrado quién decidió y por
  * dónde. Además el flujo informa la condición final (despachado / trabado).
+ *
+ * 033c — el flujo vive en un grupo del chat interno llamado «Alerta de
+ * Siniestro»: ahí caen TODAS las tarjetas, avisos y cambios de estado. La
+ * gestión (dueño/administrador/gerente) siempre participa (grupo macro) y los
+ * empleados designados en Reglas entran como miembros — decisión grupal, sin
+ * copias individuales. Los grupos elegidos en Reglas reciben además su copia.
  *
  * Config (env):
  * - `REVIEWS_INBOUND_KEY`   clave Bearer de los endpoints server-to-server.
@@ -137,21 +143,28 @@ export async function ensureSystemUser(organizationId: string): Promise<string> 
   return userId;
 }
 
-type ReviewTarget = { kind: "employee" | "group"; id: string };
+type ReviewRecipients = {
+  employees: { id: string; name: string | null }[];
+  groups: { id: string; name: string | null }[];
+};
 
 /**
- * Destino de la tarjeta: la regla del tipo REVISION_ENVIO_SINIESTRO
- * (Alertas → Reglas, la configura dueño/administrador/gerente); sin regla,
- * cae al Propietario para no perder nunca una revisión.
+ * 033c — Destinos configurados en Alertas → Reglas para la revisión de envío:
+ * TODAS las reglas activas del tipo (varios empleados y/o grupos). Los
+ * EMPLEADOS entran al grupo del flujo como miembros (la decisión es grupal);
+ * los GRUPOS elegidos reciben además su propia copia de la tarjeta.
  */
-async function resolveReviewTarget(
+async function resolveReviewRecipients(
   organizationId: string
-): Promise<ReviewTarget> {
+): Promise<ReviewRecipients> {
   const db = getDb();
   const rules = await db
     .select({
+      id: schema.alertAssignmentRule.id,
       targetKind: schema.alertAssignmentRule.targetKind,
       targetId: schema.alertAssignmentRule.targetId,
+      targetName: schema.alertAssignmentRule.targetName,
+      createdAt: schema.alertAssignmentRule.createdAt,
     })
     .from(schema.alertAssignmentRule)
     .where(
@@ -161,64 +174,221 @@ async function resolveReviewTarget(
         eq(schema.alertAssignmentRule.active, true)
       )
     )
+    .orderBy(
+      asc(schema.alertAssignmentRule.createdAt),
+      asc(schema.alertAssignmentRule.id)
+    );
+  const employees: ReviewRecipients["employees"] = [];
+  const groups: ReviewRecipients["groups"] = [];
+  const seen = new Set<string>();
+  for (const rule of rules) {
+    if (!rule.targetId) continue;
+    const key = `${rule.targetKind}:${rule.targetId}`;
+    if (seen.has(key)) continue;
+    if (rule.targetKind === "employee") {
+      const ok = await db
+        .select({ id: schema.member.id })
+        .from(schema.member)
+        .where(
+          and(
+            eq(schema.member.organizationId, organizationId),
+            eq(schema.member.userId, rule.targetId)
+          )
+        )
+        .limit(1);
+      if (ok[0]) {
+        seen.add(key);
+        employees.push({ id: rule.targetId, name: rule.targetName });
+      }
+      continue;
+    }
+    if (rule.targetKind === "group") {
+      const ok = await db
+        .select({ id: schema.chatRoom.id })
+        .from(schema.chatRoom)
+        .where(
+          and(
+            eq(schema.chatRoom.organizationId, organizationId),
+            eq(schema.chatRoom.id, rule.targetId),
+            eq(schema.chatRoom.kind, "group")
+          )
+        )
+        .limit(1);
+      if (ok[0]) {
+        seen.add(key);
+        groups.push({ id: rule.targetId, name: rule.targetName });
+      }
+    }
+  }
+  return { employees, groups };
+}
+
+/**
+ * Alta idempotente del grupo del flujo («Alerta de Siniestro»): se crea una
+ * sola vez por organización y el usuario de sistema —quien firma las
+ * tarjetas— siempre participa.
+ */
+async function ensureReviewGroup(
+  organizationId: string,
+  systemUserId: string
+): Promise<string> {
+  const db = getDb();
+  const found = await db
+    .select({ id: schema.chatRoom.id })
+    .from(schema.chatRoom)
+    .where(
+      and(
+        eq(schema.chatRoom.organizationId, organizationId),
+        eq(schema.chatRoom.kind, "group"),
+        eq(schema.chatRoom.name, REVIEW_GROUP_NAME)
+      )
+    )
+    .orderBy(asc(schema.chatRoom.createdAt))
     .limit(1);
-  const rule = rules[0];
-  if (rule?.targetKind === "employee" && rule.targetId) {
-    const ok = await db
-      .select({ id: schema.member.id })
-      .from(schema.member)
-      .where(
-        and(
-          eq(schema.member.organizationId, organizationId),
-          eq(schema.member.userId, rule.targetId)
-        )
-      )
-      .limit(1);
-    if (ok[0]) return { kind: "employee", id: rule.targetId };
+  let roomId = found[0]?.id ?? null;
+  if (!roomId) {
+    roomId = newId("chatRoom");
+    await db.insert(schema.chatRoom).values({
+      id: roomId,
+      organizationId,
+      kind: "group",
+      name: REVIEW_GROUP_NAME,
+      createdBy: systemUserId,
+    });
   }
-  if (rule?.targetKind === "group" && rule.targetId) {
-    const ok = await db
-      .select({ id: schema.chatRoom.id })
-      .from(schema.chatRoom)
-      .where(
-        and(
-          eq(schema.chatRoom.organizationId, organizationId),
-          eq(schema.chatRoom.id, rule.targetId),
-          eq(schema.chatRoom.kind, "group")
-        )
+  const asMember = await db
+    .select({ id: schema.chatRoomMember.id })
+    .from(schema.chatRoomMember)
+    .where(
+      and(
+        eq(schema.chatRoomMember.roomId, roomId),
+        eq(schema.chatRoomMember.userId, systemUserId)
       )
-      .limit(1);
-    if (ok[0]) return { kind: "group", id: rule.targetId };
+    )
+    .limit(1);
+  if (!asMember[0]) {
+    await db.insert(schema.chatRoomMember).values({
+      id: newId("chatRoomMember"),
+      organizationId,
+      roomId,
+      userId: systemUserId,
+    });
   }
-  const owner = await db
+  return roomId;
+}
+
+/** Audiencia del grupo macro: sistema + gestión (dueño/administrador/gerente) + empleados designados. */
+async function reviewGroupAudience(
+  organizationId: string,
+  recipients: ReviewRecipients,
+  systemUserId: string
+): Promise<string[]> {
+  const managers = await getDb()
     .select({ userId: schema.member.userId })
     .from(schema.member)
     .where(
       and(
         eq(schema.member.organizationId, organizationId),
-        eq(schema.member.role, "owner")
+        inArray(schema.member.role, ["owner", "admin", "manager"])
       )
-    )
-    .limit(1);
-  if (!owner[0]) {
-    throw new ChatError(
-      500,
-      "no_target",
-      "No hay a quién avisarle: falta una regla de alertas o un propietario"
     );
-  }
-  return { kind: "employee", id: owner[0].userId };
+  return [
+    ...new Set([
+      systemUserId,
+      ...managers.map((m) => m.userId),
+      ...recipients.employees.map((e) => e.id),
+    ]),
+  ];
 }
 
-/** Abre/reusa la sala destino (DM del usuario de sistema con el empleado, o el grupo de la regla). */
-async function targetRoom(
+/**
+ * Sincroniza la audiencia del grupo (alta idempotente, nunca quita miembros:
+ * la baja se administra desde el propio grupo en el chat).
+ */
+async function syncReviewGroupMembers(
   organizationId: string,
-  target: ReviewTarget,
-  systemUserId: string
+  roomId: string,
+  userIds: string[]
+): Promise<void> {
+  const db = getDb();
+  const existing = await db
+    .select({ userId: schema.chatRoomMember.userId })
+    .from(schema.chatRoomMember)
+    .where(eq(schema.chatRoomMember.roomId, roomId));
+  const have = new Set(existing.map((e) => e.userId));
+  const missing = [...new Set(userIds)].filter((u) => !have.has(u));
+  if (!missing.length) return;
+  await db.insert(schema.chatRoomMember).values(
+    missing.map((userId) => ({
+      id: newId("chatRoomMember"),
+      organizationId,
+      roomId,
+      userId,
+    }))
+  );
+}
+
+/**
+ * 033c — deja el grupo del flujo creado y con la audiencia al día. Lo llama
+ * también el guardado de Reglas: elegir empleados los suma al grupo en el acto.
+ */
+export async function syncReviewGroupFromRules(
+  organizationId: string
 ): Promise<string> {
-  if (target.kind === "group") return target.id;
-  const dm = await createDmRoom(organizationId, systemUserId, target.id);
-  return dm.id;
+  const systemUserId = await ensureSystemUser(organizationId);
+  const groupRoomId = await ensureReviewGroup(organizationId, systemUserId);
+  const recipients = await resolveReviewRecipients(organizationId);
+  await syncReviewGroupMembers(
+    organizationId,
+    groupRoomId,
+    await reviewGroupAudience(organizationId, recipients, systemUserId)
+  );
+  return groupRoomId;
+}
+
+/**
+ * Salas que reciben el flujo: SIEMPRE el grupo «Alerta de Siniestro» (la casa
+ * de las aprobaciones) y, además, cada grupo elegido en Reglas. Los empleados
+ * designados no reciben copias: son MIEMBROS del grupo (decisión grupal).
+ */
+async function resolveReviewRooms(organizationId: string): Promise<{
+  rooms: { roomId: string; name: string | null }[];
+  systemUserId: string;
+}> {
+  const systemUserId = await ensureSystemUser(organizationId);
+  const groupRoomId = await ensureReviewGroup(organizationId, systemUserId);
+  const recipients = await resolveReviewRecipients(organizationId);
+  await syncReviewGroupMembers(
+    organizationId,
+    groupRoomId,
+    await reviewGroupAudience(organizationId, recipients, systemUserId)
+  );
+  const rooms: { roomId: string; name: string | null }[] = [
+    { roomId: groupRoomId, name: REVIEW_GROUP_NAME },
+  ];
+  for (const group of recipients.groups) {
+    if (group.id !== groupRoomId) {
+      rooms.push({ roomId: group.id, name: group.name });
+    }
+  }
+  return { rooms, systemUserId };
+}
+
+/** 033b — Copias de la tarjeta de una fila (fallback: la entrega principal). */
+function rowDeliveries(row: {
+  deliveries: ReviewDelivery[] | null;
+  roomId: string;
+  messageId: string;
+}): { roomId: string; messageId: string }[] {
+  const list = Array.isArray(row.deliveries)
+    ? row.deliveries.filter(
+        (d) => d && typeof d.roomId === "string" && typeof d.messageId === "string"
+      )
+    : [];
+  if (list.length) {
+    return list.map((d) => ({ roomId: d.roomId, messageId: d.messageId }));
+  }
+  return [{ roomId: row.roomId, messageId: row.messageId }];
 }
 
 export type ReviewIngestResult = {
@@ -252,6 +422,7 @@ export async function ingestReviewRequest(input: {
       id: schema.reviewRequest.id,
       roomId: schema.reviewRequest.roomId,
       messageId: schema.reviewRequest.messageId,
+      deliveries: schema.reviewRequest.deliveries,
     })
     .from(schema.reviewRequest)
     .where(
@@ -263,12 +434,15 @@ export async function ingestReviewRequest(input: {
     )
     .limit(1);
   if (pending[0]) {
-    await updateReviewMessage({
-      organizationId,
-      messageId: pending[0].messageId,
-      payload: fresh,
-      body: `SGSA | Pendiente de aprobación — Registro ${review.recordId}`,
-    });
+    const copies = rowDeliveries(pending[0]);
+    for (const copy of copies) {
+      await updateReviewMessage({
+        organizationId,
+        messageId: copy.messageId,
+        payload: fresh,
+        body: `SGSA | Pendiente de aprobación — Registro ${review.recordId}`,
+      });
+    }
     await db
       .update(schema.reviewRequest)
       .set({
@@ -278,33 +452,46 @@ export async function ingestReviewRequest(input: {
       })
       .where(eq(schema.reviewRequest.id, pending[0].id));
     return {
-      roomId: pending[0].roomId,
-      messageId: pending[0].messageId,
+      roomId: copies[0]!.roomId,
+      messageId: copies[0]!.messageId,
       duplicate: true,
     };
   }
-  const target = await resolveReviewTarget(organizationId);
-  const systemUserId = await ensureSystemUser(organizationId);
-  const roomId = await targetRoom(organizationId, target, systemUserId);
-  const message = await postChatMessage({
-    organizationId,
-    roomId,
-    senderId: systemUserId,
-    body: `SGSA | Pendiente de aprobación — Registro ${review.recordId}`,
-    review: fresh,
-    system: true,
-  });
+  const { rooms, systemUserId } = await resolveReviewRooms(organizationId);
+  const deliveries: ReviewDelivery[] = [];
+  for (const room of rooms) {
+    const message = await postChatMessage({
+      organizationId,
+      roomId: room.roomId,
+      senderId: systemUserId,
+      body: `SGSA | Pendiente de aprobación — Registro ${review.recordId}`,
+      review: fresh,
+      system: true,
+    });
+    deliveries.push({
+      roomId: room.roomId,
+      messageId: message.id,
+      kind: "group",
+      targetId: room.roomId,
+      name: room.name,
+    });
+  }
   await db.insert(schema.reviewRequest).values({
     id: newId("reviewRequest"),
     organizationId,
     recordId: review.recordId,
     cliente: review.cliente,
-    roomId,
-    messageId: message.id,
+    roomId: deliveries[0]!.roomId,
+    messageId: deliveries[0]!.messageId,
+    deliveries,
     status: "pendiente",
     payload: fresh,
   });
-  return { roomId, messageId: message.id, duplicate: false };
+  return {
+    roomId: deliveries[0]!.roomId,
+    messageId: deliveries[0]!.messageId,
+    duplicate: false,
+  };
 }
 
 /**
@@ -317,17 +504,19 @@ export async function postReviewAviso(input: {
   texto: string;
   recordId?: string | null;
 }): Promise<{ roomId: string; messageId: string }> {
-  const target = await resolveReviewTarget(input.organizationId);
-  const systemUserId = await ensureSystemUser(input.organizationId);
-  const roomId = await targetRoom(input.organizationId, target, systemUserId);
-  const message = await postChatMessage({
-    organizationId: input.organizationId,
-    roomId,
-    senderId: systemUserId,
-    body: input.texto,
-    system: true,
-  });
-  return { roomId, messageId: message.id };
+  const { rooms, systemUserId } = await resolveReviewRooms(input.organizationId);
+  let first: { roomId: string; messageId: string } | null = null;
+  for (const room of rooms) {
+    const message = await postChatMessage({
+      organizationId: input.organizationId,
+      roomId: room.roomId,
+      senderId: systemUserId,
+      body: input.texto,
+      system: true,
+    });
+    if (!first) first = { roomId: room.roomId, messageId: message.id };
+  }
+  return first!;
 }
 
 export type ReviewDecision = "approve" | "hold";
@@ -363,7 +552,25 @@ export async function decideReview(input: {
       "Esta revisión ya no está pendiente"
     );
   }
-  await assertRoomMember(organizationId, row.roomId, userId);
+  // 033b — la revisión puede tener VARIAS copias (multi-destino): puede
+  // decidir quien participe de CUALQUIERA de las salas que la recibieron.
+  let isMember = false;
+  for (const copy of rowDeliveries(row)) {
+    try {
+      await assertRoomMember(organizationId, copy.roomId, userId);
+      isMember = true;
+      break;
+    } catch {
+      // no es miembro de esta copia: se prueba con la próxima
+    }
+  }
+  if (!isMember) {
+    throw new ChatError(
+      403,
+      "not_member",
+      "No participás de ninguna conversación que recibió esta revisión"
+    );
+  }
   const hook = approvalWebhook();
   if (!hook) {
     throw new ChatError(
@@ -441,28 +648,33 @@ export async function decideReview(input: {
       ...(nextPayload ? { payload: nextPayload } : {}),
     })
     .where(eq(schema.reviewRequest.id, row.id));
+  const copies = rowDeliveries(row);
   if (nextPayload) {
-    await updateReviewMessage({
-      organizationId,
-      messageId: row.messageId,
-      payload: nextPayload,
-      body:
-        status === "aprobado"
-          ? `✅ SGSA | Aprobado — Registro ${input.recordId}`
-          : `🛑 SGSA | Detenido — Registro ${input.recordId}`,
-    });
+    for (const copy of copies) {
+      await updateReviewMessage({
+        organizationId,
+        messageId: copy.messageId,
+        payload: nextPayload,
+        body:
+          status === "aprobado"
+            ? `✅ SGSA | Aprobado — Registro ${input.recordId}`
+            : `🛑 SGSA | Detenido — Registro ${input.recordId}`,
+      });
+    }
   }
   const systemUserId = await ensureSystemUser(organizationId);
-  await postChatMessage({
-    organizationId,
-    roomId: row.roomId,
-    senderId: systemUserId,
-    body:
-      status === "aprobado"
-        ? `✅ ${decidedPor} aprobó el envío desde el chat interno — el flujo sigue su curso.`
-        : `🛑 ${decidedPor} detuvo el envío desde el chat interno para revisión.`,
-    system: true,
-  });
+  for (const copy of copies) {
+    await postChatMessage({
+      organizationId,
+      roomId: copy.roomId,
+      senderId: systemUserId,
+      body:
+        status === "aprobado"
+          ? `✅ ${decidedPor} aprobó el envío desde el chat interno — el flujo sigue su curso.`
+          : `🛑 ${decidedPor} detuvo el envío desde el chat interno para revisión.`,
+      system: true,
+    });
+  }
   return { status, via: "chat" };
 }
 
@@ -540,11 +752,13 @@ export async function markReviewStatus(input: {
     enviado: `✅ SGSA | Envío despachado — Registro ${input.recordId}`,
     trabado: `⚠️ SGSA | Envío trabado — Registro ${input.recordId}`,
   };
-  await updateReviewMessage({
-    organizationId: input.organizationId,
-    messageId: row.messageId,
-    payload,
-    body: bodyByEstado[input.update.estado],
-  });
+  for (const copy of rowDeliveries(row)) {
+    await updateReviewMessage({
+      organizationId: input.organizationId,
+      messageId: copy.messageId,
+      payload,
+      body: bodyByEstado[input.update.estado],
+    });
+  }
   return { updated: true };
 }

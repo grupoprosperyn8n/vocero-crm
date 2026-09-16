@@ -5,6 +5,7 @@ import {
   alertsConfigured,
   listAlerts,
 } from "@/server/alerts/service";
+import { listPendingReviewAlerts, type ReviewInboxAlert } from "@/server/reviews/inbox";
 
 export const dynamic = "force-dynamic";
 
@@ -12,14 +13,34 @@ export const dynamic = "force-dynamic";
  * 027 — Alertas del sistema de seguros (el mismo sistema de la PWA).
  * `?hist=1` = historial (leídas/gestionadas); sin él, solo pendientes.
  * El contador de pendientes viaja siempre para el badge del nav.
+ * 033c — las revisiones de envío pendientes viajan PRIMERO: viven en el chat
+ * interno (grupo «Alerta de Siniestro») pero la cola las muestra como alerta
+ * con «Abrir conversación» para decidir.
  */
 export const GET = withAuth(async (session, req: Request) => {
-  if (!alertsConfigured()) {
-    return Response.json({ configured: false, alerts: [], pendientes: 0 });
-  }
   const url = new URL(req.url);
   const hist = url.searchParams.get("hist") === "1";
   const mineOnly = url.searchParams.get("mine") === "1";
+  let reviewAlerts: ReviewInboxAlert[] = [];
+  try {
+    reviewAlerts = await listPendingReviewAlerts({
+      organizationId: session.organizationId,
+      userId: session.userId,
+      role: session.role,
+    });
+  } catch (err) {
+    console.error("[api/alerts] no se pudieron leer las revisiones de envío:", err);
+  }
+  if (!alertsConfigured()) {
+    return Response.json({
+      configured: false,
+      alerts: reviewAlerts,
+      pendientes: reviewAlerts.length,
+      viewerRole: session.role,
+      canManageAssignments: canManageAlertAssignments(session.role),
+      mineOnly,
+    });
+  }
   try {
     const { alerts, pendientes } = await listAlerts(hist);
     const scopedAlerts = await decorateAlertsForSession(session, alerts, mineOnly, {
@@ -30,10 +51,10 @@ export const GET = withAuth(async (session, req: Request) => {
     const pendientesScoped = !hist && (!canManage || mineOnly) ? scopedAlerts.length : pendientes;
     return Response.json({
       configured: true,
-      alerts: scopedAlerts,
-      pendientes: pendientesScoped,
+      alerts: hist ? scopedAlerts : [...reviewAlerts, ...scopedAlerts],
+      pendientes: hist ? pendientesScoped : pendientesScoped + reviewAlerts.length,
       viewerRole: session.role,
-      canManageAssignments: canManageAlertAssignments(session.role),
+      canManageAssignments: canManage,
       mineOnly,
     });
   } catch (err) {
