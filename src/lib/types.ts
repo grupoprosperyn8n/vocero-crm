@@ -445,6 +445,31 @@ export type ChatReviewShareDto = {
 };
 
 /**
+ * 037b — Pedido de tarea del gerente/dueño/propietario a un empleado: viaja
+ * como tarjeta en el chat interno y se cierra con ACEPTAR (la tarea se suma
+ * sola al tablero del empleado) o RECHAZAR (con motivo).
+ */
+export type ChatTaskShareDto = {
+  /** Título de la tarea pedida. */
+  title: string;
+  notes: string | null;
+  /** Vencimiento con hora (ISO) o null. */
+  dueAt: string | null;
+  priority: "alta" | "media" | "baja" | null;
+  /** A quién se le pide. */
+  assigneeId: string;
+  assigneeName: string;
+  /** pending → accepted | rejected. */
+  status: "pending" | "accepted" | "rejected";
+  /** Tarea creada al aceptar (tablero de tareas del empleado). */
+  taskId: string | null;
+  acceptedAt: string | null;
+  rejectedAt: string | null;
+  /** Motivo del rechazo. */
+  reason: string | null;
+};
+
+/**
  * 033b — Un destino de entrega de la tarjeta de revisión: cada regla activa
  * del tipo REVISION_ENVIO_SINIESTRO recibe su propia copia de la tarjeta en
  * su sala (DM del usuario de sistema con el empleado, o el grupo elegido) y
@@ -464,4 +489,5 @@ export type ReviewDelivery = {
 export type ChatMessagePayloadDto =
   | ChatContactShareDto
   | ChatAlertShareDto
-  | ChatReviewShareDto;
+  | ChatReviewShareDto
+  | ChatTaskShareDto;

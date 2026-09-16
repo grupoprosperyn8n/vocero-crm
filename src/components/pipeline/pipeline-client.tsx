@@ -20,6 +20,7 @@ import {
   ExternalLink,
   MessageSquareText,
   Plus,
+  Send,
   Settings2,
   Trophy,
   XCircle,
@@ -47,6 +48,7 @@ import { GestionSearchDialog } from "./gestion-search-dialog";
 import { LeadDrawer } from "./lead-drawer";
 import { TaskDialog, type TaskOrigin } from "./task-dialog";
 import { TaskDueChip } from "./entity-tasks";
+import { TaskRequestDialog } from "./task-request-dialog";
 
 /** Compat: antes el DTO del tablero se llamaba BoardLead. */
 export type BoardLead = PipelineCardDto;
@@ -77,6 +79,8 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
     task?: PipelineCardDto;
     origin?: TaskOrigin;
   } | null>(null);
+  /** 037b — «pedir tarea» a un empleado (la tarjeta va a su chat). */
+  const [pedirTarea, setPedirTarea] = useState(false);
   /** 030 — aviso del tablero (p. ej. el sistema no aceptó sincronizar). */
   const [aviso, setAviso] = useState<string | null>(null);
   /** 030 — mover una tarjeta-alerta puede cambiar el estado EN EL SISTEMA. */
@@ -358,6 +362,11 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
               <Plus className="h-4 w-4" /> Nueva tarea
             </Button>
           )}
+          {board === "tareas" && seesWholeTeam && (
+            <Button variant="outline" size="sm" onClick={() => setPedirTarea(true)}>
+              <Send className="h-4 w-4" /> Pedir tarea
+            </Button>
+          )}
           {role !== "member" && (
             <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
               <Settings2 className="h-4 w-4" /> Gestionar etapas
@@ -512,6 +521,14 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
             setTaskDialog(null);
             void refetch();
           }}
+        />
+      )}
+
+      {/* 037b — el pedido de tarea: viaja como tarjeta al chat del empleado. */}
+      {pedirTarea && (
+        <TaskRequestDialog
+          onClose={() => setPedirTarea(false)}
+          onSent={() => setPedirTarea(false)}
         />
       )}
     </div>

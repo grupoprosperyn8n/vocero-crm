@@ -37,6 +37,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
   const body = (raw as { body?: unknown })?.body;
   const contact = (raw as { contact?: unknown })?.contact;
   const alert = (raw as { alert?: unknown })?.alert;
+  const task = (raw as { task?: unknown })?.task;
   try {
     let alertPayload: unknown;
     if (alert !== undefined && alert !== null) {
@@ -59,6 +60,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
       body: typeof body === "string" ? body : "",
       contact,
       alert: alertPayload,
+      task,
     });
     return Response.json({ message }, { status: 201 });
   } catch (err) {

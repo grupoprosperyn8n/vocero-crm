@@ -4,12 +4,14 @@ import { newId } from "@/lib/db/ids";
 import { publish } from "@/server/events/bus";
 import { onlineUserIds } from "@/server/events/presence";
 import { avatarUrlsForPeople } from "@/server/avatars";
+import { createPipelineCard } from "@/server/pipeline/cards";
 import { artDayKey } from "./office-day";
 import type {
   ChatAlertShareDto,
   ChatContactShareDto,
   ChatMessagePayloadDto,
   ChatReviewShareDto,
+  ChatTaskShareDto,
 } from "@/lib/types";
 import { SISTEMA_SGSA_EMAIL, isReviewEstado } from "@/lib/reviews";
 
@@ -37,6 +39,9 @@ export const CHAT_CONTACT_NAME_MAX = 120;
 export const CHAT_ALERT_TITLE_MAX = 160;
 export const CHAT_ALERT_BODY_MAX = 1200;
 export const CHAT_ALERT_LABEL_MAX = 80;
+/** 037b — topes del pedido de tarea (título y motivo del rechazo). */
+export const CHAT_TASK_TITLE_MAX = 160;
+export const CHAT_TASK_REASON_MAX = 300;
 /** 033 — topes de la tarjeta de revisión de envío (SGSA). */
 export const CHAT_REVIEW_TEXT_MAX = 160;
 export const CHAT_REVIEW_DETAIL_MAX = 300;
@@ -209,8 +214,51 @@ export function sanitizeReviewShare(raw: unknown): ChatReviewShareDto | null {
   };
 }
 
+/**
+ * 037b — Pedido de tarea: snapshot plano y acotado. La nota conserva saltos
+ * de línea (se recorta, no se colapsa); el estado y el cierre SOLO los cambia
+ * el servidor (aceptar/rechazar), nunca lo que mande el cliente.
+ */
+export function sanitizeTaskShare(raw: unknown): ChatTaskShareDto | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const title = cleanStr(o.title, CHAT_TASK_TITLE_MAX);
+  const assigneeId = cleanStr(o.assigneeId, 64);
+  const assigneeName = cleanStr(o.assigneeName, CHAT_CONTACT_NAME_MAX);
+  if (!title || !assigneeId || !assigneeName) return null;
+  const status =
+    o.status === "accepted" || o.status === "rejected" ? o.status : "pending";
+  const priority =
+    o.priority === "alta" || o.priority === "media" || o.priority === "baja"
+      ? o.priority
+      : null;
+  const iso = (v: unknown): string | null => {
+    const s = String(v ?? "").trim();
+    if (!s) return null;
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  };
+  const notesRaw = String(o.notes ?? "").trim();
+  return {
+    title,
+    notes: notesRaw ? notesRaw.slice(0, 2000) : null,
+    dueAt: iso(o.dueAt),
+    priority,
+    assigneeId,
+    assigneeName,
+    status,
+    taskId: cleanStr(o.taskId, 64),
+    acceptedAt: iso(o.acceptedAt),
+    rejectedAt: iso(o.rejectedAt),
+    reason: cleanStr(o.reason, CHAT_TASK_REASON_MAX),
+  };
+}
+
 function chatKind(kind: unknown): ChatMessageView["kind"] {
-  return kind === "contact" || kind === "alert" || kind === "review"
+  return kind === "contact" ||
+    kind === "alert" ||
+    kind === "review" ||
+    kind === "task"
     ? kind
     : "text";
 }
@@ -250,8 +298,8 @@ export type ChatMessageView = {
   senderId: string;
   senderName: string;
   body: string;
-  /** `text` (normal), `contact`, `alert` o `review` (revisión de envío SGSA, 033). */
-  kind: "text" | "contact" | "alert" | "review";
+  /** `text` (normal), `contact`, `alert`, `review` (033) o `task` (pedido, 037b). */
+  kind: "text" | "contact" | "alert" | "review" | "task";
   /** Snapshot del adjunto compartido; null en los mensajes de texto. */
   payload: ChatMessagePayloadDto | null;
   createdAt: string;
@@ -646,6 +694,8 @@ export async function postChatMessage(input: {
   alert?: unknown;
   /** 033 — revisión de envío a publicar (opcional). */
   review?: unknown;
+  /** 037b — pedido de tarea (opcional). */
+  task?: unknown;
   /**
    * 033 — mensajes del usuario de SISTEMA (tarjetas de revisión): saltea la
    * validación de membresía y de pausa — el sistema publica donde la regla diga.
@@ -688,6 +738,17 @@ export async function postChatMessage(input: {
     }
     kind = "review";
     body = body ?? `SGSA | Pendiente de aprobación — Registro ${payload.recordId}`;
+  }
+  if (input.task !== undefined && input.task !== null) {
+    if (kind !== "text") {
+      throw new ChatError(422, "invalid_payload", "Compartí un solo adjunto por mensaje");
+    }
+    payload = sanitizeTaskShare(input.task);
+    if (!payload) {
+      throw new ChatError(422, "invalid_task", "El pedido de tarea no es válido");
+    }
+    kind = "task";
+    body = body ?? `📋 Pedido de tarea: ${payload.title}`;
   }
   if (!body) {
     throw new ChatError(422, "empty", "El mensaje está vacío");
@@ -816,6 +877,118 @@ export async function updateReviewMessage(input: {
     body: row.body,
     kind: "review",
     payload,
+    createdAt: row.createdAt.toISOString(),
+  };
+  publish(input.organizationId, {
+    type: "internal.message",
+    data: { roomId: row.roomId, message: view },
+  });
+  return view;
+}
+
+/**
+ * 037b — Responde un pedido de tarea (ACEPTAR/RECHAZAR). Solo la persona a la
+ * que se le pidió puede; al aceptar, la tarea se crea en SU tablero (dueño =
+ * él) y la tarjeta queda actualizada para todos (SSE), con el mismo patrón
+ * que las revisiones de envío. Un pedido ya respondido no se toca de nuevo.
+ */
+export async function respondTaskRequest(input: {
+  organizationId: string;
+  messageId: string;
+  userId: string;
+  decision: "accept" | "reject";
+  reason?: string | null;
+}): Promise<ChatMessageView> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: schema.chatMessage.id,
+      roomId: schema.chatMessage.roomId,
+      senderId: schema.chatMessage.senderId,
+      payload: schema.chatMessage.payload,
+      createdAt: schema.chatMessage.createdAt,
+    })
+    .from(schema.chatMessage)
+    .where(
+      and(
+        eq(schema.chatMessage.organizationId, input.organizationId),
+        eq(schema.chatMessage.id, input.messageId),
+        eq(schema.chatMessage.kind, "task")
+      )
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new ChatError(404, "not_found", "Ese pedido de tarea no existe");
+  const payload = sanitizeTaskShare(row.payload);
+  if (!payload) {
+    throw new ChatError(422, "invalid_task", "El pedido de tarea no es válido");
+  }
+  if (payload.assigneeId !== input.userId) {
+    throw new ChatError(403, "not_assignee", "Solo la persona a la que se le pidió puede responder");
+  }
+  if (payload.status !== "pending") {
+    throw new ChatError(409, "already_answered", "Ese pedido ya fue respondido");
+  }
+
+  let next: ChatTaskShareDto;
+  let body: string;
+  if (input.decision === "accept") {
+    const created = await createPipelineCard({
+      organizationId: input.organizationId,
+      ownerUserId: payload.assigneeId,
+      board: "tareas",
+      sourceKind: "task",
+      label: payload.title,
+      notes: payload.notes,
+      dueAt: payload.dueAt ? new Date(payload.dueAt) : null,
+      priority: payload.priority,
+      meta: { originKind: "task_request", originRef: input.messageId },
+    });
+    if (!created.ok) {
+      throw new ChatError(500, "task_create_failed", "No se pudo sumar la tarea al tablero");
+    }
+    next = {
+      ...payload,
+      status: "accepted",
+      taskId: created.id,
+      acceptedAt: new Date().toISOString(),
+    };
+    body = `✅ ${payload.assigneeName} aceptó la tarea: ${payload.title}`;
+  } else {
+    const reason = cleanStr(input.reason, CHAT_TASK_REASON_MAX);
+    next = {
+      ...payload,
+      status: "rejected",
+      rejectedAt: new Date().toISOString(),
+      reason,
+    };
+    body = `❌ ${payload.assigneeName} rechazó la tarea: ${payload.title}${
+      reason ? ` — motivo: ${reason}` : ""
+    }`;
+  }
+
+  await db
+    .update(schema.chatMessage)
+    .set({ payload: next, body })
+    .where(
+      and(
+        eq(schema.chatMessage.organizationId, input.organizationId),
+        eq(schema.chatMessage.id, input.messageId)
+      )
+    );
+  const senderRows = await db
+    .select({ name: schema.user.name })
+    .from(schema.user)
+    .where(eq(schema.user.id, row.senderId))
+    .limit(1);
+  const view: ChatMessageView = {
+    id: row.id,
+    roomId: row.roomId,
+    senderId: row.senderId,
+    senderName: senderRows[0]?.name ?? "Empleado",
+    body,
+    kind: "task",
+    payload: next,
     createdAt: row.createdAt.toISOString(),
   };
   publish(input.organizationId, {

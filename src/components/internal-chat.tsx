@@ -10,6 +10,7 @@ import {
   Building2,
   Check,
   ChevronRight,
+  ClipboardList,
   ExternalLink,
   FileText,
   Loader2,
@@ -44,8 +45,11 @@ import type {
   ChatContactShareDto,
   ChatMessagePayloadDto,
   ChatReviewShareDto,
+  ChatTaskShareDto,
 } from "@/lib/types";
 import { reviewEstadoLabel, reviewEstadoTone } from "@/lib/reviews";
+import { seesWholeTeam, taskDueLabel } from "@/lib/pipeline";
+import { TaskRequestDialog } from "@/components/pipeline/task-request-dialog";
 import { useEvents } from "@/components/use-events";
 
 /**
@@ -68,8 +72,8 @@ type ChatMessage = {
   senderId: string;
   senderName: string;
   body: string;
-  /** 025/027c/033 — `text`, `contact`, `alert` o `review` (revisión de envío). */
-  kind: "text" | "contact" | "alert" | "review";
+  /** 025/027c/033/037b — `text`, `contact`, `alert`, `review` o `task`. */
+  kind: "text" | "contact" | "alert" | "review" | "task";
   /** 025/027c — snapshot del adjunto compartido; null en los textos. */
   payload: ChatMessagePayloadDto | null;
   createdAt: string;
@@ -323,6 +327,13 @@ function isReviewPayload(
   payload: ChatMessagePayloadDto
 ): payload is ChatReviewShareDto {
   return "mensaje" in payload && "canales" in payload;
+}
+
+/** 037b — pedido de tarea (assigneeId + status lo distinguen del resto). */
+function isTaskPayload(
+  payload: ChatMessagePayloadDto
+): payload is ChatTaskShareDto {
+  return "assigneeId" in payload && "status" in payload;
 }
 
 /** 025 — par base/interface del backoffice (el mismo que usa client-card). */
@@ -758,6 +769,175 @@ function ReviewCard({
   );
 }
 
+/** 037b — Pedido de tarea: el empleado acepta (se suma sola a su tablero) o rechaza con motivo. */
+function TaskRequestCard({
+  payload,
+  messageId,
+  meId,
+  requesterName,
+  onDecided,
+}: {
+  payload: ChatTaskShareDto;
+  messageId: string;
+  meId: string;
+  requesterName: string;
+  onDecided: () => void;
+}) {
+  const [busy, setBusy] = useState<null | "accept" | "reject">(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  const pending = payload.status === "pending";
+  const mine = meId === payload.assigneeId;
+
+  async function respond(decision: "accept" | "reject", motivo?: string) {
+    if (busy) return;
+    setBusy(decision);
+    setErr(null);
+    try {
+      const res = await fetch(
+        `/api/internal/task-requests/${encodeURIComponent(messageId)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ decision, reason: motivo ?? null }),
+        }
+      ).catch(() => null);
+      const data = res
+        ? ((await res.json().catch(() => null)) as { error?: { message?: string } } | null)
+        : null;
+      if (!res || !res.ok) {
+        setErr(data?.error?.message ?? "No se pudo responder el pedido.");
+        return;
+      }
+      onDecided();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const chip = pending
+    ? "border-amber-300 bg-amber-50 text-amber-700"
+    : payload.status === "accepted"
+      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+      : "border-red-300 bg-red-50 text-red-700";
+  const estadoLabel = pending
+    ? "Pendiente"
+    : payload.status === "accepted"
+      ? "Aceptada"
+      : "Rechazada";
+
+  return (
+    <div className="mt-1.5 rounded-md border border-border-strong bg-background/90 px-2.5 py-2">
+      <p className="flex flex-wrap items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide text-text-2">
+        📋 Pedido de tarea
+        <span className={cn("rounded-full border px-1.5 py-[1px] text-[10px] font-semibold normal-case tracking-normal", chip)}>
+          {estadoLabel}
+        </span>
+      </p>
+      <p className="mt-1 text-[13.5px] font-semibold leading-tight">{payload.title}</p>
+      <p className="mt-0.5 text-[11.5px] text-text-2">
+        {[
+          payload.dueAt ? `Vence: ${taskDueLabel(payload.dueAt)}` : null,
+          payload.priority ? `Prioridad: ${payload.priority}` : null,
+          `Para: ${payload.assigneeName}`,
+          `Pidió: ${requesterName}`,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+      {payload.notes && (
+        <p className="mt-1 whitespace-pre-wrap rounded-md border bg-subtle px-2 py-1.5 text-[12px]">
+          {payload.notes}
+        </p>
+      )}
+      {pending ? (
+        mine ? (
+          <div className="mt-2">
+            {!rejecting ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => void respond("accept")}
+                  className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-[12px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  {busy === "accept" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" strokeWidth={2.2} />
+                  )}
+                  Aceptar tarea
+                </button>
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => setRejecting(true)}
+                  className="flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-2.5 py-1.5 text-[12px] font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                >
+                  <X className="h-3.5 w-3.5" strokeWidth={2.2} />
+                  Rechazar
+                </button>
+              </div>
+            ) : (
+              <div className="mt-1">
+                <textarea
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  rows={2}
+                  placeholder="Motivo del rechazo (opcional)…"
+                  className="w-full rounded-md border bg-background px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-text-3 focus:border-brand"
+                />
+                <div className="mt-1.5 flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => void respond("reject", reason)}
+                    className="flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-2.5 py-1.5 text-[12px] font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                  >
+                    {busy === "reject" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : null}
+                    Confirmar rechazo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRejecting(false)}
+                    className="rounded-md px-2 py-1.5 text-[12px] font-semibold text-text-2 hover:bg-subtle"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="mt-2 text-[11.5px] text-text-3">
+            Esperando que {payload.assigneeName} responda…
+          </p>
+        )
+      ) : (
+        <p className="mt-2 rounded-md border bg-background/90 px-2.5 py-1.5 text-[11.5px]">
+          {payload.status === "accepted" ? (
+            <>
+              ✅ Aceptada
+              {payload.acceptedAt ? ` · ${fmtTime(payload.acceptedAt)}` : ""} — la tarea
+              ya está en su tablero de Tareas.
+            </>
+          ) : (
+            <>
+              ❌ Rechazada
+              {payload.rejectedAt ? ` · ${fmtTime(payload.rejectedAt)}` : ""}
+              {payload.reason ? ` — motivo: ${payload.reason}` : ""}
+            </>
+          )}
+        </p>
+      )}
+      {err && <p className="mt-1 text-[11px] font-semibold text-red-600">{err}</p>}
+    </div>
+  );
+}
+
 export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const canGroup = role === "owner" || role === "admin";
 
@@ -791,6 +971,8 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const [sending, setSending] = useState(false);
   /** 025 — diálogo «compartir un contacto» abierto. */
   const [shareOpen, setShareOpen] = useState(false);
+  /** 037b — diálogo «pedir tarea» abierto (desde un DM con el empleado). */
+  const [taskReqOpen, setTaskReqOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   /** 033c — deep link desde Alertas: /chat?room=<id> abre esa conversación. */
@@ -1920,7 +2102,7 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                       <div
                         className={cn(
                           "rounded-md border px-3 py-2",
-                          m.kind === "review"
+                          m.kind === "review" || m.kind === "task"
                             ? "w-full max-w-[96%] sm:max-w-[640px]"
                             : "max-w-[85%] sm:max-w-[70%]",
                           mine ? "border-brand bg-brand-tint" : "bg-subtle"
@@ -1952,6 +2134,19 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                               }}
                             />
                           )}
+                        {m.kind === "task" && m.payload && isTaskPayload(m.payload) && (
+                          <TaskRequestCard
+                            payload={m.payload}
+                            messageId={m.id}
+                            meId={meId}
+                            requesterName={m.senderName}
+                            onDecided={() => {
+                              if (activeIdRef.current) {
+                                void openRoom(activeIdRef.current);
+                              }
+                            }}
+                          />
+                        )}
                         <p
                           className={cn(
                             "mt-0.5 text-right text-[10.5px]",
@@ -1981,6 +2176,17 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                   void sendMessage();
                 }}
               >
+                {roomMeta?.kind === "dm" && peer && seesWholeTeam(role) && (
+                  <button
+                    type="button"
+                    onClick={() => setTaskReqOpen(true)}
+                    className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-md border text-text-2 hover:bg-subtle"
+                    aria-label="Pedir tarea"
+                    title="Pedir tarea"
+                  >
+                    <ClipboardList className="h-4 w-4" strokeWidth={1.8} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setShareOpen(true)}
@@ -2587,6 +2793,16 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
         <ShareContactDialog
           onClose={() => setShareOpen(false)}
           onShare={shareContact}
+        />
+      )}
+      {taskReqOpen && peer && (
+        <TaskRequestDialog
+          lockedAssignee={{ userId: peer.userId, name: peer.name }}
+          onClose={() => setTaskReqOpen(false)}
+          onSent={() => {
+            setTaskReqOpen(false);
+            if (activeIdRef.current) void openRoom(activeIdRef.current);
+          }}
         />
       )}
     </div>

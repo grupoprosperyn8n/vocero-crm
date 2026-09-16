@@ -8,6 +8,7 @@ import {
   sanitizeChatBody,
   sanitizeContactShare,
   sanitizeAlertShare,
+  sanitizeTaskShare,
   sanitizeRoomName,
 } from "@/server/internal/chat";
 
@@ -243,5 +244,58 @@ describe("chat interno — alerta compartida (027c)", () => {
         linkRegistro: "javascript:alert(1)",
       })?.recordUrl
     ).toBeNull();
+  });
+});
+
+describe("chat interno — pedido de tarea (037b)", () => {
+  it("normaliza el pedido y conserva estado/cierre del servidor", () => {
+    const out = sanitizeTaskShare({
+      title: "  Llamar   al cliente ",
+      notes: "nota\ncon salto",
+      dueAt: "2026-09-18T11:30:00.000Z",
+      priority: "alta",
+      assigneeId: "u_emp",
+      assigneeName: "  Julia  ",
+      status: "accepted",
+      taskId: "ld_123",
+      acceptedAt: "2026-09-16T18:00:00.000Z",
+      reason: null,
+    });
+    expect(out).not.toBeNull();
+    expect(out?.title).toBe("Llamar al cliente");
+    expect(out?.notes).toBe("nota\ncon salto");
+    expect(out?.dueAt).toBe("2026-09-18T11:30:00.000Z");
+    expect(out?.priority).toBe("alta");
+    expect(out?.assigneeName).toBe("Julia");
+    expect(out?.status).toBe("accepted");
+    expect(out?.taskId).toBe("ld_123");
+  });
+
+  it("sin título, sin destinatario o vacío → null; estado raro cae a pending", () => {
+    expect(sanitizeTaskShare(null)).toBeNull();
+    expect(sanitizeTaskShare({ title: "X", assigneeId: "u" })).toBeNull();
+    expect(sanitizeTaskShare({ assigneeId: "u", assigneeName: "A" })).toBeNull();
+    const p = sanitizeTaskShare({
+      title: "T",
+      assigneeId: "u",
+      assigneeName: "A",
+      status: "hackeado",
+      priority: "urgente",
+      dueAt: "no-fecha",
+    });
+    expect(p?.status).toBe("pending");
+    expect(p?.priority).toBeNull();
+    expect(p?.dueAt).toBeNull();
+  });
+
+  it("topa el motivo del rechazo en 300", () => {
+    const p = sanitizeTaskShare({
+      title: "T",
+      assigneeId: "u",
+      assigneeName: "A",
+      status: "rejected",
+      reason: "x".repeat(500),
+    });
+    expect(p?.reason?.length).toBe(300);
   });
 });
