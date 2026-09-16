@@ -176,11 +176,11 @@ export function NewContactDialog({
           </div>
         )}
         {error && <p className="mt-3 text-xs text-danger-text">{error}</p>}
-        {/* 029 — el contacto ya no entra solo al pipeline: se suma a mano
-            desde su tarjeta, con el botón «+ Pipeline». */}
+        {/* 029 — el contacto ya no entra solo al flujo: se suma a mano
+            desde su tarjeta, con el botón «+ Flujo». */}
         <p className="mt-3 text-[11px] text-text-3">
-          Después podés sumarlo a tu pipeline (ventas o gestiones) desde su
-          tarjeta, con «+ Pipeline».
+          Después podés sumarlo a tu flujo (ventas o gestiones) desde su
+          tarjeta, con «+ Flujo».
         </p>
 
         <div className="mt-4 flex justify-end gap-2">

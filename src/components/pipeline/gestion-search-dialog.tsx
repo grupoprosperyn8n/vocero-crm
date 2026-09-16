@@ -97,8 +97,8 @@ export function GestionSearchDialog({
       setAviso({
         tipo: "ok",
         texto: data?.created
-          ? "Sumada a tu pipeline de gestiones ✓"
-          : "Ya estaba en tu pipeline de gestiones",
+          ? "Sumada a tu flujo de gestiones ✓"
+          : "Ya estaba en tu flujo de gestiones",
       });
       onAdded();
     } catch {
@@ -199,7 +199,7 @@ export function GestionSearchDialog({
                 onClick={() => void sumar(g)}
               >
                 <Plus className="h-3.5 w-3.5" />
-                {agregando === g.recordId ? "Sumando…" : "Pipeline"}
+                {agregando === g.recordId ? "Sumando…" : "Flujo"}
               </Button>
             </div>
           ))}

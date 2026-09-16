@@ -792,7 +792,7 @@ export function AlertsClient() {
                           <Share2 className="h-3.5 w-3.5" strokeWidth={1.8} />
                           Compartir
                         </button>
-                        {/* 029 — mandar la alerta a MI pipeline de gestiones. */}
+                        {/* 029 — mandar la alerta a mi flujo de gestiones. */}
                         <AddToPipelineButton
                           source={{
                             kind: "alert",

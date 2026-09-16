@@ -22,7 +22,7 @@ type Source =
     };
 
 /**
- * 029 — «＋ Pipeline»: suma ESTA fuente al pipeline PERSONAL del usuario.
+ * 029 — «＋ Flujo»: suma ESTA fuente al flujo PERSONAL del usuario.
  *
  * Se elige tablero (Ventas o Gestiones) — salvo las alertas, que solo entran
  * al de gestiones. Con `fixedBoard` no hay menú: el contexto ya dijo a cuál.
@@ -73,18 +73,18 @@ export function AddToPipelineButton({
       if (!res.ok) {
         setEstado({
           tipo: "error",
-          texto: data?.error?.message ?? "No se pudo sumar al pipeline",
+          texto: data?.error?.message ?? "No se pudo sumar al flujo",
         });
         return;
       }
       const destino = board === "ventas" ? "ventas" : "gestiones";
       setEstado(
         data?.created
-          ? { tipo: "ok", texto: `Sumada a tu pipeline de ${destino} ✓` }
-          : { tipo: "info", texto: `Ya estaba en tu pipeline de ${destino}` }
+          ? { tipo: "ok", texto: `Sumada a tu flujo de ${destino} ✓` }
+          : { tipo: "info", texto: `Ya estaba en tu flujo de ${destino}` }
       );
     } catch {
-      setEstado({ tipo: "error", texto: "No se pudo sumar al pipeline" });
+      setEstado({ tipo: "error", texto: "No se pudo sumar al flujo" });
     } finally {
       setGuardando(false);
     }
@@ -98,10 +98,10 @@ export function AddToPipelineButton({
           type="button"
           onClick={() => void sumar("gestiones")}
           disabled={guardando}
-          aria-label="Sumar la alerta a mi pipeline de gestiones"
+          aria-label="Sumar la alerta a mi flujo de gestiones"
           className="inline-flex items-center gap-1 rounded-md border border-border-strong bg-background px-2 py-1 text-[12px] font-medium hover:bg-accent disabled:opacity-50"
         >
-          <Plus className="h-3.5 w-3.5" /> {texto ?? "A mi pipeline"}
+          <Plus className="h-3.5 w-3.5" /> {texto ?? "A mi flujo"}
         </button>
         {estado && (
           <span
@@ -125,7 +125,7 @@ export function AddToPipelineButton({
           type="button"
           onClick={() => void sumar(fixedBoard)}
           disabled={guardando}
-          aria-label={`Sumar a mi pipeline de ${fixedBoard}`}
+          aria-label={`Sumar a mi flujo de ${fixedBoard}`}
           className={cn(
             "inline-flex items-center justify-center gap-1 rounded-md border border-border-strong bg-background font-medium hover:bg-accent disabled:opacity-50",
             size === "icon" ? "h-7 w-7" : "px-2 py-1 text-[12px]"
@@ -156,15 +156,15 @@ export function AddToPipelineButton({
         disabled={guardando}
         aria-haspopup="menu"
         aria-expanded={abierto}
-        aria-label="Sumar a mi pipeline"
+        aria-label="Sumar a mi flujo"
         className={cn(
           "inline-flex items-center justify-center gap-1 rounded-md border border-border-strong bg-background font-medium hover:bg-accent disabled:opacity-50",
           size === "icon" ? "h-8 w-8" : "px-2 py-1 text-[12px]"
         )}
-        title="Sumar a mi pipeline"
+        title="Sumar a mi flujo"
       >
         <Plus className="h-3.5 w-3.5" />
-        {size !== "icon" && "Pipeline"}
+        {size !== "icon" && "Flujo"}
       </button>
       {abierto && (
         <>
@@ -190,7 +190,7 @@ export function AddToPipelineButton({
                 onClick={() => void sumar(b.value)}
                 className="block w-full rounded px-2 py-1.5 text-left text-[12.5px] hover:bg-accent"
               >
-                Pipeline de {b.label.toLowerCase()}
+                Flujo de {b.label.toLowerCase()}
               </button>
             ))}
           </span>

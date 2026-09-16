@@ -40,7 +40,7 @@ const NAV: NavItem[] = [
   // 027 — Alertas del sistema de seguros (misma cola que la PWA). Solo existe
   // en instancias con backend de alertas configurado.
   { href: "/alerts", label: "Alertas", icon: Bell, badge: "alerts" },
-  { href: "/pipeline", label: "Pipeline", icon: Kanban },
+  { href: "/pipeline", label: "Flujo de Venta/Gestión", icon: Kanban },
   { href: "/contacts", label: "Contactos", icon: Users },
   // 022 — Chat interno del equipo: lo ve TODO el equipo (no es de Ajustes).
   { href: "/chat", label: "Chat interno", icon: MessageSquareText, badge: "internal" },
@@ -162,7 +162,7 @@ export function AppNav({
   // Ajustes solo por Equipo. 027 — "Alertas" solo en instancias configuradas.
   let nav = role === "owner" ? NAV : NAV.filter((i) => i.href !== "/agent");
   if (!alerts) nav = nav.filter((i) => i.href !== "/alerts");
-  // Citas va después de Pipeline: es el paso siguiente de un trato, no una
+  // Citas va después del Flujo de Venta/Gestión: es el paso siguiente de un trato, no una
   // sección aparte.
   const items = agenda
     ? [...nav.slice(0, 2), AGENDA_ITEM, ...nav.slice(2)]

@@ -537,7 +537,7 @@ function AlertShareCard({ payload }: { payload: ChatAlertShareDto }) {
               Abrir cliente
             </a>
           )}
-          {/* 029 — la alerta compartida también se puede mandar a MI pipeline. */}
+          {/* 029 — la alerta compartida también se puede mandar a mi flujo. */}
           <AddToPipelineButton
             source={{
               kind: "alert",

@@ -506,7 +506,7 @@ export function AgentsPanel() {
             >
               Agente
             </a>{" "}
-            (menú principal, junto a Bandeja y Pipeline), con su prompt de
+            (menú principal, junto a Bandeja y Flujo de Venta/Gestión), con su prompt de
             sistema, tono y knowledge base; su proveedor de IA se elige en{" "}
             <a
               href="/settings/ai"

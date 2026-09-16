@@ -500,7 +500,7 @@ export function LeadDrawer({
                   <p className="text-xs text-warning-text">
                     {esTarea
                       ? "¿Eliminar la tarea? Su historial se va con ella."
-                      : "¿Sacar la tarjeta del pipeline? Su historial se va con ella."}
+                      : "¿Sacar la tarjeta del flujo? Su historial se va con ella."}
                   </p>
                   <div className="mt-2 flex gap-1.5">
                     <Button size="sm" variant="destructive" onClick={onRemove}>
@@ -522,7 +522,7 @@ export function LeadDrawer({
                   className="w-full text-destructive"
                   onClick={() => setConfirmandoSacar(true)}
                 >
-                  {esTarea ? "Eliminar tarea" : "Sacar del pipeline"}
+                  {esTarea ? "Eliminar tarea" : "Sacar del flujo"}
                 </Button>
               )}
             </section>

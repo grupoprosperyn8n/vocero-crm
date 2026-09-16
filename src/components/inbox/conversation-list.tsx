@@ -178,7 +178,7 @@ export function ConversationList({
   // los renglones ni filtro. La pantalla queda exactamente como antes de 014.
   const multiChannel = channels.length > 1;
 
-  // Etapas presentes en la bandeja, en el orden en que llegan del pipeline.
+  // Etapas presentes en la bandeja, en el orden en que llegan del flujo.
   const stages: string[] = [];
   for (const c of conversations) {
     if (c.stageName && !stages.includes(c.stageName)) stages.push(c.stageName);

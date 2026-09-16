@@ -51,6 +51,7 @@ import { TaskDialog, type TaskOrigin } from "./task-dialog";
 import { TaskDueChip } from "./entity-tasks";
 import { TaskRequestDialog } from "./task-request-dialog";
 import { TaskStatsPanel } from "./task-stats-panel";
+import { PipelineListView } from "./pipeline-list-view";
 
 /** Compat: antes el DTO del tablero se llamaba BoardLead. */
 export type BoardLead = PipelineCardDto;
@@ -58,7 +59,7 @@ export type BoardLead = PipelineCardDto;
 type StaffOption = { userId: string; name: string; role: string };
 
 /**
- * 029 — Pipeline PERSONAL, de dos maneras: la pestaña de VENTAS (prospectos
+ * 029 — Flujo de Venta/Gestión PERSONAL, de dos maneras: la pestaña de VENTAS (prospectos
  * del CRM y clientes del sistema) y la de GESTIONES (tarjetas de alertas y
  * cualquier cosa a seguir). El tablero se llena a MANO — se dejó de
  * autocargar — y cada uno ve lo suyo; propietario, administrador y gerente
@@ -85,6 +86,8 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
   const [pedirTarea, setPedirTarea] = useState(false);
   /** 037c — el tablero de tareas visto como tablero de gestión (gerente+). */
   const [verMetricas, setVerMetricas] = useState(false);
+  /** 037d — el tablero, de dos maneras: tablero o lista. */
+  const [vista, setVista] = useState<"tablero" | "lista">("tablero");
   /** 030 — aviso del tablero (p. ej. el sistema no aceptó sincronizar). */
   const [aviso, setAviso] = useState<string | null>(null);
   /** 030 — mover una tarjeta-alerta puede cambiar el estado EN EL SISTEMA. */
@@ -308,7 +311,7 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-[17px] font-bold tracking-tight">Pipeline</h2>
+          <h2 className="text-[17px] font-bold tracking-tight">Flujo de Venta/Gestión</h2>
           {/* Las dos maneras (029): ventas y gestiones, en el mismo lugar. */}
           <div className="flex rounded-md border border-border-strong bg-subtle p-0.5">
             {PIPELINE_BOARDS.map((b) => (
@@ -341,11 +344,44 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* 037d — el mismo tablero, de dos maneras. */}
+          <div className="flex rounded-md border border-border-strong bg-subtle p-0.5">
+            <button
+              onClick={() => {
+                setVista("tablero");
+                setVerMetricas(false);
+              }}
+              aria-pressed={vista === "tablero" && !verMetricas}
+              className={cn(
+                "rounded px-2.5 py-1 text-[12.5px] font-semibold transition-colors",
+                vista === "tablero" && !verMetricas
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Kanban
+            </button>
+            <button
+              onClick={() => {
+                setVista("lista");
+                setVerMetricas(false);
+              }}
+              aria-pressed={vista === "lista" && !verMetricas}
+              className={cn(
+                "rounded px-2.5 py-1 text-[12.5px] font-semibold transition-colors",
+                vista === "lista" && !verMetricas
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Lista
+            </button>
+          </div>
           {seesWholeTeam && (
             <select
               value={assignee}
               onChange={(e) => setAssignee(e.target.value)}
-              aria-label="Ver el pipeline de"
+              aria-label="Ver el flujo de"
               className="h-8 rounded-md border border-border-strong bg-background px-2 text-[12.5px]"
             >
               <option value="all">Todo el equipo</option>
@@ -415,6 +451,17 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
       {board === "tareas" && verMetricas ? (
         <div className="flex-1 overflow-y-auto p-3 sm:p-4">
           <TaskStatsPanel />
+        </div>
+      ) : vista === "lista" ? (
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+          <PipelineListView
+            board={board}
+            cards={cards}
+            stages={stages}
+            currency={currency}
+            showsOwner={showsOwner}
+            onOpen={(l) => setAbiertoId(l.id)}
+          />
         </div>
       ) : (
         <div className="flex-1 snap-x snap-mandatory overflow-x-auto p-3 sm:snap-none sm:p-4">

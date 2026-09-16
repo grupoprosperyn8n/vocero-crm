@@ -46,7 +46,7 @@ export function ContactPanel({
   const [stages, setStages] = useState<StageDto[]>([]);
   const [currentStageId, setCurrentStageId] = useState<string | null>(null);
   const [leadId, setLeadId] = useState<string | null>(null);
-  /** 029 — mis tarjetas de este contacto (una por tablero del pipeline). */
+  /** 029 — mis tarjetas de este contacto (una por tablero del flujo). */
   const [pipelineCards, setPipelineCards] = useState<
     Array<{ id: string; board: string }>
   >([]);
@@ -130,7 +130,7 @@ export function ContactPanel({
   const gestionCard =
     pipelineCards.find((c) => c.board === "gestiones") ?? null;
 
-  /** Sacar MI tarjeta del pipeline (029): se va con su historial. */
+  /** Sacar MI tarjeta del flujo (029): se va con su historial. */
   async function sacarDeMiPipeline(cardId: string) {
     setPipelineCards((prev) => prev.filter((c) => c.id !== cardId));
     await fetch(`/api/pipeline/leads/${cardId}`, { method: "DELETE" }).catch(
@@ -283,10 +283,10 @@ export function ContactPanel({
           </div>
         </section>
 
-        {/* Pipeline personal (029): ventas con su stepper, gestiones como fila.
+        {/* Flujo personal (029): ventas con su stepper, gestiones como fila.
             Si todavía no está, se suma desde acá — ya no se autocarga. */}
         <section className="border-b p-4">
-          <p className="kicker mb-3">Pipeline</p>
+          <p className="kicker mb-3">Flujo de Venta/Gestión</p>
           {stages.length > 0 && leadId ? (
             <ol>
               {stages.map((s, i) => {
@@ -330,7 +330,7 @@ export function ContactPanel({
           ) : (
             <div className="flex items-center justify-between gap-2">
               <p className="text-[12.5px] text-muted-foreground">
-                No está en tu pipeline de ventas.
+                No está en tu flujo de ventas.
               </p>
               <AddToPipelineButton
                 source={{ kind: "contact", contactId }}
@@ -348,7 +348,7 @@ export function ContactPanel({
           >
             {gestionCard ? (
               <>
-                <p className="text-[12.5px]">En tu pipeline de gestiones ✓</p>
+                <p className="text-[12.5px]">En tu flujo de gestiones ✓</p>
                 <button
                   onClick={() => void sacarDeMiPipeline(gestionCard.id)}
                   className="text-[11.5px] text-text-3 underline underline-offset-2 hover:text-foreground"
@@ -359,7 +359,7 @@ export function ContactPanel({
             ) : (
               <>
                 <p className="text-[12.5px] text-muted-foreground">
-                  No está en tu pipeline de gestiones.
+                  No está en tu flujo de gestiones.
                 </p>
                 <AddToPipelineButton
                   source={{ kind: "contact", contactId }}
