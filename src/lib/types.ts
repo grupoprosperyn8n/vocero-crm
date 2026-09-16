@@ -374,4 +374,36 @@ export type ChatAlertShareDto = {
   fecha?: string | null;
 };
 
-export type ChatMessagePayloadDto = ChatContactShareDto | ChatAlertShareDto;
+/**
+ * 033 — Tarjeta de revisión de envío SGSA publicada en el chat interno (dual
+ * con Telegram): el demo exacto del mensaje al cliente, más el estado del
+ * despacho. El audio y el análisis IA NO viajan en el payload: se sirven
+ * frescos por `/api/reviews/[recordId]/audio|analisis`.
+ */
+export type ChatReviewShareDto = {
+  /** Registro en revisión (Airtable DENUNCIA DE ACCIDENTE). */
+  recordId: string;
+  cliente: string | null;
+  titulo: string;
+  canales: string | null;
+  asuntoEmail: string | null;
+  emailTo: string | null;
+  whatsappTo: string | null;
+  /** true = el flujo venía en modo REINTENTO AUTORIZADO. */
+  reintento: boolean;
+  /** Texto principal propuesto al cliente (el demo completo, con saltos). */
+  mensaje: string;
+  /** pendiente → aprobado | detenido → enviado | trabado. */
+  estado: string;
+  /** Detalle del estado final («Se enviaron resumen, dictamen IA, audio…» o el motivo del trabe). */
+  detalle: string | null;
+  decididoPor: string | null;
+  decididoEl: string | null;
+  /** `chat` | `telegram` */
+  via: string | null;
+};
+
+export type ChatMessagePayloadDto =
+  | ChatContactShareDto
+  | ChatAlertShareDto
+  | ChatReviewShareDto;

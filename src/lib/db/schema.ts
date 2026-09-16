@@ -10,7 +10,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { ChatMessagePayloadDto } from "@/lib/types";
+import type { ChatMessagePayloadDto, ChatReviewShareDto } from "@/lib/types";
 
 /* ============================================================
  * Auth (Better Auth + plugin organization)
@@ -1492,5 +1492,51 @@ export const chatMessage = pgTable(
   (t) => [
     index("chat_message_org_idx").on(t.organizationId),
     index("chat_message_room_created_idx").on(t.roomId, t.createdAt),
+  ]
+);
+
+/* ============================================================
+ * 033 — Revisión de envío SGSA (tarjetas de aprobación del chat interno)
+ * ============================================================ */
+
+/**
+ * 033 — La tarjeta de revisión viva de un registro (DENUNCIA DE ACCIDENTE):
+ * se publica en el chat interno (dual con Telegram) y guarda la decisión
+ * tomada desde el CRM (quién, cuándo, por dónde) más el snapshot del
+ * contenido que viajó. El índice único parcial (solo `status = 'pendiente'`)
+ * vive en la migración 0030: un registro puede tener varios ciclos, pero una
+ * sola revisión viva.
+ */
+export const reviewRequest = pgTable(
+  "review_request",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Airtable record id del registro en revisión (rec…). */
+    recordId: text("record_id").notNull(),
+    cliente: text("cliente"),
+    roomId: text("room_id")
+      .notNull()
+      .references(() => chatRoom.id, { onDelete: "cascade" }),
+    messageId: text("message_id")
+      .notNull()
+      .references(() => chatMessage.id, { onDelete: "cascade" }),
+    /** pendiente → decidiendo → aprobado | detenido (los finales de envío viven en payload.estado). */
+    status: text("status").notNull().default("pendiente"),
+    decidedBy: text("decided_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    decidedAt: timestamp("decided_at"),
+    /** `chat` | `telegram` */
+    decidedVia: text("decided_via"),
+    payload: jsonb("payload").$type<ChatReviewShareDto | null>(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("review_request_org_record_idx").on(t.organizationId, t.recordId),
+    index("review_request_message_idx").on(t.messageId),
   ]
 );

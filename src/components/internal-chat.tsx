@@ -11,6 +11,7 @@ import {
   Check,
   ChevronRight,
   ExternalLink,
+  FileText,
   Loader2,
   LogOut,
   Mail,
@@ -23,10 +24,12 @@ import {
   Search,
   Send,
   Share2,
+  ShieldAlert,
   Trash2,
   UserMinus,
   UserPlus,
   Users,
+  Volume2,
   X,
 } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
@@ -34,7 +37,13 @@ import { CHANNEL_LABEL, isChannel } from "@/lib/channels";
 import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import { ShareContactDialog } from "@/components/contacts/share-contact-dialog";
 import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
-import type { ChatAlertShareDto, ChatContactShareDto, ChatMessagePayloadDto } from "@/lib/types";
+import type {
+  ChatAlertShareDto,
+  ChatContactShareDto,
+  ChatMessagePayloadDto,
+  ChatReviewShareDto,
+} from "@/lib/types";
+import { reviewEstadoLabel, reviewEstadoTone } from "@/lib/reviews";
 import { useEvents } from "@/components/use-events";
 
 /**
@@ -57,8 +66,8 @@ type ChatMessage = {
   senderId: string;
   senderName: string;
   body: string;
-  /** 025/027c — `text`, `contact` o `alert` (adjunto compartido). */
-  kind: "text" | "contact" | "alert";
+  /** 025/027c/033 — `text`, `contact`, `alert` o `review` (revisión de envío). */
+  kind: "text" | "contact" | "alert" | "review";
   /** 025/027c — snapshot del adjunto compartido; null en los textos. */
   payload: ChatMessagePayloadDto | null;
   createdAt: string;
@@ -306,6 +315,12 @@ function isAlertPayload(payload: ChatMessagePayloadDto): payload is ChatAlertSha
   return "urgencyLabel" in payload || "urgenciaLabel" in payload;
 }
 
+function isReviewPayload(
+  payload: ChatMessagePayloadDto
+): payload is ChatReviewShareDto {
+  return "mensaje" in payload && "canales" in payload;
+}
+
 /** 025 — par base/interface del backoffice (el mismo que usa client-card). */
 const AIRTABLE_BASE = "appuhslj3GFf60Tea";
 const AIRTABLE_INTERFACE_CLIENTES = "pagloDiKehe3EMnT4";
@@ -529,6 +544,216 @@ function AlertShareCard({ payload }: { payload: ChatAlertShareDto }) {
   );
 }
 
+/** 033 — Tonos de la tarjeta de revisión (tokens del tema). */
+const REVIEW_TONE_CLASS: Record<
+  "warning" | "info" | "success" | "danger",
+  { box: string; chip: string }
+> = {
+  warning: {
+    box: "border-warning-soft bg-warning-tint text-foreground",
+    chip: "border-warning-soft bg-background text-warning-text",
+  },
+  info: {
+    box: "border-brand/30 bg-brand-tint text-foreground",
+    chip: "border-brand/30 bg-background text-brand-text",
+  },
+  success: {
+    box: "border-success-soft bg-success-tint text-foreground",
+    chip: "border-success-soft bg-background text-success-text",
+  },
+  danger: {
+    box: "border-danger-soft bg-danger-tint text-foreground",
+    chip: "border-danger-soft bg-background text-danger-text",
+  },
+};
+
+/**
+ * 033 — Tarjeta de revisión de envío SGSA: el demo EXACTO del mensaje al
+ * cliente (con el audio y el análisis IA adjuntos, igual que en Telegram) y
+ * los botones ✅ Aprobar envío / 🛑 Detener, o la condición en que quedó el
+ * envío. La decisión pega al CRM, que avisa al MISMO webhook del flujo que
+ * usan los botones de Telegram: aprobar por acá o por allá es equivalente
+ * (el lock del flujo evita el doble envío).
+ */
+function ReviewCard({
+  payload,
+  onDecided,
+}: {
+  payload: ChatReviewShareDto;
+  onDecided: () => void;
+}) {
+  const [busy, setBusy] = useState<null | "approve" | "hold">(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const pending = payload.estado === "pendiente";
+  const tone = REVIEW_TONE_CLASS[reviewEstadoTone(payload.estado)];
+  const decidedLine = payload.decididoEl
+    ? [
+        fmtTime(payload.decididoEl),
+        payload.via
+          ? `vía ${payload.via === "telegram" ? "Telegram" : "chat interno"}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+
+  async function decide(decision: "approve" | "hold") {
+    if (busy) return;
+    setBusy(decision);
+    setErr(null);
+    try {
+      const res = await fetch(
+        `/api/reviews/${encodeURIComponent(payload.recordId)}/decide`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision }),
+        }
+      ).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as
+        | { ok?: boolean; error?: { message?: string } }
+        | null;
+      if (!res?.ok || !data?.ok) {
+        setErr(data?.error?.message ?? "No se pudo registrar la decisión");
+        return;
+      }
+      onDecided();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className={cn("mt-1.5 rounded-md border px-2.5 py-2", tone.box)}>
+      <p className="flex flex-wrap items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide">
+        <ShieldAlert className="h-3.5 w-3.5" strokeWidth={1.9} />
+        SGSA · Revisión de envío
+        <span
+          className={cn(
+            "rounded-full border px-1.5 py-[1px] text-[10px] font-semibold normal-case tracking-normal",
+            tone.chip
+          )}
+        >
+          {reviewEstadoLabel(payload.estado)}
+        </span>
+      </p>
+      <p className="mt-1 text-[13.5px] font-semibold leading-tight">
+        {payload.titulo}
+      </p>
+      <p className="mt-0.5 text-[11.5px] text-text-2">
+        {[
+          `Registro: ${payload.recordId}`,
+          payload.canales ? `Canales: ${payload.canales}` : null,
+          payload.reintento ? "Modo: REINTENTO AUTORIZADO" : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+      <div className="mt-1 space-y-0.5 text-[11.5px] text-text-2">
+        {payload.asuntoEmail && <p>Asunto email: {payload.asuntoEmail}</p>}
+        {payload.emailTo && <p>Email destino: {payload.emailTo}</p>}
+        {payload.whatsappTo && <p>WhatsApp destino: {payload.whatsappTo}</p>}
+      </div>
+
+      <p className="mt-2 text-[11px] font-bold uppercase tracking-wide text-text-3">
+        Texto principal propuesto al cliente
+      </p>
+      <div
+        className={cn(
+          "mt-0.5 overflow-y-auto rounded-md border bg-background/90 px-2.5 py-2",
+          expanded ? "max-h-[420px]" : "max-h-44"
+        )}
+      >
+        <p className="whitespace-pre-wrap break-words text-[12.5px] leading-snug">
+          {payload.mensaje}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="mt-0.5 text-[11px] font-semibold text-brand-text hover:underline"
+      >
+        {expanded ? "Mostrar menos" : "Ver mensaje completo"}
+      </button>
+
+      <div className="mt-2 flex items-center gap-1.5 text-[11.5px] font-semibold text-text-2">
+        <Volume2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+        Audio que recibiría el cliente si se aprueba:
+      </div>
+      <audio
+        controls
+        preload="none"
+        className="mt-1 w-full"
+        src={`/api/reviews/${encodeURIComponent(payload.recordId)}/audio`}
+      />
+      <a
+        href={`/api/reviews/${encodeURIComponent(payload.recordId)}/analisis`}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-md border border-current/20 bg-background px-2 text-[12px] font-medium text-foreground hover:bg-subtle"
+      >
+        <FileText className="h-3.5 w-3.5" strokeWidth={1.8} />
+        Ver análisis IA completo (.txt)
+      </a>
+
+      {pending ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            data-review-approve
+            disabled={busy !== null}
+            onClick={() => void decide("approve")}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-success-soft bg-success-tint px-2.5 text-[12.5px] font-semibold text-success-text hover:opacity-90 disabled:opacity-40"
+          >
+            {busy === "approve" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Check className="h-3.5 w-3.5" strokeWidth={2.2} />
+            )}
+            Aprobar envío
+          </button>
+          <button
+            type="button"
+            data-review-hold
+            disabled={busy !== null}
+            onClick={() => void decide("hold")}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-danger-soft bg-danger-tint px-2.5 text-[12.5px] font-semibold text-danger-text hover:opacity-90 disabled:opacity-40"
+          >
+            {busy === "hold" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <PauseCircle className="h-3.5 w-3.5" strokeWidth={2} />
+            )}
+            Detener / revisar
+          </button>
+        </div>
+      ) : (
+        <div className="mt-2 rounded-md border bg-background/90 px-2.5 py-1.5 text-[11.5px]">
+          <p className="font-semibold">
+            {payload.estado === "enviado"
+              ? "✅ "
+              : payload.estado === "trabado"
+                ? "⚠️ "
+                : payload.estado === "detenido"
+                  ? "🛑 "
+                  : "✅ "}
+            {reviewEstadoLabel(payload.estado)}
+            {payload.decididoPor ? ` — por ${payload.decididoPor}` : ""}
+          </p>
+          {decidedLine && (
+            <p className="mt-0.5 text-text-3">Decisión: {decidedLine}</p>
+          )}
+          {payload.detalle && (
+            <p className="mt-0.5 text-text-2">{payload.detalle}</p>
+          )}
+        </div>
+      )}
+      {err && <p className="mt-1 text-[11px] font-semibold text-red-600">{err}</p>}
+    </div>
+  );
+}
+
 export function InternalChat({ meId, role }: { meId: string; role: string }) {
   const canGroup = role === "owner" || role === "admin";
 
@@ -676,7 +901,9 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
       );
       if (data.roomId === activeIdRef.current) {
         setMessages((prev) =>
-          prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
+          prev.some((m) => m.id === msg.id)
+            ? prev.map((m) => (m.id === msg.id ? msg : m))
+            : [...prev, msg]
         );
         void fetch(`/api/internal/rooms/${data.roomId}/read`, {
           method: "POST",
@@ -1600,7 +1827,10 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                     >
                       <div
                         className={cn(
-                          "max-w-[85%] rounded-md border px-3 py-2 sm:max-w-[70%]",
+                          "rounded-md border px-3 py-2",
+                          m.kind === "review"
+                            ? "w-full max-w-[96%] sm:max-w-[640px]"
+                            : "max-w-[85%] sm:max-w-[70%]",
                           mine ? "border-brand bg-brand-tint" : "bg-subtle"
                         )}
                       >
@@ -1618,6 +1848,18 @@ export function InternalChat({ meId, role }: { meId: string; role: string }) {
                         {m.kind === "alert" && m.payload && isAlertPayload(m.payload) && (
                           <AlertShareCard payload={m.payload} />
                         )}
+                        {m.kind === "review" &&
+                          m.payload &&
+                          isReviewPayload(m.payload) && (
+                            <ReviewCard
+                              payload={m.payload}
+                              onDecided={() => {
+                                if (activeIdRef.current) {
+                                  void openRoom(activeIdRef.current);
+                                }
+                              }}
+                            />
+                          )}
                         <p
                           className={cn(
                             "mt-0.5 text-right text-[10.5px]",

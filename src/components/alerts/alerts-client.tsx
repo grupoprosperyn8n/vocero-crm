@@ -25,6 +25,7 @@ import { AlertRulesDialog } from "@/components/alerts/alert-rules-dialog";
 import { AlertStatsPanel } from "@/components/alerts/alert-stats-panel";
 import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
 import { alertDate, alertEstadoLabel, isLiveAssignmentStatus, parseAlertDetalle } from "@/lib/alerts";
+import { REVIEW_ENVIO_ALERT_TYPE } from "@/lib/reviews";
 import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import type { SgsaAlertDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -812,7 +813,13 @@ export function AlertsClient() {
       )}
       {rulesOpen && (
         <AlertRulesDialog
-          alertTypes={Array.from(new Set((alerts ?? []).map((a) => a.tipo))).sort()}
+          alertTypes={Array.from(
+            new Set([
+              ...(alerts ?? []).map((a) => a.tipo),
+              // 033 — las revisiones de envío SGSA también se configuran acá.
+              REVIEW_ENVIO_ALERT_TYPE,
+            ])
+          ).sort()}
           onClose={() => setRulesOpen(false)}
           onSaved={() => void load(histRef.current)}
         />

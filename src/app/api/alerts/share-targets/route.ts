@@ -1,9 +1,10 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { onlineUserIds } from "@/server/events/presence";
 import { canManageAlertAssignments } from "@/server/alerts/assignments";
 import { alertsConfigured } from "@/server/alerts/service";
+import { SISTEMA_SGSA_EMAIL } from "@/lib/reviews";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,13 @@ export const GET = withAuth(async (session) => {
       .select({ userId: schema.member.userId, nombre: schema.user.name })
       .from(schema.member)
       .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-      .where(eq(schema.member.organizationId, session.organizationId))
+      .where(
+        and(
+          eq(schema.member.organizationId, session.organizationId),
+          // 033 — el usuario de sistema (SGSA · Avisos) no es destinatario elegible.
+          ne(schema.user.email, SISTEMA_SGSA_EMAIL)
+        )
+      )
       .orderBy(asc(schema.user.name));
 
     const employees = employeeRows

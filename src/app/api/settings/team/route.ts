@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
@@ -6,6 +6,7 @@ import { getAuth, runInternalSignup } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { SISTEMA_SGSA_EMAIL } from "@/lib/reviews";
 import { teamGate } from "@/server/settings/access";
 import { avatarUrlsForEmails } from "@/server/avatars";
 
@@ -44,7 +45,13 @@ export const GET = withAuth(async (session) => {
         eq(schema.staffProfile.organizationId, schema.member.organizationId)
       )
     )
-    .where(scoped(schema.member.organizationId, session.organizationId));
+    .where(
+      and(
+        scoped(schema.member.organizationId, session.organizationId),
+        // 033 — el usuario de sistema (SGSA · Avisos) no se lista en Equipo.
+        ne(schema.user.email, SISTEMA_SGSA_EMAIL)
+      )
+    );
   // 032 — foto de perfil (misma fuente que el chat: EMPLEADOS en Airtable).
   const avatares = await avatarUrlsForEmails(members.map((m) => m.email));
   return Response.json({

@@ -47,6 +47,10 @@ const prefixes = {
   // 028 — reglas/derivación de alertas
   alertAssignmentRule: "alrule",
   alertAssignment: "alassn",
+  // 033 — revisión de envío SGSA (tarjetas de aprobación en el chat interno)
+  reviewRequest: "rvrq",
+  /** Usuario de sistema que firma las tarjetas de revisión (no es una persona). */
+  systemUser: "sysu",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

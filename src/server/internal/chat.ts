@@ -5,7 +5,13 @@ import { publish } from "@/server/events/bus";
 import { onlineUserIds } from "@/server/events/presence";
 import { avatarUrlsForEmails } from "@/server/avatars";
 import { artDayKey } from "./office-day";
-import type { ChatAlertShareDto, ChatContactShareDto, ChatMessagePayloadDto } from "@/lib/types";
+import type {
+  ChatAlertShareDto,
+  ChatContactShareDto,
+  ChatMessagePayloadDto,
+  ChatReviewShareDto,
+} from "@/lib/types";
+import { SISTEMA_SGSA_EMAIL, isReviewEstado } from "@/lib/reviews";
 
 /**
  * 022 — Chat interno del equipo.
@@ -31,6 +37,10 @@ export const CHAT_CONTACT_NAME_MAX = 120;
 export const CHAT_ALERT_TITLE_MAX = 160;
 export const CHAT_ALERT_BODY_MAX = 1200;
 export const CHAT_ALERT_LABEL_MAX = 80;
+/** 033 — topes de la tarjeta de revisión de envío (SGSA). */
+export const CHAT_REVIEW_TEXT_MAX = 160;
+export const CHAT_REVIEW_DETAIL_MAX = 300;
+export const CHAT_REVIEW_EMAIL_MAX = 200;
 /** Tope de mensajes que devuelve una sala (el historial completo no se pagina: el chat interno es chico). */
 export const CHAT_PAGE = 200;
 
@@ -166,8 +176,43 @@ export function sanitizeAlertShare(raw: unknown): ChatAlertShareDto | null {
   };
 }
 
+/**
+ * 033 — Revisión de envío (SGSA): snapshot seguro de la tarjeta que se publica
+ * en el chat interno, con los mismos datos que van al grupo de Telegram. El
+ * `mensaje` (demo EXACTO para el cliente) conserva saltos de línea y emojis:
+ * se recorta pero no se colapsa.
+ */
+export function sanitizeReviewShare(raw: unknown): ChatReviewShareDto | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const recordId = cleanRecId(o.recordId);
+  const mensaje = String(o.mensaje ?? "").trim();
+  if (!recordId || !mensaje) return null;
+  const estado = isReviewEstado(o.estado) ? o.estado : "pendiente";
+  return {
+    recordId,
+    cliente: cleanStr(o.cliente, CHAT_REVIEW_TEXT_MAX),
+    titulo:
+      cleanStr(o.titulo, CHAT_REVIEW_TEXT_MAX) ?? "SGSA | Pendiente de aprobación",
+    canales: cleanStr(o.canales, CHAT_REVIEW_TEXT_MAX),
+    asuntoEmail: cleanStr(o.asuntoEmail, CHAT_REVIEW_EMAIL_MAX),
+    emailTo: cleanStr(o.emailTo, CHAT_REVIEW_EMAIL_MAX),
+    whatsappTo: cleanStr(o.whatsappTo, 40),
+    reintento: o.reintento === true,
+    mensaje:
+      mensaje.length > CHAT_BODY_MAX ? mensaje.slice(0, CHAT_BODY_MAX) : mensaje,
+    estado,
+    detalle: cleanStr(o.detalle, CHAT_REVIEW_DETAIL_MAX),
+    decididoPor: cleanStr(o.decididoPor, CHAT_REVIEW_TEXT_MAX),
+    decididoEl: cleanStr(o.decididoEl, 40),
+    via: cleanStr(o.via, 20),
+  };
+}
+
 function chatKind(kind: unknown): ChatMessageView["kind"] {
-  return kind === "contact" || kind === "alert" ? kind : "text";
+  return kind === "contact" || kind === "alert" || kind === "review"
+    ? kind
+    : "text";
 }
 
 /** Un DM es entre dos personas distintas. */
@@ -205,8 +250,8 @@ export type ChatMessageView = {
   senderId: string;
   senderName: string;
   body: string;
-  /** `text` (normal), `contact` (contacto compartido) o `alert` (alerta compartida). */
-  kind: "text" | "contact" | "alert";
+  /** `text` (normal), `contact`, `alert` o `review` (revisión de envío SGSA, 033). */
+  kind: "text" | "contact" | "alert" | "review";
   /** Snapshot del adjunto compartido; null en los mensajes de texto. */
   payload: ChatMessagePayloadDto | null;
   createdAt: string;
@@ -244,7 +289,8 @@ export function resolveRoomDisplayName(
   return other?.name?.trim() || "Empleado";
 }
 
-async function assertMembership(
+/** 033 — expuesta: la decisión de una revisión valida pertenencia a la sala. */
+export async function assertRoomMember(
   organizationId: string,
   roomId: string,
   userId: string
@@ -586,6 +632,13 @@ export async function postChatMessage(input: {
   contact?: unknown;
   /** 027c — alerta a compartir (opcional). */
   alert?: unknown;
+  /** 033 — revisión de envío a publicar (opcional). */
+  review?: unknown;
+  /**
+   * 033 — mensajes del usuario de SISTEMA (tarjetas de revisión): saltea la
+   * validación de membresía y de pausa — el sistema publica donde la regla diga.
+   */
+  system?: boolean;
 }): Promise<ChatMessageView> {
   let kind: ChatMessageView["kind"] = "text";
   let payload: ChatMessagePayloadDto | null = null;
@@ -613,30 +666,42 @@ export async function postChatMessage(input: {
     kind = "alert";
     body = body ?? `Te comparto esta alerta: ${payload.title}`;
   }
+  if (input.review !== undefined && input.review !== null) {
+    if (kind !== "text") {
+      throw new ChatError(422, "invalid_payload", "Compartí un solo adjunto por mensaje");
+    }
+    payload = sanitizeReviewShare(input.review);
+    if (!payload) {
+      throw new ChatError(422, "invalid_review", "La revisión de envío no es válida");
+    }
+    kind = "review";
+    body = body ?? `SGSA | Pendiente de aprobación — Registro ${payload.recordId}`;
+  }
   if (!body) {
     throw new ChatError(422, "empty", "El mensaje está vacío");
   }
-  await assertMembership(input.organizationId, input.roomId, input.senderId);
-
   const db = getDb();
-  // 022c — un integrante pausado no escribe hasta que lo reactiven.
-  const myMembership = await db
-    .select({ pausedAt: schema.chatRoomMember.pausedAt })
-    .from(schema.chatRoomMember)
-    .where(
-      and(
-        eq(schema.chatRoomMember.organizationId, input.organizationId),
-        eq(schema.chatRoomMember.roomId, input.roomId),
-        eq(schema.chatRoomMember.userId, input.senderId)
+  if (!input.system) {
+    await assertRoomMember(input.organizationId, input.roomId, input.senderId);
+    // 022c — un integrante pausado no escribe hasta que lo reactiven.
+    const myMembership = await db
+      .select({ pausedAt: schema.chatRoomMember.pausedAt })
+      .from(schema.chatRoomMember)
+      .where(
+        and(
+          eq(schema.chatRoomMember.organizationId, input.organizationId),
+          eq(schema.chatRoomMember.roomId, input.roomId),
+          eq(schema.chatRoomMember.userId, input.senderId)
+        )
       )
-    )
-    .limit(1);
-  if (myMembership[0]?.pausedAt) {
-    throw new ChatError(
-      403,
-      "paused",
-      "Estás en pausa en este grupo: pedile a un administrador que te reactive"
-    );
+      .limit(1);
+    if (myMembership[0]?.pausedAt) {
+      throw new ChatError(
+        403,
+        "paused",
+        "Estás en pausa en este grupo: pedile a un administrador que te reactive"
+      );
+    }
   }
   const id = newId("chatMessage");
   const createdAt = new Date();
@@ -683,13 +748,78 @@ export async function postChatMessage(input: {
   return view;
 }
 
+/**
+ * 033 — Actualiza una tarjeta de revisión ya publicada (decisión desde el
+ * chat o cambio de estado informado por el flujo) y avisa por SSE: el cliente
+ * reemplaza el mensaje por id. `body` opcional para que la vista previa de la
+ * lista refleje el estado (p. ej. «✅ SGSA | Envío despachado — Registro rec…»).
+ */
+export async function updateReviewMessage(input: {
+  organizationId: string;
+  messageId: string;
+  payload: unknown;
+  body?: string | null;
+}): Promise<ChatMessageView | null> {
+  const payload = sanitizeReviewShare(input.payload);
+  if (!payload) {
+    throw new ChatError(422, "invalid_review", "La revisión de envío no es válida");
+  }
+  const nextBody =
+    input.body === undefined || input.body === null
+      ? null
+      : sanitizeChatBody(input.body);
+  if (input.body !== undefined && input.body !== null && !nextBody) {
+    throw new ChatError(422, "empty", "El mensaje está vacío");
+  }
+  const db = getDb();
+  const updated = await db
+    .update(schema.chatMessage)
+    .set(nextBody ? { payload, body: nextBody } : { payload })
+    .where(
+      and(
+        eq(schema.chatMessage.organizationId, input.organizationId),
+        eq(schema.chatMessage.id, input.messageId),
+        eq(schema.chatMessage.kind, "review")
+      )
+    )
+    .returning({
+      id: schema.chatMessage.id,
+      roomId: schema.chatMessage.roomId,
+      senderId: schema.chatMessage.senderId,
+      body: schema.chatMessage.body,
+      createdAt: schema.chatMessage.createdAt,
+    });
+  const row = updated[0];
+  if (!row) return null;
+  const senderRows = await db
+    .select({ name: schema.user.name })
+    .from(schema.user)
+    .where(eq(schema.user.id, row.senderId))
+    .limit(1);
+  const view: ChatMessageView = {
+    id: row.id,
+    roomId: row.roomId,
+    senderId: row.senderId,
+    senderName: senderRows[0]?.name ?? "Empleado",
+    body: row.body,
+    kind: "review",
+    payload,
+    createdAt: row.createdAt.toISOString(),
+  };
+  publish(input.organizationId, {
+    type: "internal.message",
+    data: { roomId: row.roomId, message: view },
+  });
+  return view;
+}
+
 /** Historial de una sala (últimos CHAT_PAGE, ascendente) + resumen para el header. */
 export async function listChatMessages(input: {
   organizationId: string;
   roomId: string;
   meId: string;
 }): Promise<{ room: ChatRoomSummary; messages: ChatMessageView[] }> {
-  await assertMembership(input.organizationId, input.roomId, input.meId);
+  await assertRoomMember(input.organizationId, input.roomId, input.meId);
   const rows = await getDb()
     .select({
       id: schema.chatMessage.id,
@@ -735,7 +865,7 @@ export async function markRoomRead(
   roomId: string,
   meId: string
 ): Promise<string> {
-  await assertMembership(organizationId, roomId, meId);
+  await assertRoomMember(organizationId, roomId, meId);
   const now = new Date();
   await getDb()
     .update(schema.chatRoomMember)
@@ -1025,7 +1155,9 @@ export async function listStaff(
     .where(
       and(
         eq(schema.member.organizationId, organizationId),
-        isNull(schema.member.offlineAt)
+        isNull(schema.member.offlineAt),
+        // 033 — el usuario de sistema (SGSA · Avisos) no es una persona del equipo.
+        ne(schema.user.email, SISTEMA_SGSA_EMAIL)
       )
     )
     .orderBy(asc(schema.user.name));
