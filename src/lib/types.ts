@@ -95,11 +95,16 @@ export type StageDto = {
  * 029 — Pipeline personal de dos tableros (ventas / gestiones)
  * ============================================================ */
 
-/** Un tablero del pipeline: el comercial o el de gestiones. */
-export type PipelineBoard = "ventas" | "gestiones";
+/** Un tablero del pipeline: el comercial, el de gestiones o el de tareas (037). */
+export type PipelineBoard = "ventas" | "gestiones" | "tareas";
 
 /** De dónde salió una tarjeta del pipeline. */
-export type PipelineSourceKind = "contact" | "sgsa_client" | "alert" | "sgsa_gestion";
+export type PipelineSourceKind =
+  | "contact"
+  | "sgsa_client"
+  | "alert"
+  | "sgsa_gestion"
+  | "task";
 
 /** 030 — una gestión del sistema (GESTIÓN GENERAL) para el buscador del pipeline. */
 export type SgsaGestionDto = {
@@ -134,6 +139,8 @@ export type PipelineCardDto = {
   position: number;
   ownerUserId: string | null;
   ownerName: string | null;
+  /** 037 — foto del responsable (empleado) si la tiene; null → iniciales. */
+  ownerAvatarUrl?: string | null;
   sourceKind: PipelineSourceKind;
   /** Referencia externa: cliente del sistema (rec…) o alerta (rec…). */
   sgsaRef: string | null;
@@ -145,6 +152,12 @@ export type PipelineCardDto = {
   amountCents: number | null;
   currency: string | null;
   priority: PriorityValue | null;
+  /** 037 — tarea: vencimiento con hora (ISO), nota y momento de cierre. */
+  dueAt: string | null;
+  notes: string | null;
+  completedAt: string | null;
+  /** 037 — fecha de alta, para el detalle de la tarea (ISO). */
+  createdAt?: string | null;
   /**
    * Contacto del CRM; NULL si la tarjeta es un cliente del sistema o alerta.
    * `avatarUrl` (036): foto si la hay (/api/avatars/...), null → iniciales.

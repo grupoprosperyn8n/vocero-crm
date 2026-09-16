@@ -33,13 +33,19 @@ export async function createPipelineCard(input: {
   label?: string | null;
   meta?: Record<string, unknown> | null;
   stageId?: string | null;
+  /** 037 — tarea: vencimiento con hora, nota y prioridad. */
+  dueAt?: Date | null;
+  notes?: string | null;
+  priority?: "alta" | "media" | "baja" | null;
 }): Promise<CreateCardResult> {
   const db = getDb();
 
   // Un contacto de OTRA organización no debe poder colarse por el API: la
   // tarjeta quedaría apuntando a una ficha ajena.
-  if (input.sourceKind === "contact") {
-    if (!input.contactId) return { ok: false, reason: "contact_not_found" };
+  if (input.sourceKind === "contact" && !input.contactId) {
+    return { ok: false, reason: "contact_not_found" };
+  }
+  if (input.contactId) {
     const found = await db
       .select({ id: schema.contact.id })
       .from(schema.contact)
@@ -54,7 +60,9 @@ export async function createPipelineCard(input: {
     if (!found[0]) return { ok: false, reason: "contact_not_found" };
   }
 
-  const existing = await findExistingCard(input);
+  // 037 — las tareas NO son idempotentes: un contacto puede tener varias (su
+  // checklist), así que en el tablero de tareas cada gesto de crear crea.
+  const existing = input.board === "tareas" ? null : await findExistingCard(input);
   if (existing) {
     return { ok: true, id: existing.id, stageId: existing.stageId, created: false };
   }
@@ -91,10 +99,14 @@ export async function createPipelineCard(input: {
       stageId,
       position: (maxPos[0]?.max ?? -1) + 1,
       lastActivityAt: null,
+      dueAt: input.dueAt ?? null,
+      notes: input.notes ?? null,
+      priority: input.priority ?? null,
     });
   } catch (err) {
     // Carrera de doble clic: otro insert idéntico ganó; devolvemos el suyo.
-    const raced = await findExistingCard(input);
+    // (En tareas no hay unicidad por contacto: el error es real y se eleva.)
+    const raced = input.board === "tareas" ? null : await findExistingCard(input);
     if (raced) {
       return { ok: true, id: raced.id, stageId: raced.stageId, created: false };
     }

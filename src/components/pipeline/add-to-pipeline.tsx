@@ -180,7 +180,9 @@ export function AddToPipelineButton({
             role="menu"
             className="absolute right-0 top-full z-50 mt-1 w-44 rounded-md border bg-card p-1 shadow-pop"
           >
-            {PIPELINE_BOARDS.map((b) => (
+            {/* 037 — acá se suman CONTACTOS: el tablero de tareas no entra
+                (las tareas se crean desde su pestaña o desde una ficha). */}
+            {PIPELINE_BOARDS.filter((b) => b.value !== "tareas").map((b) => (
               <button
                 key={b.value}
                 type="button"

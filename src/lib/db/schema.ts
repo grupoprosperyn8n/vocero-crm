@@ -222,8 +222,8 @@ export const pipelineStage = pgTable(
     kind: text("kind", { enum: ["open", "won", "lost"] })
       .notNull()
       .default("open"),
-    /** 029 — tablero al que pertenece la etapa: comercial o de gestiones. */
-    board: text("board", { enum: ["ventas", "gestiones"] })
+    /** 029 — tablero de la etapa: comercial, de gestiones o de tareas (037). */
+    board: text("board", { enum: ["ventas", "gestiones", "tareas"] })
       .notNull()
       .default("ventas"),
     /** 031 — estado de la ALERTA (tabla del sistema) que esta etapa representa (solo tablero gestiones). */
@@ -254,13 +254,13 @@ export const lead = pgTable(
     ownerUserId: text("owner_user_id").references(() => user.id, {
       onDelete: "cascade",
     }),
-    /** 029 — tablero: ventas (comercial) o gestiones. */
-    board: text("board", { enum: ["ventas", "gestiones"] })
+    /** 029 — tablero: ventas (comercial), gestiones o tareas (037). */
+    board: text("board", { enum: ["ventas", "gestiones", "tareas"] })
       .notNull()
       .default("ventas"),
-    /** 029 — de dónde salió la tarjeta. */
+    /** 029 — de dónde salió la tarjeta (037: «task» = tarea). */
     sourceKind: text("source_kind", {
-      enum: ["contact", "sgsa_client", "alert", "sgsa_gestion"],
+      enum: ["contact", "sgsa_client", "alert", "sgsa_gestion", "task"],
     })
       .notNull()
       .default("contact"),
@@ -289,6 +289,10 @@ export const lead = pgTable(
      */
     priority: text("priority", { enum: ["alta", "media", "baja"] }),
     priorityUpdatedAt: timestamp("priority_updated_at"),
+    /** 037 — tarea: vencimiento con hora, nota y momento de cierre. */
+    dueAt: timestamp("due_at"),
+    notes: text("notes"),
+    completedAt: timestamp("completed_at"),
     lastActivityAt: timestamp("last_activity_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -297,7 +301,11 @@ export const lead = pgTable(
     // 029 — el pipeline es personal: la unicidad es POR DUEÑO, no por contacto.
     // Los NULL no chocan entre sí (Postgres los distingue en índices únicos),
     // así que las tarjetas sin contacto o sin dueño jamás bloquean a nadie.
-    uniqueIndex("lead_owner_contact_uq").on(t.ownerUserId, t.contactId),
+    // 037 — las TAREAS quedan afuera: un contacto puede tener varias (su
+    // checklist) y convivir con su tarjeta de ventas.
+    uniqueIndex("lead_owner_contact_uq")
+      .on(t.ownerUserId, t.contactId)
+      .where(sql`${t.board} <> 'tareas'`),
     uniqueIndex("lead_owner_ref_uq").on(
       t.organizationId,
       t.ownerUserId,

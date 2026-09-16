@@ -7,7 +7,10 @@ import {
   cardAcceptsAmount,
   cardTitle,
   isOwnCard,
+  isTaskCard,
   seesWholeTeam,
+  taskDueLabel,
+  taskDueState,
 } from "@/lib/pipeline";
 
 /**
@@ -38,10 +41,11 @@ function archivosTs(dir: string): string[] {
 }
 
 describe("029 — pipeline personal de dos tableros", () => {
-  it("los tableros son ventas y gestiones, en ese orden", () => {
+  it("los tableros son ventas, gestiones y tareas, en ese orden", () => {
     expect(PIPELINE_BOARDS.map((b) => b.value)).toEqual([
       "ventas",
       "gestiones",
+      "tareas",
     ]);
   });
 
@@ -78,6 +82,44 @@ describe("029 — pipeline personal de dos tableros", () => {
     expect(SOURCE_KIND_LABEL.contact).toBe("Contacto del CRM");
     expect(SOURCE_KIND_LABEL.sgsa_client).toBe("Cliente del sistema");
     expect(SOURCE_KIND_LABEL.alert).toBe("Alerta");
+  });
+});
+
+/**
+ * 037 — las TAREAS (pedido Diego 2026-09-16): tablero propio, vencimiento con
+ * hora y tilde de cierre. Las cuentas son puras: las pruebas las fijan.
+ */
+describe("037 — tareas: vencimiento y cierre", () => {
+  const AHORA = new Date("2026-09-16T15:00:00-03:00");
+
+  it("sin fecha no hay vencimiento que mirar", () => {
+    expect(taskDueState(null, null, AHORA)).toBe("none");
+  });
+
+  it("terminada manda: aunque la fecha haya pasado, no está vencida", () => {
+    expect(
+      taskDueState("2026-09-10T10:00:00-03:00", "2026-09-11T10:00:00-03:00", AHORA)
+    ).toBe("done");
+  });
+
+  it("vencida: la fecha pasó y sigue abierta", () => {
+    expect(taskDueState("2026-09-15T10:00:00-03:00", null, AHORA)).toBe("overdue");
+  });
+
+  it("vence hoy / pronto / más lejos", () => {
+    expect(taskDueState("2026-09-16T20:00:00-03:00", null, AHORA)).toBe("today");
+    expect(taskDueState("2026-09-17T12:00:00-03:00", null, AHORA)).toBe("soon");
+    expect(taskDueState("2026-09-25T12:00:00-03:00", null, AHORA)).toBe("normal");
+  });
+
+  it("la etiqueta va en hora argentina, siempre igual (14:30Z = 11:30)", () => {
+    expect(taskDueLabel("2026-09-18T14:30:00.000Z")).toBe("18/09 11:30");
+  });
+
+  it("la tarea vive en su tablero y tiene etiqueta propia", () => {
+    expect(isTaskCard({ board: "tareas" })).toBe(true);
+    expect(isTaskCard({ board: "ventas" })).toBe(false);
+    expect(SOURCE_KIND_LABEL.task).toBe("Tarea");
   });
 });
 

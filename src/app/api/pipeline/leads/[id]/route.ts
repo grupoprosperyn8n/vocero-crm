@@ -48,6 +48,10 @@ const patchSchema = z.object({
   currency: z.string().length(3).nullable().optional(),
   /** `null` explícito la quita; ausente la deja como estaba. */
   priority: z.enum(["alta", "media", "baja"]).nullable().optional(),
+  /** 037 — campos de tarea: título, nota y vencimiento con hora. */
+  label: z.string().trim().min(1).max(200).optional(),
+  notes: z.string().max(2000).nullable().optional(),
+  dueAt: z.string().datetime().nullable().optional(),
 });
 
 /**
@@ -108,6 +112,14 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
       body.data.amountCents === null
         ? null
         : (body.data.currency ?? (await getBranding(session.organizationId)).currency);
+  }
+
+  // 037 — campos de tarea: se editan sin mover la tarjeta (título, nota y
+  // vencimiento viajan en el MISMO update que cualquier otro campo).
+  if (body.data.label !== undefined) extra.label = body.data.label;
+  if (body.data.notes !== undefined) extra.notes = body.data.notes;
+  if (body.data.dueAt !== undefined) {
+    extra.dueAt = body.data.dueAt === null ? null : new Date(body.data.dueAt);
   }
 
   if (body.data.priority !== undefined) {
@@ -186,6 +198,13 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
     .limit(1);
   if (target[0] && target[0].board !== card.board) {
     return apiError(422, "invalid_stage", "Esa etapa es de otro tablero");
+  }
+
+  // 037 — una TAREA se cierra al entrar a una etapa «ganada» («Terminadas») y
+  // se reabre si vuelve: la fecha de cierre acompaña al movimiento, no es un
+  // gesto aparte.
+  if (card.board === "tareas") {
+    extra.completedAt = target[0]?.kind === "won" ? new Date() : null;
   }
 
   // 030 → 031 — tarjeta-alerta «macheada»: mover la tarjeta toca el estado

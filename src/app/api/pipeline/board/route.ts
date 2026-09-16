@@ -7,7 +7,7 @@ import type { PipelineBoard } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const BOARDS = ["ventas", "gestiones"] as const;
+const BOARDS = ["ventas", "gestiones", "tareas"] as const;
 
 /**
  * 029 — el tablero del pipeline personal.

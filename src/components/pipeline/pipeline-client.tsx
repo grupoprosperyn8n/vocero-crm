@@ -15,6 +15,8 @@ import {
 } from "@dnd-kit/core";
 import {
   AlertTriangle,
+  CheckCircle2,
+  Circle,
   ExternalLink,
   MessageSquareText,
   Plus,
@@ -30,7 +32,7 @@ import type {
   StageDto,
 } from "@/lib/types";
 import { formatMoneyCents, sumable } from "@/lib/money";
-import { PIPELINE_BOARDS } from "@/lib/pipeline";
+import { PIPELINE_BOARDS, taskDueState } from "@/lib/pipeline";
 import { ALERT_ESTADO_LABEL, estadoForStage } from "@/lib/alerts";
 import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import { cn } from "@/lib/utils";
@@ -43,6 +45,8 @@ import { AmountDialog } from "./amount-dialog";
 import { PriorityBadge } from "./priority-picker";
 import { GestionSearchDialog } from "./gestion-search-dialog";
 import { LeadDrawer } from "./lead-drawer";
+import { TaskDialog, type TaskOrigin } from "./task-dialog";
+import { TaskDueChip } from "./entity-tasks";
 
 /** Compat: antes el DTO del tablero se llamaba BoardLead. */
 export type BoardLead = PipelineCardDto;
@@ -68,6 +72,11 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
   const [cargado, setCargado] = useState(false);
   /** 030 — buscador de gestiones del sistema (traer una puntual al tablero). */
   const [gestionSearch, setGestionSearch] = useState(false);
+  /** 037 — alta/edición de una tarea desde el tablero. */
+  const [taskDialog, setTaskDialog] = useState<{
+    task?: PipelineCardDto;
+    origin?: TaskOrigin;
+  } | null>(null);
   /** 030 — aviso del tablero (p. ej. el sistema no aceptó sincronizar). */
   const [aviso, setAviso] = useState<string | null>(null);
   /** 030 — mover una tarjeta-alerta puede cambiar el estado EN EL SISTEMA. */
@@ -220,6 +229,15 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
     void refetch();
   }
 
+  /** 037 — tilde rápido: cierra (a «Terminadas») o reabre la tarea. */
+  function alternarTerminada(lead: PipelineCardDto) {
+    const destino = lead.completedAt
+      ? stages.find((s) => s.kind === "open")
+      : stages.find((s) => s.kind === "won");
+    if (!destino || destino.id === lead.stageId) return;
+    void moverLead(lead.id, destino.id);
+  }
+
   /** Sacar MI tarjeta del tablero (029): se va con su bitácora. */
   async function sacarTarjeta(leadId: string) {
     setCards((prev) => prev.filter((l) => l.id !== leadId));
@@ -270,6 +288,14 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
 
   const vacio = cargado && cards.length === 0;
 
+  /** 037 — vencidas del tablero de tareas: el número rojo de la pestaña. */
+  const vencidas =
+    board === "tareas"
+      ? cards.filter(
+          (c) => taskDueState(c.dueAt, c.completedAt, new Date()) === "overdue"
+        ).length
+      : 0;
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
@@ -293,6 +319,14 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
                 )}
               >
                 {b.label}
+                {b.value === "tareas" && vencidas > 0 && (
+                  <span
+                    title={`${vencidas} tarea${vencidas === 1 ? "" : "s"} vencida${vencidas === 1 ? "" : "s"}`}
+                    className="ml-1.5 rounded-full bg-destructive px-1.5 text-[10px] font-bold text-destructive-foreground"
+                  >
+                    {vencidas}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -319,6 +353,11 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
               <Plus className="h-4 w-4" /> Sumar gestión
             </Button>
           )}
+          {board === "tareas" && (
+            <Button variant="outline" size="sm" onClick={() => setTaskDialog({})}>
+              <Plus className="h-4 w-4" /> Nueva tarea
+            </Button>
+          )}
           {role !== "member" && (
             <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
               <Settings2 className="h-4 w-4" /> Gestionar etapas
@@ -339,7 +378,9 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
         <div className="border-b bg-subtle px-4 py-2 text-[12.5px] text-muted-foreground sm:px-6">
           {board === "ventas"
             ? "Este tablero se llena a mano: sumá prospectos desde el chat con el cliente, la ficha de un contacto del CRM o la de un cliente del sistema."
-            : "Sumá gestiones desde la tarjeta de una alerta (acá o en Alertas), desde el chat con el cliente o su ficha — o buscá una del sistema con «Sumar gestión»."}
+            : board === "gestiones"
+              ? "Sumá gestiones desde la tarjeta de una alerta (acá o en Alertas), desde el chat con el cliente o su ficha — o buscá una del sistema con «Sumar gestión»."
+              : "Creá tareas con «Nueva tarea» — o desde la ficha de un contacto, una alerta o un siniestro. Al llegar a «Terminadas» se cierran solas."}
         </div>
       )}
 
@@ -361,6 +402,7 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
                 showsOwner={showsOwner}
                 canDrag={esMia}
                 onEditAmount={setEditandoMonto}
+                onToggleDone={alternarTerminada}
                 onOpen={(l) => setAbiertoId(l.id)}
                 leads={cards
                   .filter((l) => l.stageId === stage.id)
@@ -404,6 +446,7 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
           onAmount={(cents) => void guardarMonto(abierto.id, cents)}
           onPriority={(p) => void guardarPrioridad(abierto.id, p)}
           onRemove={() => void sacarTarjeta(abierto.id)}
+          onRefresh={() => void refetch()}
         />
       )}
 
@@ -456,6 +499,19 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
         <GestionSearchDialog
           onClose={() => setGestionSearch(false)}
           onAdded={() => void refetch()}
+        />
+      )}
+
+      {/* 037 — el cajón de escritura de una tarea. */}
+      {taskDialog && (
+        <TaskDialog
+          task={taskDialog.task ?? null}
+          origin={taskDialog.origin ?? null}
+          onClose={() => setTaskDialog(null)}
+          onSaved={() => {
+            setTaskDialog(null);
+            void refetch();
+          }}
         />
       )}
     </div>
@@ -566,6 +622,7 @@ function StageColumn({
   canDrag,
   onEditAmount,
   onOpen,
+  onToggleDone,
 }: {
   stage: StageDto;
   leads: PipelineCardDto[];
@@ -575,6 +632,8 @@ function StageColumn({
   canDrag: (lead: PipelineCardDto) => boolean;
   onEditAmount: (lead: PipelineCardDto) => void;
   onOpen: (lead: PipelineCardDto) => void;
+  /** 037 — tilde rápido de una tarea desde su tarjeta. */
+  onToggleDone?: (lead: PipelineCardDto) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   return (
@@ -607,6 +666,7 @@ function StageColumn({
             showsOwner={showsOwner}
             draggable={canDrag(lead)}
             onEditAmount={onEditAmount}
+            onToggleDone={onToggleDone}
             onOpen={onOpen}
           />
         ))}
@@ -657,6 +717,7 @@ function DraggableLead({
   draggable,
   onEditAmount,
   onOpen,
+  onToggleDone,
 }: {
   lead: PipelineCardDto;
   board: PipelineBoard;
@@ -665,6 +726,7 @@ function DraggableLead({
   draggable: boolean;
   onEditAmount: (lead: PipelineCardDto) => void;
   onOpen: (lead: PipelineCardDto) => void;
+  onToggleDone?: (lead: PipelineCardDto) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: lead.id,
@@ -698,6 +760,7 @@ function DraggableLead({
         currency={currency}
         showsOwner={showsOwner}
         onEditAmount={draggable ? onEditAmount : undefined}
+        onToggleDone={draggable ? onToggleDone : undefined}
       />
     </div>
   );
@@ -763,6 +826,7 @@ function LeadCard({
   overlay = false,
   showsOwner = false,
   onEditAmount,
+  onToggleDone,
 }: {
   lead: PipelineCardDto;
   board: PipelineBoard;
@@ -770,9 +834,13 @@ function LeadCard({
   overlay?: boolean;
   showsOwner?: boolean;
   onEditAmount?: (lead: PipelineCardDto) => void;
+  onToggleDone?: (lead: PipelineCardDto) => void;
 }) {
   const externa = urlExterna(lead);
   const sinContacto = !lead.contact;
+  /** 037 — la tarjeta de una TAREA: título propio, vencimiento y tilde. */
+  const esTarea = board === "tareas";
+  const titulo = esTarea ? lead.label ?? tituloDeTarjeta(lead) : tituloDeTarjeta(lead);
   /** 030 — estado de la alerta en el sistema (la tarjeta va macheada). */
   const estadoAlerta =
     lead.sourceKind === "alert" && typeof lead.meta?.estado === "string"
@@ -787,19 +855,33 @@ function LeadCard({
     >
       <div className="flex items-center gap-2.5">
         <ContactAvatar
-          name={tituloDeTarjeta(lead)}
-          seed={lead.contact?.id ?? lead.id}
+          name={esTarea ? lead.ownerName ?? titulo : tituloDeTarjeta(lead)}
+          seed={esTarea ? lead.ownerUserId ?? lead.id : lead.contact?.id ?? lead.id}
           size="sm"
-          src={lead.contact?.avatarUrl ?? null}
+          src={esTarea ? lead.ownerAvatarUrl ?? null : lead.contact?.avatarUrl ?? null}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <p className="truncate text-sm font-semibold">{tituloDeTarjeta(lead)}</p>
+            <p
+              className={cn(
+                "truncate text-sm font-semibold",
+                lead.completedAt && "text-muted-foreground line-through"
+              )}
+            >
+              {titulo}
+            </p>
             {lead.priority && <PriorityBadge value={lead.priority} />}
           </div>
           <p className="truncate text-[11px] text-muted-foreground">
-            {subtituloDeTarjeta(lead)}
+            {esTarea
+              ? lead.contact
+                ? `Contacto: ${lead.contact.name}`
+                : "Tarea"
+              : subtituloDeTarjeta(lead)}
           </p>
+          {esTarea && lead.dueAt && (
+            <TaskDueChip dueAt={lead.dueAt} completedAt={lead.completedAt} className="mt-0.5" />
+          )}
           {estadoAlerta && (
             <span
               title="Estado de la alerta en el sistema"
@@ -818,6 +900,24 @@ function LeadCard({
             </span>
           )}
         </div>
+        {esTarea && onToggleDone && (
+          <button
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleDone(lead);
+            }}
+            aria-label={lead.completedAt ? "Reabrir la tarea" : "Marcar la tarea como terminada"}
+            title={lead.completedAt ? "Reabrir" : "Marcar terminada"}
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            {lead.completedAt ? (
+              <CheckCircle2 className="h-4 w-4 text-success-text" />
+            ) : (
+              <Circle className="h-4 w-4" />
+            )}
+          </button>
+        )}
         {lead.conversationId && (
           <Link
             href={`/inbox?contact=${lead.contact?.id}`}

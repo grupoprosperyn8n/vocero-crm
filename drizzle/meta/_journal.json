@@ -232,6 +232,13 @@
    "when": 1789571251338,
    "tag": "0032_pin_personal",
    "breakpoints": true
+  },
+  {
+   "idx": 33,
+   "version": "7",
+   "when": 1789581173144,
+   "tag": "0033_tareas",
+   "breakpoints": true
   }
  ]
 }

@@ -16,14 +16,19 @@ export const dynamic = "force-dynamic";
  * `created: false` — el botón puede llamarse dos veces sin duplicar.
  */
 const bodySchema = z.object({
-  board: z.enum(["ventas", "gestiones"]),
-  kind: z.enum(["contact", "sgsa_client", "alert", "sgsa_gestion"]),
+  /** 037 — suman «tareas»: una tarea es una tarjeta más (con título). */
+  board: z.enum(["ventas", "gestiones", "tareas"]),
+  kind: z.enum(["contact", "sgsa_client", "alert", "sgsa_gestion", "task"]),
   contactId: z.string().min(1).optional(),
   /** rec… del cliente / alerta / gestión de Airtable. */
   ref: z.string().min(3).max(200).optional(),
   label: z.string().trim().min(1).max(200).optional(),
   meta: z.record(z.unknown()).optional(),
   stageId: z.string().min(1).optional(),
+  /** 037 — tarea: vencimiento con hora (ISO), nota y prioridad. */
+  dueAt: z.string().datetime().nullable().optional(),
+  notes: z.string().trim().max(2000).optional(),
+  priority: z.enum(["alta", "media", "baja"]).nullable().optional(),
 });
 
 export const POST = withAuth(async (session, req: Request) => {
@@ -32,23 +37,35 @@ export const POST = withAuth(async (session, req: Request) => {
 
   const { board, kind, contactId, ref, label, meta, stageId } = body.data;
 
-  if (kind !== "contact" && !ref) {
+  if (kind !== "contact" && kind !== "task" && !ref) {
     return apiError(422, "missing_ref", "Falta la referencia de origen");
   }
-  // Alertas y gestiones del sistema siempre viven en gestiones, venga de
-  // donde venga el clic.
-  const targetBoard = kind === "alert" || kind === "sgsa_gestion" ? "gestiones" : board;
+  // 037 — la tarea lleva título: es su rótulo en el tablero.
+  if (kind === "task" && !label) {
+    return apiError(422, "missing_label", "La tarea necesita un título");
+  }
+  // Alertas y gestiones del sistema siempre viven en gestiones; las tareas,
+  // en su propio tablero. Venga de donde venga el clic.
+  const targetBoard =
+    kind === "alert" || kind === "sgsa_gestion"
+      ? "gestiones"
+      : kind === "task"
+        ? "tareas"
+        : board;
 
   const res = await createPipelineCard({
     organizationId: session.organizationId,
     ownerUserId: session.userId,
     board: targetBoard,
     sourceKind: kind,
-    contactId: kind === "contact" ? contactId : null,
-    sgsaRef: kind === "contact" ? null : ref,
+    contactId: kind === "contact" || kind === "task" ? contactId ?? null : null,
+    sgsaRef: kind === "contact" || kind === "task" ? null : ref,
     label: label ?? null,
     meta: meta ?? null,
     stageId: stageId ?? null,
+    dueAt: body.data.dueAt ? new Date(body.data.dueAt) : null,
+    notes: body.data.notes ?? null,
+    priority: body.data.priority ?? null,
   });
 
   if (!res.ok) {

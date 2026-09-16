@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { avatarUrlsForContacts } from "@/server/avatars";
+import { avatarUrlsForContacts, avatarUrlsForPeople } from "@/server/avatars";
 import type { PipelineBoard, PipelineCardDto, StageDto } from "@/lib/types";
 
 /**
@@ -55,6 +55,7 @@ export async function listBoardCards(input: {
         waIdentity: schema.contact.waIdentity,
       },
       ownerName: schema.user.name,
+      ownerEmail: schema.user.email,
     })
     .from(schema.lead)
     .leftJoin(schema.contact, eq(schema.lead.contactId, schema.contact.id))
@@ -119,6 +120,18 @@ export async function listBoardCards(input: {
     )
   );
 
+  // 037 — foto del RESPONSABLE de la tarjeta (empleado): mismo índice que el
+  // chat interno (email primero, nombre como respaldo). null → iniciales.
+  const ownerIdx = new Map<string, number>();
+  const ownerPeople: { email?: string | null; name?: string | null }[] = [];
+  for (const r of rows) {
+    if (r.lead.ownerUserId && !ownerIdx.has(r.lead.ownerUserId)) {
+      ownerIdx.set(r.lead.ownerUserId, ownerPeople.length);
+      ownerPeople.push({ email: r.ownerEmail, name: r.ownerName });
+    }
+  }
+  const ownerAvatares = await avatarUrlsForPeople(ownerPeople);
+
   return {
     stages: stageRows.map((s) => ({
       id: s.id,
@@ -137,6 +150,9 @@ export async function listBoardCards(input: {
         position: l.position,
         ownerUserId: l.ownerUserId,
         ownerName: r.ownerName,
+        ownerAvatarUrl: l.ownerUserId
+          ? ownerAvatares[ownerIdx.get(l.ownerUserId) ?? -1] ?? null
+          : null,
         sourceKind: l.sourceKind,
         sgsaRef: l.sgsaRef,
         label: l.label,
@@ -145,6 +161,10 @@ export async function listBoardCards(input: {
         amountCents: l.amountCents,
         currency: l.currency,
         priority: l.priority,
+        dueAt: l.dueAt?.toISOString() ?? null,
+        notes: l.notes,
+        completedAt: l.completedAt?.toISOString() ?? null,
+        createdAt: l.createdAt?.toISOString() ?? null,
         contact: r.contact?.id
           ? {
               id: r.contact.id,

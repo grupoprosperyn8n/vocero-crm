@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ContactAvatar } from "@/components/avatar";
 import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
+import { EntityTasks } from "@/components/pipeline/entity-tasks";
 import type {
   ClientConversationDto,
   ContactDto,
@@ -530,6 +531,14 @@ export function ContactCard({
         convs={convs}
         onOpenConversation={onOpenConversation}
       />
+
+      {/* 037 — el checklist del contacto: todo lo que le afecta, con vencimiento. */}
+      <div className="mt-4 border-t pt-4">
+        <EntityTasks
+          title="Tareas del contacto"
+          origin={{ kind: "contact", ref: contact.id, label: contact.name }}
+        />
+      </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button

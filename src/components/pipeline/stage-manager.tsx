@@ -15,8 +15,8 @@ export function StageManager({
   onChanged,
 }: {
   stages: StageDto[];
-  /** 029 — las etapas se gestionan POR tablero. */
-  board: "ventas" | "gestiones";
+  /** 029 — las etapas se gestionan POR tablero (037: también Tareas). */
+  board: "ventas" | "gestiones" | "tareas";
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -101,7 +101,7 @@ export function StageManager({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="mb-4 font-semibold">
-          Etapas del pipeline · {board === "ventas" ? "Ventas" : "Gestiones"}
+          Etapas del pipeline · {board === "ventas" ? "Ventas" : board === "gestiones" ? "Gestiones" : "Tareas"}
         </h3>
         <ul className="space-y-2">
           {sorted.map((s, i) => (

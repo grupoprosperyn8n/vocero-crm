@@ -13,6 +13,7 @@ import type {
 } from "@/lib/types";
 import { formatMoneyCents, parseMoneyToCents } from "@/lib/money";
 import { ALERT_ESTADO_LABEL } from "@/lib/alerts";
+import { taskDueLabel, taskDueState } from "@/lib/pipeline";
 import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
 import { cn, formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
@@ -20,6 +21,8 @@ import { FichaPanel } from "@/components/ficha-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PriorityPicker } from "./priority-picker";
+import { TaskDialog } from "./task-dialog";
+import { EntityTasks } from "./entity-tasks";
 
 /**
  * La tarjeta, abierta, sin salir del tablero.
@@ -44,6 +47,7 @@ export function LeadDrawer({
   onAmount,
   onPriority,
   onRemove,
+  onRefresh,
 }: {
   lead: PipelineCardDto;
   board: PipelineBoard;
@@ -59,16 +63,27 @@ export function LeadDrawer({
   onPriority: (value: PriorityValue | null) => void;
   /** Sacar la tarjeta de MI pipeline (029). */
   onRemove: () => void;
+  /** 037 — refrescar el tablero tras crear/editar una tarea desde el cajón. */
+  onRefresh?: () => void;
 }) {
   const [ficha, setFicha] = useState<FichaDto>({});
   const [monto, setMonto] = useState("");
   const [editandoMonto, setEditandoMonto] = useState(false);
   const [confirmandoSacar, setConfirmandoSacar] = useState(false);
+  /** 037 — edición de la tarea desde el cajón. */
+  const [editandoTarea, setEditandoTarea] = useState(false);
 
-  const titulo = lead.contact?.name ?? lead.label ?? "Tarjeta";
+  const esTarea = board === "tareas";
+  // 037 — en una tarea el título es SU rótulo: el contacto es un vínculo.
+  const titulo = esTarea
+    ? lead.label ?? "Tarea"
+    : lead.contact?.name ?? lead.label ?? "Tarjeta";
   const contactId = lead.contact?.id ?? null;
   const moneda = lead.currency ?? currency;
   const esGestion = board === "gestiones";
+  const estadoTarea = esTarea
+    ? taskDueState(lead.dueAt, lead.completedAt, new Date())
+    : "none";
 
   const cargarFicha = useCallback(async () => {
     if (!contactId) return;
@@ -149,11 +164,11 @@ export function LeadDrawer({
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label={`${esGestion ? "Gestión" : "Trato"} de ${titulo}`}
+        aria-label={`${esTarea ? "Tarea" : esGestion ? "Gestión" : "Trato"} de ${titulo}`}
         className="fixed inset-y-0 right-0 z-50 flex w-[min(360px,92vw)] flex-col border-l bg-background shadow-pop"
       >
         <header className="flex items-center justify-between border-b px-4 py-3">
-          <h3 className="kicker text-text-2">{esGestion ? "Gestión" : "Trato"}</h3>
+          <h3 className="kicker text-text-2">{esTarea ? "Tarea" : esGestion ? "Gestión" : "Trato"}</h3>
           <button
             onClick={onClose}
             aria-label="Cerrar el panel"
@@ -168,21 +183,25 @@ export function LeadDrawer({
           <section className="border-b p-4">
             <div className="flex items-center gap-3">
               <ContactAvatar
-                name={titulo}
-                seed={lead.contact?.id ?? lead.id}
+                name={esTarea ? lead.ownerName ?? titulo : titulo}
+                seed={esTarea ? lead.ownerUserId ?? lead.id : lead.contact?.id ?? lead.id}
                 size="md"
-                src={lead.contact?.avatarUrl ?? null}
+                src={esTarea ? lead.ownerAvatarUrl ?? null : lead.contact?.avatarUrl ?? null}
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-[650]">{titulo}</p>
                 <p className="text-xs text-text-3">
-                  {lead.contact
-                    ? formatPhone(lead.contact.phone)
-                    : lead.sourceKind === "alert"
-                      ? "Alerta del sistema"
-                      : lead.sourceKind === "sgsa_gestion"
-                        ? "Gestión del sistema"
-                        : "Cliente del sistema"}
+                  {esTarea
+                    ? lead.contact
+                      ? `Contacto: ${formatPhone(lead.contact.phone)}`
+                      : "Tarea"
+                    : lead.contact
+                      ? formatPhone(lead.contact.phone)
+                      : lead.sourceKind === "alert"
+                        ? "Alerta del sistema"
+                        : lead.sourceKind === "sgsa_gestion"
+                          ? "Gestión del sistema"
+                          : "Cliente del sistema"}
                 </p>
               </div>
             </div>
@@ -270,8 +289,90 @@ export function LeadDrawer({
             )}
           </section>
 
+          {/* 037 — el checklist de la ALERTA/GESTIÓN: sus tareas, acá mismo. */}
+          {(lead.sourceKind === "alert" || lead.sourceKind === "sgsa_gestion") && lead.sgsaRef && (
+            <section className="border-b p-4">
+              <EntityTasks
+                title={
+                  lead.sourceKind === "alert"
+                    ? "Tareas de esta alerta"
+                    : "Tareas de esta gestión"
+                }
+                origin={{
+                  kind: lead.sourceKind === "alert" ? "alert" : "gestion",
+                  ref: lead.sgsaRef,
+                  label: titulo,
+                }}
+              />
+            </section>
+          )}
+
+          {/* 037 — los datos de la TAREA: nota, vencimiento, estado y cierre. */}
+          {esTarea && (
+            <section className="border-b p-4">
+              <p className="mb-2 kicker">Tarea</p>
+              <div className="space-y-2 text-sm">
+                <p className="flex items-center justify-between gap-2">
+                  <span className="text-text-3">Responsable</span>
+                  <span className="font-medium">{lead.ownerName ?? "—"}</span>
+                </p>
+                <p className="flex items-center justify-between gap-2">
+                  <span className="text-text-3">Vence</span>
+                  <span
+                    className={cn(
+                      "tabular-nums",
+                      estadoTarea === "overdue" &&
+                        "font-semibold text-red-600 dark:text-red-400"
+                    )}
+                  >
+                    {lead.dueAt ? taskDueLabel(lead.dueAt) : "Sin vencimiento"}
+                    {estadoTarea === "overdue" ? " · vencida" : ""}
+                  </span>
+                </p>
+                <p className="flex items-center justify-between gap-2">
+                  <span className="text-text-3">Estado</span>
+                  <span className={cn("font-medium", lead.completedAt && "text-success-text")}>
+                    {lead.completedAt
+                      ? `Terminada · ${taskDueLabel(lead.completedAt)}`
+                      : "Pendiente"}
+                  </span>
+                </p>
+                <p className="flex items-center justify-between gap-2">
+                  <span className="text-text-3">Creada</span>
+                  <span className="tabular-nums">
+                    {lead.createdAt ? taskDueLabel(lead.createdAt) : "—"}
+                  </span>
+                </p>
+              </div>
+              {lead.notes && (
+                <p className="mt-3 whitespace-pre-wrap rounded border border-border-strong bg-subtle px-2 py-1.5 text-[12.5px] text-text-2">
+                  {lead.notes}
+                </p>
+              )}
+              {!readOnly && (
+                <div className="mt-3 flex gap-1.5">
+                  <Button size="sm" variant="secondary" onClick={() => setEditandoTarea(true)}>
+                    Editar tarea
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={lead.completedAt ? "outline" : "default"}
+                    onClick={() => {
+                      const destino = lead.completedAt
+                        ? stages.find((s) => s.kind === "open")
+                        : stages.find((s) => s.kind === "won");
+                      if (destino && destino.id !== lead.stageId) onMoveStage(destino.id);
+                    }}
+                  >
+                    {lead.completedAt ? "Reabrir" : "Marcar terminada"}
+                  </Button>
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Cuánto — solo el embudo de ventas maneja plata. */}
-          {!esGestion && (
+          {!esGestion && !esTarea && (
             <section className="border-b p-4">
               <p className="mb-2 kicker">Monto ({moneda})</p>
               {readOnly ? (
@@ -397,7 +498,9 @@ export function LeadDrawer({
               {confirmandoSacar ? (
                 <div className="rounded-md border border-warning-soft bg-warning-tint p-3">
                   <p className="text-xs text-warning-text">
-                    ¿Sacar la tarjeta del pipeline? Su historial se va con ella.
+                    {esTarea
+                      ? "¿Eliminar la tarea? Su historial se va con ella."
+                      : "¿Sacar la tarjeta del pipeline? Su historial se va con ella."}
                   </p>
                   <div className="mt-2 flex gap-1.5">
                     <Button size="sm" variant="destructive" onClick={onRemove}>
@@ -419,13 +522,25 @@ export function LeadDrawer({
                   className="w-full text-destructive"
                   onClick={() => setConfirmandoSacar(true)}
                 >
-                  Sacar del pipeline
+                  {esTarea ? "Eliminar tarea" : "Sacar del pipeline"}
                 </Button>
               )}
             </section>
           )}
         </div>
       </aside>
+
+      {/* 037 — editar la tarea sin salir del cajón. */}
+      {editandoTarea && (
+        <TaskDialog
+          task={lead}
+          onClose={() => setEditandoTarea(false)}
+          onSaved={() => {
+            setEditandoTarea(false);
+            onRefresh?.();
+          }}
+        />
+      )}
     </>
   );
 }
