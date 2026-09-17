@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Activity,
   AlertTriangle,
   ArrowUpRight,
   BriefcaseBusiness,
@@ -15,6 +16,7 @@ import {
   ListTree,
   MessageSquareText,
   RefreshCcw,
+  Search,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -25,7 +27,10 @@ import {
   X,
 } from "lucide-react";
 import {
+  Area,
+  AreaChart,
   Bar,
+  BarChart,
   CartesianGrid,
   Cell,
   ComposedChart,
@@ -46,6 +51,7 @@ import {
   type TabId,
 } from "@/lib/dashboard-management/help";
 import type {
+  ClientInsight,
   DashboardResponse,
   DrillList,
   InsightMode,
@@ -704,32 +710,6 @@ function ModuleAiRow({
   );
 }
 
-/* ——————————————————————— Próximo bloque ——————————————————————— */
-
-const COMING_SOON: Partial<Record<TabId, string>> = {
-  cartera: "Cartera",
-  retencion: "Retención",
-  reactivacion: "Reactivación",
-  cross: "Venta cruzada",
-  clientes: "Cliente 360°",
-  crm: "CRM · Venta y gestión",
-  migracion: "Calidad de datos",
-};
-
-function ComingSoon({ tab }: { tab: TabId }) {
-  const label = COMING_SOON[tab] ?? tab;
-  return (
-    <section className="rounded-lg border bg-card px-4 py-10 text-center">
-      <h2 className="text-[14px] font-bold">{label}</h2>
-      <p className="mx-auto mt-1 max-w-[520px] text-[12.5px] text-text-2">
-        Este módulo ya está mapeado del tablero original y se integra en el próximo bloque de la
-        migración. No se pierde nada: cada número, gráfico, lista y lectura con IA va a estar acá,
-        con el diseño del CRM.
-      </p>
-    </section>
-  );
-}
-
 /* ——————————————————————————— Main ——————————————————————————— */
 
 const EMPTY_FILTERS = {
@@ -768,6 +748,12 @@ export function ExecDashboard() {
   const [listOpen, setListOpen] = useState<Record<string, boolean>>({});
   const [listSel, setListSel] = useState<Record<string, string>>({});
   const [listRestore, setListRestore] = useState<{ tab: TabId; scrollY: number } | null>(null);
+  const [engine, setEngine] = useState<InsightMode>("dual");
+  const [insights, setInsights] = useState<
+    Record<string, { status: "loading" | "error" | "done"; data?: ClientInsight; error?: string }>
+  >({});
+  const [copiedInsight, setCopiedInsight] = useState<string | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(
     async (override?: typeof filters) => {
@@ -957,11 +943,72 @@ export function ExecDashboard() {
     } catch {}
   }
 
+  /* — Motor de sugerencias del Cliente 360° — */
+
+  async function requestInsight(
+    customer: DashboardResponse["customers"][number],
+    mode: "dual" | "ia"
+  ) {
+    const key = `${mode}:${customer.id}`;
+    setInsights((prev) => ({ ...prev, [key]: { status: "loading" } }));
+    try {
+      const response = await fetch("/api/dashboard-management/insight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: customer.id,
+          mode,
+          context: {
+            name: customer.name,
+            activePolicies: customer.activePolicies,
+            historicalOperations: customer.historicalOperations,
+            historicalAltas: customer.historicalAltas,
+            historicalAnulaciones: customer.historicalAnulaciones,
+            historicalSiniestros: customer.historicalSiniestros,
+            activePremium: customer.activePremium,
+            score: customer.score,
+            recommendation: customer.recommendation,
+            recommendationWhy: customer.recommendationWhy,
+            recommendationSteps: customer.recommendationSteps,
+          },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        throw new Error(result?.error?.message || result?.error || "La IA no respondió.");
+      }
+      setInsights((prev) => ({
+        ...prev,
+        [key]: { status: "done", data: result.insight as ClientInsight },
+      }));
+    } catch (err) {
+      setInsights((prev) => ({
+        ...prev,
+        [key]: {
+          status: "error",
+          error: err instanceof Error && err.message ? err.message : "La IA no respondió.",
+        },
+      }));
+    }
+  }
+
+  function chooseEngine(mode: InsightMode) {
+    setEngine(mode);
+  }
+
+  async function copyInsightMessage(key: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedInsight(key);
+      setTimeout(() => setCopiedInsight(null), 1800);
+    } catch {}
+  }
+
   const aiRow = (module: ModuleAiId) => {
     const mode: InsightMode = modEngines[module] || "dual";
     return (
       <ModuleAiRow
-        key={module}
+        key={`ai-${module}`}
         id={module}
         engine={mode}
         onEngine={(next) => chooseModEngine(module, next)}
@@ -1010,7 +1057,7 @@ export function ExecDashboard() {
     if (moduleLists.length === 0) return null;
     return (
       <ModuleLists
-        key={module}
+        key={`lists-${module}`}
         module={module}
         lists={moduleLists}
         open={Boolean(listOpen[module])}
@@ -1121,7 +1168,7 @@ export function ExecDashboard() {
     "h-8 rounded-md border border-border-strong bg-background px-2 text-[12px] text-text-2";
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] space-y-3 px-1">
+    <div className="w-full space-y-3 px-3 lg:px-5">
       {/* Encabezado */}
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -1330,7 +1377,7 @@ export function ExecDashboard() {
 
           {listsRow("pulso")}
 
-          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
             <Kpi
               title="Clientes históricos"
               value={number(data.migration.clients)}
@@ -1477,7 +1524,971 @@ export function ExecDashboard() {
         </div>
       )}
 
-      {tab !== "pulso" && <ComingSoon tab={tab} />}
+      {tab === "cartera" && (
+        <div className="space-y-3">
+          <HelpZone help={MODULE_HELP.cartera} id="cartera" onAction={applyHelpAction} />
+
+          {aiRow("cartera")}
+
+          {listsRow("cartera")}
+
+          <div className="flex items-start gap-2.5 rounded-md border border-warning-soft bg-warning-tint px-3 py-2.5">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0 text-warning-text" />
+            <div className="text-[12.5px] text-text-2">
+              <strong className="block text-foreground">Cartera todavía en proceso de carga</strong>
+              <span>
+                Estos indicadores reflejan únicamente las pólizas ya creadas y cargadas en el sistema
+                nuevo (Seguros Agénticos). No deben interpretarse como la cartera final.
+              </span>
+            </div>
+          </div>
+
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Kpi
+              title="Pólizas cargadas en el sistema nuevo"
+              value={number(data.current.loadedPolicies)}
+              subtitle={`Activas ${number(data.current.activePolicies)} · No vigentes ${number(
+                data.current.loadedPolicies - data.current.activePolicies
+              )}`}
+              onClick={() => openList("cartera", "loaded")}
+              icon={<BriefcaseBusiness size={17} />}
+            />
+            <Kpi
+              title="Pólizas activas"
+              value={number(data.current.activePolicies)}
+              subtitle="Vigentes o renovadas — según estado"
+              onClick={() => openList("cartera", "active")}
+              icon={<ShieldCheck size={17} />}
+            />
+            <Kpi
+              title="Clientes activos cargados"
+              value={number(data.current.activeClients)}
+              subtitle="Con al menos una póliza activa"
+              onClick={() => openList("cartera", "clients")}
+              icon={<Users size={17} />}
+            />
+            <Kpi
+              title="Prima activa cargada"
+              value={money(data.current.activePremium)}
+              subtitle="Valor parcial"
+              onClick={() => openList("cartera", "active")}
+              icon={<CircleDollarSign size={17} />}
+            />
+          </section>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <Section title="Productos históricos" subtitle="Todo lo que realmente se gestionó en Rafael">
+              <div className="h-[320px]">
+                <ResponsiveContainer>
+                  <BarChart data={data.historicProducts} layout="vertical" margin={{ left: 8 }}>
+                    <CartesianGrid strokeDasharray="4 4" horizontal={false} />
+                    <XAxis type="number" fontSize={11} />
+                    <YAxis type="category" dataKey="name" width={110} fontSize={11} />
+                    <Tooltip />
+                    <Bar dataKey="value" name="Gestiones" fill={CHART.series[0]} radius={[0, 6, 6, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Section>
+
+            <Section title="Productos cargados actualmente" subtitle="Foto parcial de la nueva base">
+              <div className="h-[320px]">
+                <ResponsiveContainer>
+                  <BarChart data={data.currentProducts}>
+                    <CartesianGrid strokeDasharray="4 4" vertical={false} />
+                    <XAxis dataKey="name" fontSize={10} />
+                    <YAxis fontSize={11} />
+                    <Tooltip />
+                    <Bar dataKey="value" name="Pólizas" fill={CHART.altas} radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Section>
+          </div>
+
+          <Section title="Compañías" subtitle="Distribución de las pólizas ya cargadas">
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full">
+                <thead className="bg-subtle text-left text-[11px] uppercase tracking-wide text-text-3">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">Compañía</th>
+                    <th className="px-3 py-2 font-semibold">Pólizas</th>
+                    <th className="px-3 py-2 font-semibold">Prima activa</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {data.companies.map((company) => (
+                    <tr key={company.name}>
+                      <td className="px-3 py-2 text-[12.5px]">{company.name}</td>
+                      <td className="px-3 py-2 text-[12.5px] tabular-nums">
+                        {number(company.policies)}
+                      </td>
+                      <td className="px-3 py-2 text-[12.5px] tabular-nums">
+                        {money(company.activePremium)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {tab === "retencion" && (
+        <div className="space-y-3">
+          <HelpZone help={MODULE_HELP.retencion} id="retencion" onAction={applyHelpAction} />
+
+          {aiRow("retencion")}
+
+          {listsRow("retencion")}
+
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Kpi
+              title="Vencen ≤7 días"
+              value={number(data.current.expires7)}
+              subtitle="Acción inmediata"
+              onClick={() => openList("retencion", "expires7")}
+              icon={<Clock3 size={17} />}
+              tone="danger"
+            />
+            <Kpi
+              title="Vencen ≤30 días"
+              value={number(data.current.expires30)}
+              subtitle="Secuencia de renovación"
+              onClick={() => openList("retencion", "expires30")}
+              icon={<Clock3 size={17} />}
+              tone="warning"
+            />
+            <Kpi
+              title="Clientes a observar"
+              value={number(data.opportunity.retentionWatch)}
+              subtitle="Activos con anulaciones históricas"
+              onClick={() => openList("retencion", "watch")}
+              icon={<AlertTriangle size={17} />}
+            />
+            <Kpi
+              title="Siniestros históricos"
+              value={number(data.historic.siniestros)}
+              subtitle="Clave para medir experiencia"
+              onClick={() => gotoList("pulso", "siniestros")}
+              icon={<Activity size={17} />}
+            />
+          </section>
+
+          <Section
+            title="Retención: de contar bajas a anticiparlas"
+            subtitle="El sistema ya puede combinar historia y situación contractual actual"
+          >
+            <div className="rounded-md border border-brand-soft bg-brand-tint px-4 py-3">
+              <h3 className="text-[12.5px] font-bold text-brand-text">Próxima evolución</h3>
+              <p className="mt-1 text-[12.5px] text-text-2">
+                Construir un score de riesgo 0–100 combinando antigüedad, anulaciones, siniestros,
+                cantidad de pólizas, forma de pago, cercanía al vencimiento y comportamiento de
+                atención.
+              </p>
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {tab === "reactivacion" && (
+        <div className="space-y-3">
+          <HelpZone help={MODULE_HELP.reactivacion} id="reactivacion" onAction={applyHelpAction} />
+
+          {aiRow("reactivacion")}
+
+          {listsRow("reactivacion")}
+
+          <section className="grid gap-3 sm:grid-cols-2">
+            <Kpi
+              title="Candidatos detectados"
+              value={number(data.opportunity.reactivationCandidates)}
+              subtitle="Historia de alta sin póliza activa cargada"
+              onClick={() => openList("reactivacion", "candidates")}
+              icon={<Target size={17} />}
+              tone="accent"
+            />
+            <Kpi
+              title="Históricos sin activa cargada"
+              value={number(data.opportunity.historicalWithoutCurrentPolicy)}
+              subtitle="Universo potencial"
+              onClick={() => openList("reactivacion", "universe")}
+              icon={<Users size={17} />}
+            />
+          </section>
+
+          <Section
+            title="Motor de recuperación"
+            subtitle="Priorizar clientes conocidos antes de comprar nuevos leads"
+          >
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="flex gap-2.5 rounded-md border border-success-soft bg-success-tint px-3 py-2.5">
+                <Target size={17} className="mt-0.5 shrink-0 text-success-text" />
+                <div className="text-[12.5px] text-text-2">
+                  <strong className="block text-foreground">Reactivación prioritaria</strong>
+                  <span>Exclientes recientes, con altas históricas y productos rentables.</span>
+                </div>
+              </div>
+              <div className="flex gap-2.5 rounded-md border bg-card px-3 py-2.5">
+                <Activity size={17} className="mt-0.5 shrink-0 text-text-3" />
+                <div className="text-[12.5px] text-text-2">
+                  <strong className="block text-foreground">Win-back por producto</strong>
+                  <span>Ejemplo: tuvo Moto o Auto y hoy no aparece con ese producto activo.</span>
+                </div>
+              </div>
+              <div className="flex gap-2.5 rounded-md border bg-card px-3 py-2.5">
+                <Users size={17} className="mt-0.5 shrink-0 text-text-3" />
+                <div className="text-[12.5px] text-text-2">
+                  <strong className="block text-foreground">Campañas segmentadas</strong>
+                  <span>No contactar a toda la base: trabajar por score y probabilidad.</span>
+                </div>
+              </div>
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {tab === "cross" && (
+        <div className="space-y-3">
+          <HelpZone help={MODULE_HELP.cross} id="cross" onAction={applyHelpAction} />
+
+          {aiRow("cross")}
+
+          {listsRow("cross")}
+
+          <section className="grid gap-3 sm:grid-cols-2">
+            <Kpi
+              title="Una sola póliza"
+              value={number(data.current.onePolicyClients)}
+              subtitle="Oportunidad directa de cross-selling"
+              onClick={() => openList("cross", "one")}
+              icon={<ArrowUpRight size={17} />}
+            />
+            <Kpi
+              title="Dos o más pólizas"
+              value={number(data.current.multiPolicyClients)}
+              subtitle="Clientes más vinculados"
+              onClick={() => gotoList("cartera", "multi")}
+              icon={<HeartHandshake size={17} />}
+              tone="success"
+            />
+          </section>
+
+          <Section
+            title="Próximo mejor producto"
+            subtitle="Oportunidades calculadas sobre lo actualmente cargado"
+          >
+            <div className="divide-y divide-border rounded-md border">
+              {data.crossSell.map((item) => (
+                <button
+                  key={item.opportunity}
+                  className="flex w-full flex-wrap items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent"
+                  onClick={() =>
+                    openList("cross", item.opportunity.toLowerCase().replace(/[^a-z0-9]+/g, "-"))
+                  }
+                  title="Ver los clientes de esta combinación"
+                >
+                  <strong className="min-w-0 flex-1 truncate text-[12.5px]">
+                    {item.opportunity}
+                  </strong>
+                  <span className="text-[12.5px] tabular-nums text-text-2">
+                    {number(item.customers)} clientes
+                  </span>
+                  <span className="text-[11.5px] font-semibold text-brand-text">Ver clientes →</span>
+                </button>
+              ))}
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {tab === "clientes" && (
+        <div className="space-y-3">
+          <HelpZone help={MODULE_HELP.clientes} id="clientes" onAction={applyHelpAction} />
+
+          <Section title="Cliente 360°" subtitle="Buscar por nombre, DNI o teléfono">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[240px] flex-1">
+                <Search
+                  size={15}
+                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-3"
+                />
+                <input
+                  value={filters.search}
+                  placeholder="Ej. Juan Pérez, DNI o teléfono"
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setFilters({ ...filters, search: value });
+                    if (searchTimer.current) clearTimeout(searchTimer.current);
+                    searchTimer.current = setTimeout(() => {
+                      void load({ ...filters, search: value });
+                    }, 700);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void load();
+                  }}
+                  className="h-9 w-full rounded-md border border-border-strong bg-background pl-8 pr-2 text-[12.5px]"
+                />
+              </div>
+              <button
+                className="h-9 rounded-md bg-brand px-3.5 text-[12.5px] font-semibold text-brand-fg transition-opacity hover:opacity-90"
+                onClick={() => void load()}
+              >
+                Buscar cliente
+              </button>
+            </div>
+          </Section>
+
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
+            <span className="text-[11.5px] font-bold uppercase tracking-wide text-text-3">
+              Motor de sugerencias
+            </span>
+            <div className="inline-flex rounded-md border bg-subtle p-0.5">
+              {(
+                [
+                  ["algoritmo", "Algoritmo solo", "Solo reglas del sistema: instantáneo y auditable"],
+                  ["dual", "Dual (IA + algoritmo)", "El sistema prioriza con reglas y la IA enriquece el análisis"],
+                  ["ia", "Solo IA", "La IA analiza el contexto real y decide la mejor acción"],
+                ] as const
+              ).map(([id, label, hint]) => (
+                <button
+                  key={id}
+                  className={cn(
+                    "rounded-sm px-2.5 py-1 text-[11.5px] font-semibold transition-colors",
+                    engine === id
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-text-2 hover:text-foreground"
+                  )}
+                  onClick={() => chooseEngine(id)}
+                  title={hint}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <span className="text-[11.5px] text-text-3">
+              {engine === "algoritmo" && "Reglas del sistema: instantáneo, gratis y auditable."}
+              {engine === "dual" &&
+                "El sistema prioriza con reglas y la IA enriquece el por qué y los pasos con el mismo contexto."}
+              {engine === "ia" &&
+                "La IA analiza el contexto real del cliente y propone la mejor acción."}
+            </span>
+          </div>
+
+          <p className="text-[11.5px] text-text-3">
+            {filters.search
+              ? data.customers.length === 0
+                ? "Sin resultados. Probá con otro nombre, DNI o teléfono."
+                : data.customerStats && data.customerStats.matched > data.customers.length
+                  ? `Mostrando las últimas ${data.customers.length} de ${data.customerStats.matched} coincidencias. Afiná la búsqueda para ver menos.`
+                  : `${data.customers.length} resultado${data.customers.length === 1 ? "" : "s"}.`
+              : data.customerStats
+                ? `Últimas ${data.customers.length} de ${data.customerStats.total} clientes cargados (los más recientes). Buscá por nombre, DNI o teléfono para ir directo a una ficha.`
+                : ""}
+          </p>
+
+          <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+            {data.customers.map((customer) => (
+              <article key={customer.id} className="flex flex-col rounded-lg border bg-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="truncate text-[13.5px] font-bold">{customer.name}</h3>
+                    <span className="text-[11.5px] text-text-3">DNI {customer.dni || "—"}</span>
+                  </div>
+                  <span
+                    className="flex h-9 min-w-9 shrink-0 items-center justify-center rounded-full border border-brand-soft bg-brand-tint px-1.5 text-[12.5px] font-bold text-brand-text"
+                    title="Score del cliente"
+                  >
+                    {customer.score}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-4 gap-1 rounded-md border bg-subtle/50 px-2 py-2">
+                  <div className="text-center">
+                    <span className="block text-[10.5px] text-text-3">Pólizas activas</span>
+                    <strong className="text-[13px] tabular-nums">{customer.activePolicies}</strong>
+                  </div>
+                  <div className="text-center">
+                    <span className="block text-[10.5px] text-text-3">Gestiones históricas</span>
+                    <strong className="text-[13px] tabular-nums">
+                      {customer.historicalOperations}
+                    </strong>
+                  </div>
+                  <div className="text-center">
+                    <span className="block text-[10.5px] text-text-3">Altas</span>
+                    <strong className="text-[13px] tabular-nums">{customer.historicalAltas}</strong>
+                  </div>
+                  <div className="text-center">
+                    <span className="block text-[10.5px] text-text-3">Anulaciones</span>
+                    <strong className="text-[13px] tabular-nums">
+                      {customer.historicalAnulaciones}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex-1">
+                  {engine !== "ia" && (
+                    <>
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-text-3">
+                        Próxima mejor acción
+                      </span>
+                      <strong className="mt-0.5 block text-[12.5px]">
+                        {customer.recommendation}
+                      </strong>
+                      {customer.recommendationWhy && (
+                        <p className="mt-0.5 text-[11.5px] text-text-2">
+                          {customer.recommendationWhy}
+                        </p>
+                      )}
+                      {customer.recommendationSteps?.length > 0 && (
+                        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11.5px] text-text-2">
+                          {customer.recommendationSteps.map((step) => (
+                            <li key={step}>{step}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  )}
+
+                  {engine !== "algoritmo" &&
+                    (() => {
+                      const withAi = engine === "ia" ? ("ia" as const) : ("dual" as const);
+                      const insightKey = `${withAi}:${customer.id}`;
+                      const insightState = insights[insightKey];
+                      const insight =
+                        insightState?.status === "done" ? insightState.data : undefined;
+
+                      return (
+                        <div
+                          className={cn(
+                            "mt-2 rounded-md border px-2.5 py-2",
+                            engine === "ia"
+                              ? "border-brand-soft bg-brand-tint"
+                              : "border-border bg-subtle/40"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "flex items-center gap-1 text-[11px] font-bold",
+                              engine === "ia" ? "text-brand-text" : "text-text-2"
+                            )}
+                          >
+                            <Sparkles size={11} />
+                            {engine === "ia" ? "Análisis con IA" : "Análisis IA (extra)"}
+                          </span>
+
+                          {insightState?.status === "loading" && (
+                            <div className="mt-1 text-[11.5px] text-text-2">
+                              Generando análisis con la IA…
+                            </div>
+                          )}
+
+                          {!insightState && (
+                            <button
+                              className="mt-1 inline-flex items-center gap-1 rounded-md border border-brand-soft bg-card px-2 py-1 text-[11.5px] font-semibold text-brand-text transition-colors hover:bg-brand-tint"
+                              onClick={() => void requestInsight(customer, withAi)}
+                            >
+                              <Sparkles size={11} />
+                              Generar análisis con IA
+                            </button>
+                          )}
+
+                          {insightState?.status === "error" && (
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11.5px] text-danger-text">
+                              <span>{insightState.error}</span>
+                              <button
+                                className="rounded-md border border-danger-soft bg-card px-2 py-0.5 text-[11px] font-semibold"
+                                onClick={() => void requestInsight(customer, withAi)}
+                              >
+                                Reintentar
+                              </button>
+                            </div>
+                          )}
+
+                          {insight && (
+                            <div className="mt-1 space-y-1.5">
+                              <strong className="block text-[12px]">{insight.accion}</strong>
+                              <p className="text-[11.5px] text-text-2">{insight.porQue}</p>
+                              {insight.pasos.length > 0 && (
+                                <ul className="list-disc space-y-0.5 pl-4 text-[11.5px] text-text-2">
+                                  {insight.pasos.map((paso) => (
+                                    <li key={paso}>{paso}</li>
+                                  ))}
+                                </ul>
+                              )}
+                              {insight.mensajeWhatsapp && (
+                                <div className="rounded-md border bg-card px-2 py-1.5">
+                                  <p className="text-[11.5px] text-text-2">
+                                    {insight.mensajeWhatsapp}
+                                  </p>
+                                  <button
+                                    className="mt-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                                    onClick={() =>
+                                      void copyInsightMessage(insightKey, insight.mensajeWhatsapp)
+                                    }
+                                  >
+                                    {copiedInsight === insightKey ? "Copiado ✓" : "Copiar mensaje"}
+                                  </button>
+                                </div>
+                              )}
+                              <span className="block text-[10.5px] text-text-3">
+                                Generado con {insight.model} · solo sobre los datos del sistema
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                </div>
+
+                {customer.backendUrl && (
+                  <a
+                    className="mt-2.5 inline-flex items-center gap-1 text-[11.5px] font-semibold text-brand-text hover:underline"
+                    href={customer.backendUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Abrir la ficha de este cliente en el backoffice"
+                  >
+                    Abrir ficha en el backoffice
+                    <ArrowUpRight size={12} />
+                  </a>
+                )}
+              </article>
+            ))}
+          </div>
+
+          {data.customers.length === 0 && (
+            <div className="rounded-lg border bg-card px-4 py-8 text-center text-[12.5px] text-text-3">
+              Sin resultados. Probá con otro nombre, DNI o teléfono.
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "migracion" && (
+        <div className="space-y-3">
+          <HelpZone help={MODULE_HELP.migracion} id="migracion" onAction={applyHelpAction} />
+
+          {aiRow("migracion")}
+
+          {listsRow("migracion")}
+
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Kpi
+              title="Clientes"
+              value={number(data.migration.clients)}
+              subtitle="Maestro Agéntico"
+              onClick={() => openList("migracion", "clients")}
+              icon={<Users size={17} />}
+            />
+            <Kpi
+              title="Gestiones históricas"
+              value={number(data.migration.historicOperations)}
+              subtitle="Base Rafael"
+              onClick={() => openList("migracion", "recent")}
+              icon={<Database size={17} />}
+            />
+            <Kpi
+              title="Clientes vinculados"
+              value={number(data.migration.matchedClients)}
+              subtitle={percent(data.migration.clientMatchRate)}
+              onClick={() => openList("migracion", "matched")}
+              icon={<UserRoundCheck size={17} />}
+              tone="success"
+            />
+            <Kpi
+              title="Gestiones vinculadas"
+              value={number(data.migration.matchedOperations)}
+              subtitle={percent(data.migration.operationMatchRate)}
+              onClick={() => openList("migracion", "matchedops")}
+              icon={<ShieldCheck size={17} />}
+              tone="success"
+            />
+          </section>
+
+          <Section
+            title="Salud de la migración"
+            subtitle="Lo que todavía debemos completar antes de considerar la cartera definitiva"
+          >
+            <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+              <div className="rounded-md border bg-subtle/50 px-3 py-2.5">
+                <span className="block text-[11px] text-text-3">Pólizas cargadas</span>
+                <strong className="text-[15px] tabular-nums">
+                  {number(data.migration.loadedPolicies)}
+                </strong>
+              </div>
+              <button
+                className="rounded-md border bg-card px-3 py-2.5 text-left transition-colors hover:border-brand-soft"
+                onClick={() => openList("migracion", "incomplete")}
+                title="Ver la lista detrás de este número"
+              >
+                <span className="block text-[11px] text-text-3">Sin cliente</span>
+                <strong className="text-[15px] tabular-nums">
+                  {number(data.migration.policiesWithoutClient)}
+                </strong>
+              </button>
+              <button
+                className="rounded-md border bg-card px-3 py-2.5 text-left transition-colors hover:border-brand-soft"
+                onClick={() => openList("migracion", "incomplete")}
+                title="Ver la lista detrás de este número"
+              >
+                <span className="block text-[11px] text-text-3">Sin producto</span>
+                <strong className="text-[15px] tabular-nums">
+                  {number(data.migration.policiesWithoutProduct)}
+                </strong>
+              </button>
+              <button
+                className="rounded-md border bg-card px-3 py-2.5 text-left transition-colors hover:border-brand-soft"
+                onClick={() => openList("migracion", "incomplete")}
+                title="Ver la lista detrás de este número"
+              >
+                <span className="block text-[11px] text-text-3">Sin compañía</span>
+                <strong className="text-[15px] tabular-nums">
+                  {number(data.migration.policiesWithoutCompany)}
+                </strong>
+              </button>
+              <button
+                className="rounded-md border bg-card px-3 py-2.5 text-left transition-colors hover:border-brand-soft"
+                onClick={() => openList("migracion", "incomplete")}
+                title="Ver la lista detrás de este número"
+              >
+                <span className="block text-[11px] text-text-3">Sin vencimiento</span>
+                <strong className="text-[15px] tabular-nums">
+                  {number(data.migration.policiesWithoutExpiry)}
+                </strong>
+              </button>
+              <button
+                className="rounded-md border bg-card px-3 py-2.5 text-left transition-colors hover:border-brand-soft"
+                onClick={() => openList("migracion", "unmatched")}
+                title="Ver la lista detrás de este número"
+              >
+                <span className="block text-[11px] text-text-3">Gestiones sin match</span>
+                <strong className="text-[15px] tabular-nums">
+                  {number(data.migration.unmatchedOperations)}
+                </strong>
+              </button>
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {tab === "crm" && (
+        <div className="space-y-3">
+          <HelpZone help={MODULE_HELP.crm} id="crm" onAction={applyHelpAction} />
+
+          {data.crm?.available && aiRow("crm")}
+
+          {listsRow("crm")}
+
+          {!data.crm?.available ? (
+            <Section title="CRM · Venta y gestión" subtitle="Datos del CRM Vocero (solo lectura)">
+              <div className="rounded-md border bg-subtle/50 px-4 py-8 text-center text-[12.5px] text-text-3">
+                Todavía no hay snapshot del CRM en este entorno. Se regenera automáticamente con la
+                sincronización del tablero.
+              </div>
+            </Section>
+          ) : (
+            <>
+              <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Kpi
+                  title="Contactos del CRM"
+                  value={number(data.crm.kpis.contacts)}
+                  subtitle={`${number(data.crm.kpis.conversations)} conversaciones · ${number(
+                    data.crm.kpis.openConversations
+                  )} ${data.crm.kpis.openConversations === 1 ? "abierta" : "abiertas"}`}
+                  onClick={() => openList("crm", "matched")}
+                  icon={<Users size={17} />}
+                />
+                <Kpi
+                  title="Mensajes intercambiados"
+                  value={number(data.crm.kpis.messages)}
+                  subtitle={`${number(data.crm.kpis.inbound)} recibidos · ${number(
+                    data.crm.kpis.outbound
+                  )} enviados`}
+                  icon={<MessageSquareText size={17} />}
+                  tone="accent"
+                />
+                <Kpi
+                  title="Respuestas con IA"
+                  value={number(data.crm.kpis.ai)}
+                  subtitle="Mensajes generados por el agente"
+                  icon={<ShieldCheck size={17} />}
+                  tone="success"
+                />
+                <Kpi
+                  title="Oportunidades abiertas"
+                  value={number(data.crm.kpis.leads)}
+                  subtitle={`${number(data.crm.kpis.converted)} ganadas (${percent(
+                    data.crm.kpis.conversionRate
+                  )})`}
+                  icon={<Target size={17} />}
+                />
+                <Kpi
+                  title="Monto en pipeline"
+                  value={money(data.crm.kpis.pipelineAmount)}
+                  subtitle="Suma de las oportunidades cargadas"
+                  icon={<CircleDollarSign size={17} />}
+                  tone="warning"
+                />
+                <Kpi
+                  title="Vínculo con la cartera"
+                  value={percent(data.crm.kpis.matchRate)}
+                  subtitle={`${number(data.crm.kpis.matchedContacts)} de ${number(
+                    data.crm.kpis.contacts
+                  )} contactos cruzados con SGSA`}
+                  onClick={() => openList("crm", "matched")}
+                  icon={<HeartHandshake size={17} />}
+                />
+                <Kpi
+                  title="Prima activa vinculada"
+                  value={money(data.crm.kpis.matchedPremium)}
+                  subtitle={`Pólizas activas de contactos del CRM · ${number(
+                    data.crm.kpis.expiring30
+                  )} vencen ≤ 30 días`}
+                  icon={<BriefcaseBusiness size={17} />}
+                  tone="success"
+                />
+                <Kpi
+                  title="Oportunidades ligadas"
+                  value={number(data.crm.kpis.leadsLinked)}
+                  subtitle={`${money(data.crm.kpis.linkedAmount)} en juego sobre clientes de la cartera`}
+                  icon={<Activity size={17} />}
+                />
+              </section>
+
+              <Section
+                title="Venta — pipeline desde el CRM"
+                subtitle="Cómo avanza cada oportunidad según la etapa del tablero comercial"
+              >
+                <div className="space-y-2">
+                  {data.crm.pipeline.map((stage) => {
+                    const max = Math.max(
+                      ...data.crm.pipeline.map((item) => item.amount),
+                      1
+                    );
+                    const width = Math.max((stage.amount / max) * 100, stage.amount > 0 ? 3 : 0);
+                    return (
+                      <div
+                        key={stage.name}
+                        className="grid grid-cols-[150px_1fr] items-center gap-3 sm:grid-cols-[220px_1fr_auto]"
+                      >
+                        <div className="min-w-0">
+                          <strong className="block truncate text-[12.5px]">{stage.name}</strong>
+                          <small className="text-[10.5px] text-text-3">
+                            {stage.kind === "won"
+                              ? "ganada"
+                              : stage.kind === "lost"
+                                ? "perdida"
+                                : "en curso"}
+                          </small>
+                        </div>
+                        <div className="h-2.5 overflow-hidden rounded-full bg-subtle">
+                          <div
+                            className="h-full rounded-full bg-brand"
+                            style={{ width: `${width}%` }}
+                          />
+                        </div>
+                        <div className="text-[12px] tabular-nums text-text-2 sm:text-right">
+                          <strong className="text-foreground">{money(stage.amount)}</strong> ·{" "}
+                          {number(stage.leads)}{" "}
+                          {stage.leads === 1 ? "oportunidad" : "oportunidades"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Section>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <Section
+                  title="Gestión — mensajes por día"
+                  subtitle="Recibidos y enviados (últimos 30 días con actividad)"
+                >
+                  <div className="h-[300px]">
+                    <ResponsiveContainer>
+                      <AreaChart data={data.crm.daily}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis
+                          dataKey="day"
+                          tick={{ fontSize: 10 }}
+                          tickFormatter={(value) =>
+                            String(value).slice(5).replace("-", "/")
+                          }
+                        />
+                        <YAxis tick={{ fontSize: 10 }} width={34} />
+                        <Tooltip />
+                        <Legend />
+                        <Area
+                          type="monotone"
+                          dataKey="inbound"
+                          name="Recibidos"
+                          stroke={CHART.series[0]}
+                          fill={CHART.series[0]}
+                          fillOpacity={0.15}
+                          strokeWidth={2}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="outbound"
+                          name="Enviados"
+                          stroke={CHART.series[5]}
+                          fill={CHART.series[5]}
+                          fillOpacity={0.12}
+                          strokeWidth={2}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Section>
+
+                <Section title="Canales y equipo" subtitle="Conversaciones según canal de entrada">
+                  <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
+                    {data.crm.channels.map((channel) => (
+                      <div
+                        key={channel.name}
+                        className="rounded-md border bg-subtle/50 px-3 py-2"
+                      >
+                        <span className="block truncate text-[11px] text-text-3">
+                          {channel.name}
+                        </span>
+                        <strong className="text-[14px] tabular-nums">
+                          {number(channel.value)}
+                        </strong>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex items-center gap-2 rounded-md border bg-subtle/40 px-3 py-2 text-[11.5px] text-text-2">
+                    <Users size={14} className="shrink-0 text-text-3" />
+                    <span>
+                      <strong>{number(data.crm.kpis.users)} usuarios</strong> en el CRM ·{" "}
+                      {number(data.crm.kpis.closedConversations)}{" "}
+                      {data.crm.kpis.closedConversations === 1
+                        ? "conversación cerrada"
+                        : "conversaciones cerradas"}
+                    </span>
+                  </div>
+                </Section>
+              </div>
+
+              <Section
+                title="Macheo con la cartera (CRM ↔ SGSA)"
+                subtitle="Contactos del CRM cruzados contra clientes, pólizas activas y gestiones históricas"
+              >
+                <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                  <div className="rounded-md border bg-subtle/50 px-3 py-2.5">
+                    <span className="block text-[11px] text-text-3">Contactos vinculados</span>
+                    <strong className="text-[15px] tabular-nums">
+                      {number(data.crm.kpis.matchedContacts)}
+                    </strong>
+                  </div>
+                  <div className="rounded-md border bg-subtle/50 px-3 py-2.5">
+                    <span className="block text-[11px] text-text-3">Tasa de vínculo</span>
+                    <strong className="text-[15px] tabular-nums">
+                      {percent(data.crm.kpis.matchRate)}
+                    </strong>
+                  </div>
+                  <div className="rounded-md border bg-subtle/50 px-3 py-2.5">
+                    <span className="block text-[11px] text-text-3">Con póliza activa</span>
+                    <strong className="text-[15px] tabular-nums">
+                      {number(data.crm.kpis.matchedWithActive)}
+                    </strong>
+                  </div>
+                  <div className="rounded-md border bg-subtle/50 px-3 py-2.5">
+                    <span className="block text-[11px] text-text-3">Prima activa vinculada</span>
+                    <strong className="text-[15px] tabular-nums">
+                      {money(data.crm.kpis.matchedPremium)}
+                    </strong>
+                  </div>
+                  <div className="rounded-md border bg-subtle/50 px-3 py-2.5">
+                    <span className="block text-[11px] text-text-3">Vencen ≤ 30 días</span>
+                    <strong className="text-[15px] tabular-nums">
+                      {number(data.crm.kpis.expiring30)}
+                    </strong>
+                  </div>
+                  <div className="rounded-md border bg-subtle/50 px-3 py-2.5">
+                    <span className="block text-[11px] text-text-3">Oportunidades ligadas</span>
+                    <strong className="text-[15px] tabular-nums">
+                      {number(data.crm.kpis.leadsLinked)} · {money(data.crm.kpis.linkedAmount)}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="mt-3 overflow-x-auto rounded-md border">
+                  <table className="w-full">
+                    <thead className="bg-subtle text-left text-[11px] uppercase tracking-wide text-text-3">
+                      <tr>
+                        <th className="px-3 py-2 font-semibold">Contacto</th>
+                        <th className="px-3 py-2 font-semibold">Canal</th>
+                        <th className="px-3 py-2 font-semibold">Mensajes</th>
+                        <th className="px-3 py-2 font-semibold">Vínculo</th>
+                        <th className="px-3 py-2 font-semibold">Pólizas activas</th>
+                        <th className="px-3 py-2 font-semibold">Prima activa</th>
+                        <th className="px-3 py-2 font-semibold">Vence ≤ 30d</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {data.crm.rows.slice(0, 12).map((row) => (
+                        <tr key={row.contactId}>
+                          <td className="px-3 py-2 text-[12.5px]">
+                            <strong>{row.name}</strong>
+                          </td>
+                          <td className="px-3 py-2 text-[12.5px] text-text-2">
+                            {row.channel || "—"}
+                          </td>
+                          <td className="px-3 py-2 text-[12.5px] tabular-nums">
+                            {number(row.messages)}
+                          </td>
+                          <td className="px-3 py-2 text-[12.5px]">
+                            {row.link === "sin-match" ? (
+                              <Badge>Sin vínculo</Badge>
+                            ) : (
+                              <>
+                                <Badge tone={row.link === "sgsa" ? "success" : "accent"}>
+                                  {row.link === "sgsa"
+                                    ? "Vínculo directo"
+                                    : row.link === "telefono"
+                                      ? "Por teléfono"
+                                      : "Por nombre"}
+                                </Badge>
+                                {row.clientName && (
+                                  <div className="mt-0.5 text-[11px] text-text-3">
+                                    {row.clientName}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-[12.5px] tabular-nums">
+                            {number(row.activePolicies)}
+                          </td>
+                          <td className="px-3 py-2 text-[12.5px] tabular-nums">
+                            {row.activePremium > 0 ? money(row.activePremium) : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-[12.5px] tabular-nums">
+                            {row.expiring30 > 0 ? number(row.expiring30) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-3 flex items-center gap-2 rounded-md border bg-subtle/40 px-3 py-2 text-[11.5px] text-text-2">
+                  <RefreshCcw size={14} className="shrink-0 text-text-3" />
+                  <span>
+                    Snapshot de solo lectura del CRM al{" "}
+                    <strong>
+                      {new Date(data.crm.generatedAt || data.generatedAt).toLocaleString("es-AR")}
+                    </strong>{" "}
+                    · sin registros de prueba
+                  </span>
+                </div>
+              </Section>
+            </>
+          )}
+        </div>
+      )}
 
       <p className="pb-2 text-right text-[10.5px] text-text-4">
         Datos generados el {new Date(data.generatedAt).toLocaleString("es-AR")} · Dashboard
