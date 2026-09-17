@@ -8,6 +8,7 @@ import { AppShell } from "@/components/app-shell";
 import { resolveBuildCommit } from "@/lib/version";
 import { agendaEnabled } from "@/server/agenda/flag";
 import { alertsConfigured } from "@/server/alerts/service";
+import { dashboardManagementEnabled } from "@/server/dashboard-management/flag";
 
 export default async function AppLayout({
   children,
@@ -36,6 +37,8 @@ export default async function AppLayout({
       agenda={agendaEnabled()}
       // 027 — Alertas del sistema de seguros: solo si hay backend configurado.
       alerts={alertsConfigured()}
+      // 038 — Dashboard Management: el cockpit embebido (dueño/propietarios).
+      dashboardManagement={dashboardManagementEnabled()}
     >
       {children}
     </AppShell>

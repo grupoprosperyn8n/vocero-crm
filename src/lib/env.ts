@@ -69,6 +69,11 @@ const envSchema = z.object({
   // valide que el mensaje salió de esta instancia.
   CLOSURE_WEBHOOK_URL: z.string().url().optional(),
   CLOSURE_WEBHOOK_SECRET: z.string().optional(),
+  // 038: Dashboard Management — el cockpit ejecutivo (rafael-intelligence)
+  // embebido como sección del CRM. Sin variable apunta al cockpit de este
+  // ecosistema; `off` la apaga en esta instancia (clones sin cockpit).
+  // Ej.: DASHBOARD_MANAGEMENT_URL=off
+  DASHBOARD_MANAGEMENT_URL: z.string().optional(),
   // 008: volumen local de adjuntos (constitución II: sin S3/R2).
   MEDIA_DIR: z.string().default("./.dev-media"),
   NODE_ENV: z.string().default("development"),

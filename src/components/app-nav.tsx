@@ -10,6 +10,7 @@ import {
   FlaskConical,
   Inbox,
   Kanban,
+  LayoutDashboard,
   LogOut,
   MessageSquareText,
   Settings,
@@ -46,6 +47,10 @@ const NAV: NavItem[] = [
   { href: "/chat", label: "Chat interno", icon: MessageSquareText, badge: "internal" },
   { href: "/agent", label: "Agente", icon: Sparkles },
   { href: "/lab", label: "Laboratorio", icon: FlaskConical },
+  // 038 — Dashboard Management: el cockpit ejecutivo embebido, tal cual es.
+  // Dueño y propietarios, y solo en instancias con cockpit configurado:
+  // se filtra abajo por rol y por bandera.
+  { href: "/dashboard-management", label: "Dashboard Management", icon: LayoutDashboard },
 ];
 
 /** 015 — "Citas" solo existe si esta instancia encendió la agenda. */
@@ -76,6 +81,7 @@ export function AppNav({
   commit,
   agenda = false,
   alerts = false,
+  dashboardManagement = false,
   open = false,
   onClose,
 }: {
@@ -96,6 +102,8 @@ export function AppNav({
   agenda?: boolean;
   /** 027 — ¿hay sistema de alertas configurado en esta instancia? */
   alerts?: boolean;
+  /** 038 — ¿esta instancia tiene Dashboard Management? (cockpit embebido) */
+  dashboardManagement?: boolean;
   /** Solo aplica por debajo de `lg`: en escritorio el lateral es fijo. */
   open?: boolean;
   onClose?: () => void;
@@ -162,6 +170,10 @@ export function AppNav({
   // Ajustes solo por Equipo. 027 — "Alertas" solo en instancias configuradas.
   let nav = role === "owner" ? NAV : NAV.filter((i) => i.href !== "/agent");
   if (!alerts) nav = nav.filter((i) => i.href !== "/alerts");
+  // 038 — Dashboard Management: dueño y propietarios, solo con cockpit
+  // configurado en esta instancia.
+  if (!dashboardManagement || role === "member")
+    nav = nav.filter((i) => i.href !== "/dashboard-management");
   // Citas va después del Flujo de Venta/Gestión: es el paso siguiente de un trato, no una
   // sección aparte.
   const items = agenda

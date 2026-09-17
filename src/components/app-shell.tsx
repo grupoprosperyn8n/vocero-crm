@@ -28,6 +28,7 @@ export function AppShell({
   commit,
   agenda = false,
   alerts: alertsEnabled = false,
+  dashboardManagement = false,
   children,
 }: {
   branding: Branding;
@@ -40,6 +41,8 @@ export function AppShell({
   agenda?: boolean;
   /** 027 — ¿esta instancia tiene el sistema de alertas configurado? */
   alerts?: boolean;
+  /** 038 — ¿esta instancia tiene Dashboard Management? (cockpit embebido) */
+  dashboardManagement?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -79,6 +82,7 @@ export function AppShell({
         theme={theme}
         agenda={agenda}
         alerts={alertsEnabled}
+        dashboardManagement={dashboardManagement}
         open={navOpen}
         onClose={() => setNavOpen(false)}
       />
