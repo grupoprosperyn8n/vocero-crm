@@ -754,6 +754,7 @@ export function ExecDashboard() {
   >({});
   const [copiedInsight, setCopiedInsight] = useState<string | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(
     async (override?: typeof filters) => {
@@ -1024,7 +1025,7 @@ export function ExecDashboard() {
 
   const openList = useCallback(
     (module: string, listId: string) => {
-      setListRestore((prev) => prev || { tab, scrollY: window.scrollY });
+      setListRestore((prev) => prev || { tab, scrollY: scrollRef.current?.scrollTop ?? 0 });
       setListSel((prev) => ({ ...prev, [module]: listId }));
       setListOpen({ [module]: true });
       setTimeout(() => {
@@ -1043,7 +1044,7 @@ export function ExecDashboard() {
     setListRestore(null);
     setTab(restore.tab);
     setTimeout(() => {
-      window.scrollTo({ top: restore.scrollY, behavior: "auto" });
+      scrollRef.current?.scrollTo({ top: restore.scrollY, behavior: "auto" });
     }, 80);
   }, [listRestore]);
 
@@ -1083,7 +1084,7 @@ export function ExecDashboard() {
   function applyHelpAction(action: HelpAction) {
     if (action.kind === "goto") {
       setTab(action.tab);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
     if (action.kind === "dates") {
@@ -1168,7 +1169,8 @@ export function ExecDashboard() {
     "h-8 rounded-md border border-border-strong bg-background px-2 text-[12px] text-text-2";
 
   return (
-    <div className="w-full space-y-3 px-3 lg:px-5">
+    <div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain">
+    <div className="w-full space-y-3 px-3 pb-8 lg:px-5">
       {/* Encabezado */}
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -1200,7 +1202,7 @@ export function ExecDashboard() {
         data={data}
         onGoto={(next) => {
           setTab(next);
-          window.scrollTo({ top: 0, behavior: "smooth" });
+          scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
         }}
         onOpenList={(next, listId) => {
           setTab(next);
@@ -2494,6 +2496,7 @@ export function ExecDashboard() {
         Datos generados el {new Date(data.generatedAt).toLocaleString("es-AR")} · Dashboard
         Management
       </p>
+    </div>
     </div>
   );
 }
