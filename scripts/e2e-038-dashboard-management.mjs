@@ -63,7 +63,7 @@ check(
 );
 const h = (s) => ({ cookie: s.cookie });
 
-// 2) OWNER: la página sirve el iframe del cockpit (200 + src correcto)
+// 2) OWNER: la página responde 200 y es NATIVA (sin iframe embebido)
 const pageOwner = await fetch(`${BASE}/dashboard-management`, {
   headers: h(sOwner),
   redirect: "manual",
@@ -71,10 +71,33 @@ const pageOwner = await fetch(`${BASE}/dashboard-management`, {
 const htmlOwner = pageOwner.status === 200 ? await pageOwner.text() : "";
 check("2. owner abre la página (200)", pageOwner.status === 200, String(pageOwner.status));
 check(
-  "3. el HTML trae el iframe del cockpit",
-  htmlOwner.includes('src="https://dashbord-raseguros.sistemasagenticos.cloud'),
-  pageOwner.status === 200 ? "" : "sin body"
+  "3. versión nativa: sin iframe embebido",
+  pageOwner.status === 200 && !htmlOwner.includes("<iframe"),
+  ""
 );
+
+// 3b) OWNER: el proxy de datos responde con el shape del cockpit
+const dataOwner = await fetch(`${BASE}/api/dashboard-management/dashboard`, {
+  headers: h(sOwner),
+});
+let shapeOk = false;
+let shapeInfo = String(dataOwner.status);
+if (dataOwner.ok) {
+  const j = await dataOwner.json();
+  shapeOk = Boolean(j && j.migration && j.historic && j.current && j.lists);
+  shapeInfo = shapeOk ? "con datos reales" : "shape inesperado";
+}
+check("3b. owner: proxy de datos 200", dataOwner.status === 200 && shapeOk, shapeInfo);
+
+// 3c) MEMBER: el proxy de datos no le da acceso
+const dataMember = await fetch(`${BASE}/api/dashboard-management/dashboard`, {
+  headers: h(sMember),
+});
+check("3c. member: proxy de datos 403", dataMember.status === 403, String(dataMember.status));
+
+// 3d) Sin sesión: 401
+const dataAnon = await fetch(`${BASE}/api/dashboard-management/dashboard`);
+check("3d. sin sesión: proxy 401", dataAnon.status === 401, String(dataAnon.status));
 
 // 3) OWNER: el menú muestra la entrada
 const inboxOwner = await fetch(`${BASE}/inbox`, { headers: h(sOwner), redirect: "manual" });
@@ -124,6 +147,14 @@ if (BASE_OFF) {
     redirect: "manual",
   });
   check("8. instancia off → 404 (la ruta no existe)", pageOff.status === 404, String(pageOff.status));
+  const dataOff = await fetch(`${BASE_OFF}/api/dashboard-management/dashboard`, {
+    headers: h(sOff),
+  });
+  check(
+    "8b. instancia off: el proxy avisa que está apagado",
+    dataOff.status === 503 || dataOff.status === 404,
+    String(dataOff.status)
+  );
   const inboxOff = await fetch(`${BASE_OFF}/inbox`, { headers: h(sOff), redirect: "manual" });
   const htmlInboxOff = inboxOff.status === 200 ? await inboxOff.text() : "";
   check(

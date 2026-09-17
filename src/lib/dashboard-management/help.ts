@@ -1,0 +1,264 @@
+export type TabId =
+  | "pulso"
+  | "cartera"
+  | "retencion"
+  | "reactivacion"
+  | "cross"
+  | "clientes"
+  | "crm"
+  | "migracion";
+
+export type HelpAction =
+  | { kind: "goto"; tab: TabId }
+  | {
+      kind: "dates";
+      preset: "month" | "lastMonth" | "year" | "all";
+    };
+
+export type HelpSuggestion = {
+  text: string;
+  action?: HelpAction;
+};
+
+export type ModuleHelp = {
+  title: string;
+  tagline: string;
+  what: string[];
+  measures: string[];
+  usage: string[];
+  suggestions: HelpSuggestion[];
+};
+
+/*
+ * Guía interactiva por módulo: qué es, qué mide, para qué sirve
+ * y sugerencias accionables (abren el módulo o aplican un período).
+ * Lenguaje simple, pensado para el dueño del negocio.
+ */
+export const MODULE_HELP: Record<
+  TabId,
+  ModuleHelp
+> = {
+  pulso: {
+    title: "Pulso del negocio",
+    tagline:
+      "¿Estamos creciendo o perdiendo? La foto general, mes a mes.",
+    what: [
+      "Es la radiografía del negocio: cuánto entra (altas), cuánto sale (anulaciones), más siniestros y cotizaciones.",
+      "Combina la historia de Rafael con lo ya cargado en el sistema nuevo; cada número aclara de dónde viene.",
+    ],
+    measures: [
+      "Altas, anulaciones y el crecimiento neto (altas menos anulaciones).",
+      "Siniestros y cotizaciones del período.",
+      "Evolución mes a mes y reparto por canal, producto y oficina.",
+    ],
+    usage: [
+      "Mirá primero el crecimiento neto: positivo = el negocio crece.",
+      "Usá los atajos de período (Este mes / Este año) para enfocar la vista.",
+      "Si algo cae, filtrá por oficina o canal para encontrar dónde está el problema.",
+    ],
+    suggestions: [
+      {
+        text: "Ver solo este mes",
+        action: { kind: "dates", preset: "month" },
+      },
+      {
+        text: "Ver este año",
+        action: { kind: "dates", preset: "year" },
+      },
+      {
+        text: "Proteger lo que vence → Retención",
+        action: { kind: "goto", tab: "retencion" },
+      },
+    ],
+  },
+
+  cartera: {
+    title: "Cartera",
+    tagline:
+      "Todo lo vigente que ya está cargado en el sistema nuevo.",
+    what: [
+      "Las pólizas cargadas en la plataforma nueva: cuántas hay, cuántas están activas y cuánta prima representan.",
+      "Incluye el reparto por compañía y producto, y los vencimientos próximos.",
+    ],
+    measures: [
+      "Pólizas cargadas vs. activas, y prima activa.",
+      "Clientes activos y distribución por compañía y producto.",
+      "Pólizas que vencen en los próximos 7 y 30 días.",
+    ],
+    usage: [
+      "Usala para saber exactamente qué cartera administrás hoy.",
+      "Filtrá por compañía para ver concentración de riesgo.",
+      "Recordá: es parcial hasta que cierre la migración (mirá Calidad de datos).",
+    ],
+    suggestions: [
+      {
+        text: "Ver qué vence pronto → Retención",
+        action: { kind: "goto", tab: "retencion" },
+      },
+      {
+        text: "Seguir el avance de la migración",
+        action: { kind: "goto", tab: "migracion" },
+      },
+    ],
+  },
+
+  retencion: {
+    title: "Retención",
+    tagline:
+      "Tu prioridad del día: lo que se vence y quién está en riesgo.",
+    what: [
+      "Las pólizas que se vencen y los clientes que conviene contactar antes de perderlos.",
+      "Combina la situación de hoy (pólizas activas) con las señales de la historia (anulaciones y siniestros).",
+    ],
+    measures: [
+      "Vencen ≤7 días: las llamadas de hoy.",
+      "Vencen ≤30 días: la ronda del mes.",
+      "Clientes activos con anulaciones históricas y siniestros del período.",
+    ],
+    usage: [
+      "Empezá siempre por el bloque de ≤7 días.",
+      "Después armá la ronda de ≤30 días: llamar antes es retener.",
+      "Varias anulaciones en la historia = cliente en riesgo: contactalo ya.",
+    ],
+    suggestions: [
+      {
+        text: "Enfocar el mes en curso",
+        action: { kind: "dates", preset: "month" },
+      },
+      {
+        text: "Preparar un llamado → Cliente 360°",
+        action: { kind: "goto", tab: "clientes" },
+      },
+    ],
+  },
+
+  reactivacion: {
+    title: "Reactivación",
+    tagline:
+      "Clientes que ya te conocen y hoy no tienen póliza activa.",
+    what: [
+      "La lista de clientes con historia de compra (altas) que hoy no tienen ninguna póliza activa cargada.",
+      "Es la venta más fácil: ya te conocen y ya confiaron en vos.",
+    ],
+    measures: [
+      "Candidatos a reactivar y universo potencial.",
+      "Cuántos tenían una sola póliza o varias (los más fieles).",
+    ],
+    usage: [
+      "Filtrá por oficina para repartir los llamados entre el equipo.",
+      "Antes de llamar, abrí la ficha del cliente en Cliente 360° para ver su historia.",
+      "Los de score más alto son los que más conviene recuperar.",
+    ],
+    suggestions: [
+      {
+        text: "Ver la ficha completa de un cliente",
+        action: { kind: "goto", tab: "clientes" },
+      },
+      {
+        text: "Ver el año completo",
+        action: { kind: "dates", preset: "year" },
+      },
+    ],
+  },
+
+  cross: {
+    title: "Venta cruzada",
+    tagline: "Venderle más al que ya confía.",
+    what: [
+      "Detecta qué producto le falta a cada cliente según lo que ya tiene (ej.: Auto sin Auxilio, sin Hogar, sin Vida).",
+      "No hay que salir a buscar clientes nuevos: se crece sobre la cartera propia.",
+    ],
+    measures: [
+      "Pares producto → producto faltante, con la cantidad de casos de cada uno.",
+      "Clientes con una sola póliza (la oportunidad directa).",
+      "Clientes con 2 o más pólizas (los más vinculados al negocio).",
+    ],
+    usage: [
+      "Agarrá el par con más casos y armá la campaña de la semana.",
+      "Filtrá por producto (ej. AUTO) para enfocar la oferta.",
+      "Cruzá con Cliente 360° para preparar cada llamada.",
+    ],
+    suggestions: [
+      {
+        text: "Ver clientes para ofrecer",
+        action: { kind: "goto", tab: "clientes" },
+      },
+    ],
+  },
+
+  clientes: {
+    title: "Cliente 360°",
+    tagline:
+      "La ficha completa del cliente, antes de cada llamado.",
+    what: [
+      "Un buscador que junta TODO lo que sabés de un cliente: historia, pólizas activas, prima y una recomendación de acción.",
+      "El score de 0 a 100 indica prioridad de atención: más alto = atender primero.",
+    ],
+    measures: [
+      "Pólizas activas, prima activa y gestiones históricas (altas, anulaciones, siniestros).",
+      "Score 0-100: prioridad comercial (no es riesgo crediticio).",
+      "Próxima mejor acción: reactivar, vender cruzado, retener o hacer seguimiento.",
+    ],
+    usage: [
+      "Buscá por nombre, DNI o teléfono (coincidencia parcial).",
+      "Antes de llamar, leé la «próxima mejor acción» y el score.",
+      "Sin búsqueda, ves las últimas 100 altas del maestro de clientes.",
+    ],
+    suggestions: [
+      {
+        text: "Buscar clientes para reactivar",
+        action: { kind: "goto", tab: "reactivacion" },
+      },
+    ],
+  },
+
+  crm: {
+    title: "CRM · Venta y gestión",
+    tagline:
+      "Tu WhatsApp y el embudo de ventas, en tablero.",
+    what: [
+      "El movimiento del CRM: conversaciones, mensajes, respuestas del asistente automático y el embudo de ventas.",
+      "Cruza cada contacto con la cartera: ¿ya es cliente? ¿qué pólizas tiene? ¿tiene algo por vencer?",
+    ],
+    measures: [
+      "Conversaciones (abiertas/cerradas), mensajes recibidos y enviados, respuestas con IA.",
+      "Embudo: Nuevo → En conversación → Interesado → Cliente → Perdido.",
+      "Vínculo con la cartera: contactos que ya son clientes y prima activa vinculada.",
+    ],
+    usage: [
+      "Revisá primero las oportunidades abiertas del embudo.",
+      "Un contacto que ya es cliente = oportunidad de venta cruzada.",
+      "Mirá el día a día de mensajes para entender el ritmo de atención.",
+    ],
+    suggestions: [
+      {
+        text: "Ver quién está listo para ofrecerle algo → Venta cruzada",
+        action: { kind: "goto", tab: "cross" },
+      },
+    ],
+  },
+
+  migracion: {
+    title: "Calidad y avance de migración",
+    tagline:
+      "¿Cuánto de la base vieja ya quedó vinculado a la nueva?",
+    what: [
+      "El termómetro de la migración: qué porcentaje de clientes y gestiones cruzan entre la base histórica y el sistema nuevo.",
+      "También muestra lo que falta completar para confiar plenamente en la cartera cargada.",
+    ],
+    measures: [
+      "Clientes y gestiones vinculadas (%).",
+      "Pólizas sin cliente, sin producto, sin compañía o sin vencimiento.",
+    ],
+    usage: [
+      "Seguí acá el avance real de la carga, sin sorpresas.",
+      "Cuando llegue a ~100%, la cartera cargada es la definitiva y el histórico pasa a ser archivo.",
+    ],
+    suggestions: [
+      {
+        text: "Ver la cartera actual",
+        action: { kind: "goto", tab: "cartera" },
+      },
+    ],
+  },
+};
