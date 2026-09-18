@@ -55,6 +55,10 @@ const prefixes = {
   systemUser: "sysu",
   // 040 — trazabilidad de acciones del tablero (Dashboard Management)
   dashboardAction: "dact",
+  // 041 — propuestas comerciales del Cliente 360°
+  proposal: "prop",
+  proposalTemplate: "ptpl",
+  proposalAsset: "pass",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

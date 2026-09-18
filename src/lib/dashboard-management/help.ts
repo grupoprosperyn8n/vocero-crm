@@ -7,6 +7,7 @@ export type TabId =
   | "cross"
   | "clientes"
   | "crm"
+  | "propuestas"
   | "migracion";
 
 export type HelpAction =
@@ -266,6 +267,31 @@ export const MODULE_HELP: Record<
       {
         text: "Ver quién está listo para ofrecerle algo → Venta cruzada",
         action: { kind: "goto", tab: "cross" },
+      },
+    ],
+  },
+
+  propuestas: {
+    title: "Propuestas comerciales",
+    tagline:
+      "La publicidad de cada sugerencia, derivada al empleado y medida en el embudo.",
+    what: [
+      "Cada propuesta es una pieza publicitaria (imagen, oferta, beneficio y botón de acción) que el cliente abre desde cualquier computadora con un link.",
+      "Se arma desde el panel del cliente en Cliente 360°, se deriva a un empleado con prioridad —igual que las alertas, con el aviso en el chat interno— y se envía por WhatsApp.",
+    ],
+    measures: [
+      "Embudo: creadas → derivadas → enviadas → vistas → respondidas.",
+      "A quién está asignada cada propuesta, con qué prioridad y cómo le fue.",
+    ],
+    usage: [
+      "Creá la propuesta desde el panel de un cliente (tipo sugerido por el motor de datos).",
+      "Derivala al empleado que la va a trabajar: le llega el aviso con el link a su chat interno.",
+      "Seguí acá las vistas y respuestas para saber qué mensaje convierte.",
+    ],
+    suggestions: [
+      {
+        text: "Ir al panel de un cliente y crear una propuesta",
+        action: { kind: "goto", tab: "clientes" },
       },
     ],
   },

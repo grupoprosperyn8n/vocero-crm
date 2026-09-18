@@ -13,6 +13,7 @@ const TABS: Tab[] = [
   { href: "/settings/agents", label: "Automejora" },
   { href: "/settings/branding", label: "Marca" },
   { href: "/settings/templates", label: "Plantillas" },
+  { href: "/settings/propuestas", label: "Propuestas" },
   { href: "/settings/team", label: "Equipo" },
 ];
 
@@ -62,7 +63,7 @@ export function SettingsNav({
       ? all
       : role === "admin"
         ? all.filter((t) =>
-            ["/settings/team", "/settings/templates", "/settings/calendar"].includes(t.href)
+            ["/settings/team", "/settings/templates", "/settings/propuestas", "/settings/calendar"].includes(t.href)
           )
         : [];
   return (

@@ -1597,8 +1597,8 @@ export const dashboardAction = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    /** "cola" (jugada de la Cola de hoy) o "ficha" (Cliente 360°). */
-    source: text("source", { enum: ["cola", "ficha"] })
+    /** "cola" (jugada de la Cola de hoy), "ficha" (Cliente 360°) o "propuesta". */
+    source: text("source", { enum: ["cola", "ficha", "propuesta"] })
       .notNull()
       .default("ficha"),
     /**
@@ -1627,5 +1627,156 @@ export const dashboardAction = pgTable(
       t.createdAt
     ),
     index("dashboard_action_play_idx").on(t.playId, t.createdAt),
+  ]
+);
+
+/* ============================================================
+ * 041 — Propuestas comerciales del Cliente 360°
+ *
+ * El asesor arma una propuesta para un cliente (retención, venta
+ * cruzada, …) con una imagen del tipo de sugerencia y textos
+ * editables; el sistema le da una PÁGINA PÚBLICA con CTA (link o PDF)
+ * que se abre desde cualquier computadora, y la conecta con el
+ * empleado del CRM que la trabaja. Solo CRM: Airtable (SGSA) sigue
+ * siendo fuente única de clientes/pólizas y acá no se escribe nada
+ * suyo — esto es contenido propio del CRM.
+ * ============================================================ */
+
+/** Imagen subida para un tipo de sugerencia (bytes en base64 en la DB). */
+export const proposalAsset = pgTable("proposal_asset", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  mime: text("mime").notNull(),
+  filename: text("filename"),
+  byteSize: integer("byte_size").notNull().default(0),
+  /** Base64 (sin prefijo data:) — el disco del contenedor NO persiste. */
+  data: text("data").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+/**
+ * Plantilla por TIPO de sugerencia (retención, renovación, venta cruzada,
+ * reactivación, fidelización): título, textos, CTA y la imagen que se
+ * cargó para ese tipo. Una por tipo y organización.
+ */
+export const proposalTemplate = pgTable(
+  "proposal_template",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    title: text("title").notNull().default(""),
+    subtitle: text("subtitle"),
+    body: text("body").notNull().default(""),
+    /** Tipo de producto / oferta / descuento o beneficio (040b — Diego). */
+    productName: text("product_name"),
+    offer: text("offer"),
+    benefit: text("benefit"),
+    /** Logo del emisor (Rafael Allende) que va arriba de la pieza. */
+    logoAssetId: text("logo_asset_id").references(() => proposalAsset.id, {
+      onDelete: "set null",
+    }),
+    ctaLabel: text("cta_label"),
+    ctaUrl: text("cta_url"),
+    /** "link" (página o publicación) o "pdf" (url directa a un PDF). */
+    ctaKind: text("cta_kind", { enum: ["link", "pdf"] })
+      .notNull()
+      .default("link"),
+    accent: text("accent"),
+    assetId: text("asset_id").references(() => proposalAsset.id, {
+      onDelete: "set null",
+    }),
+    active: boolean("active").notNull().default(true),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("proposal_template_org_kind_uq").on(t.organizationId, t.kind)]
+);
+
+/**
+ * Propuesta concreta para un cliente: copia editable de la plantilla,
+ * token para la página pública (/p/<token>) y el empleado asignado.
+ * El embudo (creada → enviada → vista → respondida) se mide acá y en
+ * dashboard_action.
+ */
+export const proposal = pgTable(
+  "proposal",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Token de la página pública (URL corta, no adivinable). */
+    token: text("token").notNull().unique(),
+    kind: text("kind").notNull(),
+    /** Cliente del sistema (sgsa:<recordId> sin el prefijo). */
+    clientRef: text("client_ref").notNull(),
+    clientName: text("client_name").notNull(),
+    clientDni: text("client_dni"),
+    clientPhone: text("client_phone"),
+    title: text("title").notNull().default(""),
+    subtitle: text("subtitle"),
+    body: text("body").notNull().default(""),
+    /** Tipo de producto / oferta / descuento o beneficio. */
+    productName: text("product_name"),
+    offer: text("offer"),
+    benefit: text("benefit"),
+    /** Compañía de seguro auspiciada (logo descargado a proposal_asset). */
+    companyRef: text("company_ref"),
+    companyName: text("company_name"),
+    companyAssetId: text("company_asset_id").references(() => proposalAsset.id, {
+      onDelete: "set null",
+    }),
+    /** Logo del emisor (Rafael Allende) al momento de armar la pieza. */
+    logoAssetId: text("logo_asset_id").references(() => proposalAsset.id, {
+      onDelete: "set null",
+    }),
+    ctaLabel: text("cta_label"),
+    ctaUrl: text("cta_url"),
+    ctaKind: text("cta_kind", { enum: ["link", "pdf"] })
+      .notNull()
+      .default("link"),
+    assetId: text("asset_id").references(() => proposalAsset.id, {
+      onDelete: "set null",
+    }),
+    /** Empleado del CRM que la trabaja (derivación, como las alertas). */
+    assigneeUserId: text("assignee_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** alta | media | baja — se elige al derivar. */
+    priority: text("priority", { enum: ["alta", "media", "baja"] })
+      .notNull()
+      .default("media"),
+    derivedAt: timestamp("derived_at"),
+    derivedBy: text("derived_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    contactId: text("contact_id").references(() => contact.id, {
+      onDelete: "set null",
+    }),
+    conversationId: text("conversation_id").references(() => conversation.id, {
+      onDelete: "set null",
+    }),
+    /** borrador → derivada (aviso al empleado) → enviada (link al cliente). */
+    status: text("status", { enum: ["borrador", "derivada", "enviada"] })
+      .notNull()
+      .default("borrador"),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    sentAt: timestamp("sent_at"),
+    /** Métricas de la página pública. */
+    firstViewAt: timestamp("first_view_at"),
+    lastViewAt: timestamp("last_view_at"),
+    views: integer("views").notNull().default(0),
+  },
+  (t) => [
+    index("proposal_org_created_idx").on(t.organizationId, t.createdAt),
+    index("proposal_assignee_idx").on(t.assigneeUserId, t.createdAt),
+    index("proposal_client_idx").on(t.clientRef),
   ]
 );

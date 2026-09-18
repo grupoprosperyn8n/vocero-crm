@@ -15,12 +15,14 @@ import {
   CircleDollarSign,
   Clock3,
   Database,
+  FileText,
   HeartHandshake,
   HelpCircle,
   History,
   Hourglass,
   Info,
   Infinity as InfinityIcon,
+  LayoutDashboard,
   Lightbulb,
   Link2,
   ListChecks,
@@ -63,6 +65,8 @@ import {
 import { cn, systemClientName } from "@/lib/utils";
 import type { SystemClientSearchResultDto } from "@/lib/types";
 import { airtableTagStyle } from "@/lib/dashboard-management/airtable-colors";
+import { ClientPanel, type PanelCustomer } from "./client-panel";
+import { ProposalsPanel } from "./proposals-panel";
 import {
   MODULE_HELP,
   type HelpAction,
@@ -890,6 +894,7 @@ const MODULE_TABS: { id: TabId; label: string; Icon: typeof TrendingUp }[] = [
   { id: "cross", label: "Venta cruzada", Icon: ArrowUpRight },
   { id: "clientes", label: "Cliente 360°", Icon: Users },
   { id: "crm", label: "CRM · Venta y gestión", Icon: MessageSquareText },
+  { id: "propuestas", label: "Propuestas", Icon: FileText },
   { id: "migracion", label: "Calidad de datos", Icon: Database },
 ];
 
@@ -910,6 +915,7 @@ const TAB_FILTERS: Record<
   cross: { date: false, office: true, product: true, channel: false, employee: true, company: true, search: false },
   clientes: { date: false, office: true, product: false, channel: false, employee: false, company: false, search: true },
   crm: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
+  propuestas: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   migracion: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
 };
 
@@ -922,6 +928,7 @@ const FILTER_SCOPE: Record<TabId, string> = {
   cross: "Filtran la cartera y los productos usados para la venta cruzada.",
   clientes: "Buscá por nombre, DNI o teléfono; la oficina acota el universo del cliente.",
   crm: "Este módulo muestra el CRM completo: los filtros de cartera y gestiones no lo afectan.",
+  propuestas: "La pestaña tiene sus propios filtros: empleado asignado y estado del embudo.",
   migracion: "Este módulo muestra la base completa: los filtros no lo afectan.",
 };
 
@@ -932,6 +939,8 @@ export function ExecDashboard() {
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({ ...EMPTY_FILTERS });
   const [tab, setTab] = useState<TabId>("pulso");
+  // 041 — panel de control del cliente (Cliente 360°), a pantalla completa.
+  const [panelClient, setPanelClient] = useState<PanelCustomer | null>(null);
   const [modEngines, setModEngines] = useState<Partial<Record<ModuleAiId, InsightMode>>>({});
   const [modInsights, setModInsights] = useState<
     Record<string, { status: "loading" | "error" | "done"; data?: ModuleInsight; error?: string }>
@@ -1309,6 +1318,53 @@ export function ExecDashboard() {
         kind: "error",
         text: err instanceof Error && err.message ? err.message : "No se pudo abrir el chat.",
       });
+    }
+  }
+
+  /**
+   * 041 — «Mandar mensaje (IA)» desde el panel de control: genera el mensaje
+   * con la conexión de IA del CRM y abre el chat del cliente con el borrador.
+   * Devuelve el texto del error (o null si salió bien) para mostrarlo en el panel.
+   */
+  async function sendPanelMessage(customer: PanelCustomer): Promise<string | null> {
+    try {
+      const res = await fetch("/api/dashboard-management/insight", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          clientId: customer.id || customer.dni || customer.name,
+          mode: "dual",
+          context: {
+            name: customer.name,
+            dni: customer.dni,
+            phone: customer.phone,
+            score: customer.score,
+            recommendation: customer.recommendation,
+          },
+        }),
+      });
+      const payload = (await res.json().catch(() => null)) as
+        | { ok?: boolean; insight?: ClientInsight; error?: string }
+        | null;
+      if (!res.ok || !payload?.ok || !payload.insight?.mensajeWhatsapp) {
+        throw new Error(payload?.error || "No se pudo generar el mensaje con IA.");
+      }
+      await openClientChat(
+        `panel:${customer.id}`,
+        {
+          id: customer.id,
+          name: customer.name,
+          dni: customer.dni ?? undefined,
+          phone: customer.phone ?? undefined,
+        },
+        payload.insight.mensajeWhatsapp,
+        { source: "ficha", module: "clientes" }
+      );
+      return null;
+    } catch (err) {
+      return err instanceof Error && err.message
+        ? err.message
+        : "No se pudo generar el mensaje.";
     }
   }
 
@@ -2503,6 +2559,27 @@ export function ExecDashboard() {
                     })()}
                 </div>
 
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPanelClient({
+                      id: customer.id,
+                      name: customer.name,
+                      dni: customer.dni,
+                      phone: customer.phone,
+                      score: customer.score,
+                      recommendation: customer.recommendation,
+                      recommendationWhy: customer.recommendationWhy,
+                      recommendationSteps: customer.recommendationSteps,
+                      backendUrl: customer.backendUrl,
+                    })
+                  }
+                  className="mt-2.5 mr-3 inline-flex items-center gap-1 rounded-md border border-brand-soft bg-brand-tint px-2 py-1 text-[11.5px] font-bold text-brand-text transition-opacity hover:opacity-90"
+                  title="Panel de control: métricas, gráficas y gestión sugerida del cliente"
+                >
+                  <LayoutDashboard size={12} /> Panel de control
+                </button>
+
                 {customer.backendUrl && (
                   <a
                     className="mt-2.5 inline-flex items-center gap-1 text-[11.5px] font-semibold text-brand-text hover:underline"
@@ -2524,6 +2601,18 @@ export function ExecDashboard() {
               Sin resultados. Probá con otro nombre, DNI o teléfono.
             </div>
           )}
+        </div>
+      )}
+
+      {tab === "propuestas" && (
+        <div className="space-y-3">
+          <HelpZone
+            help={MODULE_HELP.propuestas}
+            id="propuestas"
+            onAction={applyHelpAction}
+          />
+
+          <ProposalsPanel onOpenPanel={(c) => setPanelClient(c)} />
         </div>
       )}
 
@@ -3168,6 +3257,23 @@ export function ExecDashboard() {
         Datos generados el {new Date(data.generatedAt).toLocaleString("es-AR")} · Dashboard
         Management
       </p>
+
+      {panelClient && (
+        <ClientPanel
+          customer={panelClient}
+          onClose={() => setPanelClient(null)}
+          onMandarMensaje={() => sendPanelMessage(panelClient)}
+          onOpenInbox={(input) => {
+            if (input.contactId) {
+              router.push(
+                `/inbox?contact=${input.contactId}&draft=${encodeURIComponent(input.draft)}`
+              );
+            } else {
+              router.push("/inbox");
+            }
+          }}
+        />
+      )}
     </div>
     </div>
   );

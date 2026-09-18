@@ -491,3 +491,190 @@ export type ChatMessagePayloadDto =
   | ChatAlertShareDto
   | ChatReviewShareDto
   | ChatTaskShareDto;
+
+/* ============================================================
+ * 041 — Cliente 360°: panel de control (ficha enriquecida)
+ * y propuestas comerciales (pieza pública + derivación).
+ * ============================================================ */
+
+/** Mes de una serie (clave "YYYY-MM" para el eje de las gráficas). */
+export type FichaMonthPoint = {
+  month: string;
+  count: number;
+  amount: number;
+};
+
+/** Panel de control del cliente (041) — todo lo que muestra el modal. */
+export type ClientFichaDto = {
+  recordId: string;
+  nombre: string;
+  apellido: string;
+  nombreCompleto: string;
+  dni: string | null;
+  telefono: string | null;
+  email: string | null;
+  estado: string | null;
+  oficina: string | null;
+  fotoUrl: string | null;
+  perfilRiesgo: string | null;
+  fechaAlta: string | null;
+  fechaBaja: string | null;
+  idUnico: string | null;
+  polizas: {
+    total: number;
+    activas: number;
+    anuladas: number;
+    enTramite: number;
+    sinVigencia: number;
+    vence7: number;
+    vence30: number;
+  };
+  premiumActiva: number;
+  policies: FichaPolicy[];
+  premiumByProduct: FichaProductSlice[];
+  expirationsByMonth: FichaMonthPoint[];
+  gestionesByMonth: FichaGestionesMonthPoint[];
+  gestiones: FichaGestion[];
+  gestionesTotal12m: number;
+  whatsapp: FichaWhatsapp | null;
+  proposals: ProposalDto[];
+  generatedAt: string;
+};
+
+export type FichaGestionesMonthPoint = {
+  month: string;
+  altas: number;
+  cotizaciones: number;
+  anulaciones: number;
+  siniestros: number;
+  otros: number;
+  total: number;
+};
+
+export type FichaProductSlice = {
+  productId: string | null;
+  nombre: string;
+  icono: string | null;
+  prima: number;
+  polizas: number;
+};
+
+export type FichaPolicy = {
+  id: string;
+  numero: string | null;
+  productoNombre: string | null;
+  productoIcono: string | null;
+  companiaNombre: string | null;
+  estado: string[];
+  /** true = vigente (VIGENTE o por vencer); false = anulada/sin vigencia/en trámite. */
+  vigente: boolean;
+  premium: number | null;
+  inicio: string | null;
+  vencimiento: string | null;
+  anulacion: string | null;
+  oficina: string | null;
+};
+
+export type FichaGestion = {
+  id: string;
+  idUnico: string | null;
+  fecha: string | null;
+  motivo: string | null;
+  tipoSolicitud: string | null;
+  estado: string | null;
+  atencion: string | null;
+  importe: number | null;
+  poliza: string | null;
+};
+
+export type FichaWhatsapp = {
+  contactId: string;
+  contactName: string;
+  conversationId: string | null;
+  messages30: { inbound: number; outbound: number };
+  lastInboundAt: string | null;
+  lastMessageAt: string | null;
+  assigneeName: string | null;
+};
+
+/** Propuesta comercial (041) — resumen para listas/ficha. */
+export type ProposalDto = {
+  id: string;
+  token: string;
+  publicUrl: string;
+  kind: string;
+  status: "borrador" | "derivada" | "enviada";
+  priority: "alta" | "media" | "baja";
+  title: string;
+  subtitle: string | null;
+  body: string;
+  productName: string | null;
+  offer: string | null;
+  benefit: string | null;
+  companyName: string | null;
+  hasCompanyLogo: boolean;
+  hasLogo: boolean;
+  hasImage: boolean;
+  ctaLabel: string | null;
+  ctaUrl: string | null;
+  ctaKind: "link" | "pdf";
+  clientRef: string;
+  clientName: string;
+  clientDni: string | null;
+  clientPhone: string | null;
+  assigneeUserId: string | null;
+  assigneeName: string | null;
+  createdByName: string | null;
+  contactId: string | null;
+  conversationId: string | null;
+  statusLabel: string;
+  views: number;
+  firstViewAt: string | null;
+  lastViewAt: string | null;
+  sentAt: string | null;
+  derivedAt: string | null;
+  respondedAt: string | null;
+  createdAt: string;
+};
+
+/** Plantilla por tipo de sugerencia (lo que se carga una vez por tipo). */
+export type ProposalTemplateDto = {
+  id: string | null;
+  kind: string;
+  title: string;
+  subtitle: string | null;
+  body: string;
+  productName: string | null;
+  offer: string | null;
+  benefit: string | null;
+  ctaLabel: string | null;
+  ctaUrl: string | null;
+  ctaKind: "link" | "pdf";
+  assetId?: string | null;
+  logoAssetId?: string | null;
+  hasImage: boolean;
+  hasLogo: boolean;
+  updatedAt: string | null;
+};
+
+/** Tipos de sugerencia soportados (los clásicos del dashboard). */
+export const PROPOSAL_KINDS = [
+  { id: "renovacion", label: "Renovación", emoji: "📅" },
+  { id: "retencion", label: "Retención", emoji: "🛡️" },
+  { id: "venta_cruzada", label: "Venta cruzada", emoji: "🧩" },
+  { id: "reactivacion", label: "Reactivación", emoji: "🔁" },
+  { id: "fidelizacion", label: "Fidelización", emoji: "💙" },
+] as const;
+
+export type ProposalKind = (typeof PROPOSAL_KINDS)[number]["id"];
+
+export type ProposalPriority = "alta" | "media" | "baja";
+
+/** Miembro del equipo (para el selector de derivación). */
+export type TeamMemberLiteDto = {
+  userId: string;
+  name: string;
+  role: string;
+  locality: string | null;
+  operationalRole: string | null;
+};
