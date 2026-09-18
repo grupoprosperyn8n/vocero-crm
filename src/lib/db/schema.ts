@@ -1583,3 +1583,49 @@ export const reviewRequest = pgTable(
     index("review_request_message_idx").on(t.messageId),
   ]
 );
+
+/**
+ * 040 — Trazabilidad del tablero: cada acción disparada desde el Dashboard
+ * Management (Cola de hoy / Cliente 360°) queda registrada acá para medir
+ * qué sugerencia convierte. El cockpit (rafael-intelligence) la lee vía el
+ * snapshot de solo lectura; jamás se escribe nada hacia Airtable.
+ */
+export const dashboardAction = pgTable(
+  "dashboard_action",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** "cola" (jugada de la Cola de hoy) o "ficha" (Cliente 360°). */
+    source: text("source", { enum: ["cola", "ficha"] })
+      .notNull()
+      .default("ficha"),
+    /**
+     * Jugada origen: renovaciones7 | renovaciones30 | reactivar | cross |
+     * observar | ficha. NULL si la acción no nació de una jugada.
+     */
+    playId: text("play_id"),
+    /** Módulo del tablero desde el que se actuó (clientes, cola, …). */
+    module: text("module"),
+    contactId: text("contact_id").references(() => contact.id, {
+      onDelete: "set null",
+    }),
+    conversationId: text("conversation_id").references(() => conversation.id, {
+      onDelete: "set null",
+    }),
+    /** Referencia al cliente del sistema (sgsa:<recordId>). */
+    clientRef: text("client_ref"),
+    clientName: text("client_name"),
+    /** Quién disparó la acción (operador de la sesión). */
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("dashboard_action_org_created_idx").on(
+      t.organizationId,
+      t.createdAt
+    ),
+    index("dashboard_action_play_idx").on(t.playId, t.createdAt),
+  ]
+);

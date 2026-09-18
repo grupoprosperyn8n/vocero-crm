@@ -1,5 +1,6 @@
 export type TabId =
   | "pulso"
+  | "cola"
   | "cartera"
   | "retencion"
   | "reactivacion"
@@ -68,6 +69,37 @@ export const MODULE_HELP: Record<
       {
         text: "Proteger lo que vence → Retención",
         action: { kind: "goto", tab: "retencion" },
+      },
+    ],
+  },
+
+  cola: {
+    title: "Cola de hoy",
+    tagline:
+      "El análisis del negocio convertido en acción: qué hacer hoy y con quién.",
+    what: [
+      "Cada jugada la calcula el motor de datos sobre la cartera real: renovaciones al borde del vencimiento, reactivación, venta cruzada y retención en riesgo.",
+      "Cada fila es un cliente concreto, con su motivo y el camino listo para actuar: mensaje con IA, chat, llamada y ficha en el backoffice.",
+    ],
+    measures: [
+      "Renovaciones ≤7 días (hablar hoy) y de 8 a 30 días (agendar).",
+      "Reactivación: históricos valiosos sin póliza activa.",
+      "Venta cruzada: clientes con una sola póliza activa.",
+      "Retención a observar: activos con anulaciones en su historia.",
+    ],
+    usage: [
+      "Arrancá la mañana por la primera jugada: son las más urgentes.",
+      "Usá «Mandar mensaje»: la IA redacta, se busca al cliente y se abre el chat con el borrador ya cargado.",
+      "Filtrá por oficina o empleado para repartir la cola del equipo.",
+    ],
+    suggestions: [
+      {
+        text: "Proteger lo que vence → Retención",
+        action: { kind: "goto", tab: "retencion" },
+      },
+      {
+        text: "Ver oportunidades de venta cruzada",
+        action: { kind: "goto", tab: "cross" },
       },
     ],
   },

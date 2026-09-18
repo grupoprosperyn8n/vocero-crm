@@ -59,6 +59,10 @@ const envSchema = z.object({
   // 018: clave del sync del sistema (tabla LOGIN de Airtable → /api/admin/users,
   // altas/cambios/bajas). Sin ella, toda la superficie admin responde 401.
   ADMIN_API_KEY: z.string().optional(),
+  // 040: clave del snapshot de solo lectura que consume el cockpit
+  // (rafael-intelligence) para cruzar la actividad del CRM contra la
+  // cartera. De respaldo acepta BOT_API_KEY si esta no está configurada.
+  SNAPSHOT_API_KEY: z.string().optional(),
   // 019: router de asignación de handoffs por presencia (bandeja). Apagado por
   // defecto: sin él, una derivación no se asigna a nadie (queda en la bandeja,
   // como siempre). Ej.: ROUTER_ASSIGN=on

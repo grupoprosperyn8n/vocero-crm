@@ -53,6 +53,8 @@ const prefixes = {
   reviewRequest: "rvrq",
   /** Usuario de sistema que firma las tarjetas de revisión (no es una persona). */
   systemUser: "sysu",
+  // 040 — trazabilidad de acciones del tablero (Dashboard Management)
+  dashboardAction: "dact",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

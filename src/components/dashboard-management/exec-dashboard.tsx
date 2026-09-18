@@ -76,6 +76,8 @@ import type {
   InsightMode,
   ModuleAiId,
   ModuleInsight,
+  Playlist,
+  PlaylistItem,
 } from "@/lib/dashboard-management/types";
 
 /**
@@ -420,6 +422,14 @@ const SUGGESTION_TONES: Record<string, string> = {
   warning: "border-warning-soft bg-warning-tint text-warning-text hover:opacity-90",
   brand: "border-brand-soft bg-brand-tint text-brand-text hover:opacity-90",
   success: "border-success-soft bg-success-tint text-success-text hover:opacity-90",
+};
+
+/* 040 — Tonos de la Cola de hoy (misma semántica de color del tablero). */
+const PLAYLIST_TONES: Record<string, string> = {
+  danger: "border-danger-soft bg-danger-tint text-danger-text",
+  warning: "border-warning-soft bg-warning-tint text-warning-text",
+  brand: "border-brand-soft bg-brand-tint text-brand-text",
+  success: "border-success-soft bg-success-tint text-success-text",
 };
 
 function SuggestionsStrip({
@@ -873,6 +883,7 @@ const EMPTY_FILTERS = {
 
 const MODULE_TABS: { id: TabId; label: string; Icon: typeof TrendingUp }[] = [
   { id: "pulso", label: "Pulso del negocio", Icon: TrendingUp },
+  { id: "cola", label: "Cola de hoy", Icon: ListChecks },
   { id: "cartera", label: "Cartera", Icon: BriefcaseBusiness },
   { id: "retencion", label: "Retención", Icon: HeartHandshake },
   { id: "reactivacion", label: "Reactivación", Icon: Target },
@@ -892,6 +903,7 @@ const TAB_FILTERS: Record<
   { date: boolean; office: boolean; product: boolean; channel: boolean; employee: boolean; company: boolean; search: boolean }
 > = {
   pulso: { date: true, office: true, product: true, channel: true, employee: true, company: true, search: false },
+  cola: { date: false, office: true, product: true, channel: false, employee: true, company: true, search: false },
   cartera: { date: false, office: true, product: true, channel: false, employee: true, company: true, search: false },
   retencion: { date: false, office: true, product: true, channel: false, employee: true, company: true, search: false },
   reactivacion: { date: false, office: true, product: true, channel: false, employee: true, company: true, search: false },
@@ -903,6 +915,7 @@ const TAB_FILTERS: Record<
 
 const FILTER_SCOPE: Record<TabId, string> = {
   pulso: "Fecha y canal acotan las gestiones del día a día; oficina, producto, empleado y compañía acotan además la cartera.",
+  cola: "Filtran la cartera de la que salen las jugadas: oficina, producto, empleado y compañía.",
   cartera: "Filtran la cartera del tablero (pólizas y clientes).",
   retencion: "Filtran la cartera; las ventanas de vencimiento (≤7 días, ≤30 días, a observar) son fijas.",
   reactivacion: "Filtran el universo de clientes y su historia de gestión.",
@@ -936,6 +949,10 @@ export function ExecDashboard() {
   const [chatState, setChatState] = useState<
     { key: string; kind: "loading" | "error"; text?: string } | null
   >(null);
+  // 040 — Cola de hoy: estado por fila al generar el mensaje con la IA.
+  const [queueState, setQueueState] = useState<
+    Record<string, { kind: "loading" | "error"; text?: string }>
+  >({});
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 039e — secuencia de cargas del tablero (anti-race): solo la última manda.
   const loadSeq = useRef(0);
@@ -1232,7 +1249,8 @@ export function ExecDashboard() {
   async function openClientChat(
     key: string,
     customer: { id: string; name: string; dni?: string; phone?: string },
-    message: string
+    message: string,
+    action?: { source: "cola" | "ficha"; playId?: string; module?: string }
   ) {
     setChatState({ key, kind: "loading" });
     try {
@@ -1268,6 +1286,21 @@ export function ExecDashboard() {
         | null;
       if (!link.ok || !linkData?.contactId)
         throw new Error(linkData?.error?.message ?? "No se pudo abrir la conversación.");
+      if (action) {
+        // 040 — trazabilidad: esta sugerencia se convirtió en acción.
+        void fetch("/api/dashboard-management/action", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            source: action.source,
+            playId: action.playId,
+            module: action.module,
+            contactId: linkData.contactId,
+            clientRef: client.recordId,
+            clientName: systemClientName(client),
+          }),
+        }).catch(() => {});
+      }
       setChatState(null);
       router.push(`/inbox?contact=${linkData.contactId}&draft=${encodeURIComponent(message)}`);
     } catch (err) {
@@ -1276,6 +1309,60 @@ export function ExecDashboard() {
         kind: "error",
         text: err instanceof Error && err.message ? err.message : "No se pudo abrir el chat.",
       });
+    }
+  }
+
+  /**
+   * 040 — Cola de hoy: la IA redacta el mensaje para ESTE cliente (misma
+   * conexión de IA del CRM), busca al cliente en el sistema y abre su chat
+   * con el borrador cargado, listo para revisar y enviar.
+   */
+  async function sendQueueMessage(play: Playlist, item: PlaylistItem, row = 0) {
+    const key = `${play.id}:${item.clientId || item.dni || item.name}:${row}`;
+    setQueueState((prev) => ({ ...prev, [key]: { kind: "loading" } }));
+    try {
+      const res = await fetch("/api/dashboard-management/insight", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          clientId: item.clientId || item.dni || item.name,
+          mode: "dual",
+          context: { ...item.context, name: item.name },
+        }),
+      });
+      const payload = (await res.json().catch(() => null)) as
+        | { ok?: boolean; insight?: ClientInsight; error?: string }
+        | null;
+      if (!res.ok || !payload?.ok || !payload.insight?.mensajeWhatsapp) {
+        throw new Error(payload?.error || "No se pudo generar el mensaje con IA.");
+      }
+      setQueueState((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      await openClientChat(
+        key,
+        {
+          id: item.clientId || "",
+          name: item.name,
+          dni: item.dni,
+          phone: item.phone,
+        },
+        payload.insight.mensajeWhatsapp,
+        { source: "cola", playId: play.id, module: "cola" }
+      );
+    } catch (err) {
+      setQueueState((prev) => ({
+        ...prev,
+        [key]: {
+          kind: "error",
+          text:
+            err instanceof Error && err.message
+              ? err.message
+              : "No se pudo generar el mensaje.",
+        },
+      }));
     }
   }
 
@@ -2389,7 +2476,10 @@ export function ExecDashboard() {
                                       }
                                       title="Busca el cliente en el sistema y abre su chat con este mensaje ya cargado, listo para revisar y enviar"
                                       onClick={() =>
-                                        void openClientChat(insightKey, customer, insight.mensajeWhatsapp)
+                                        void openClientChat(insightKey, customer, insight.mensajeWhatsapp, {
+                                          source: "ficha",
+                                          module: "clientes",
+                                        })
                                       }
                                     >
                                       <Send size={11} />
@@ -2544,11 +2634,161 @@ export function ExecDashboard() {
         </div>
       )}
 
+      {tab === "cola" && (
+        <div className="space-y-3">
+          <HelpZone help={MODULE_HELP.cola} id="cola" onAction={applyHelpAction} />
+
+          <Section
+            title="Cola de hoy"
+            subtitle="Jugadas calculadas sobre la cartera real: del análisis a la acción, sin buscar en listas"
+          >
+            {!data.playlists || data.playlists.length === 0 ? (
+              <div className="rounded-md border bg-subtle/50 px-4 py-8 text-center text-[12.5px] text-text-3">
+                El motor de datos todavía no calculó la cola en esta respuesta. Actualizá el tablero
+                (⟳) y vas a ver las jugadas del día.
+              </div>
+            ) : (
+              <div className="space-y-3" data-dm-cola>
+                {data.playlists.map((play) => (
+                  <article
+                    key={play.id}
+                    data-dm-play={play.id}
+                    className="overflow-hidden rounded-xl border bg-card"
+                  >
+                    <header className="flex flex-wrap items-center gap-2 border-b bg-subtle/40 px-3 py-2">
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide",
+                          PLAYLIST_TONES[play.tone] || PLAYLIST_TONES.brand
+                        )}
+                      >
+                        <ListChecks size={11} />
+                        {play.title}
+                      </span>
+                      <span className="text-[11.5px] text-text-3">{play.subtitle}</span>
+                      <span className="ml-auto rounded-full border px-2 py-0.5 text-[10.5px] font-semibold text-text-2">
+                        {number(play.total)} en total
+                      </span>
+                    </header>
+                    <ul className="divide-y">
+                      {play.items.map((item, idx) => {
+                        const key = `${play.id}:${item.clientId || item.dni || item.name}:${idx}`;
+                        const generating = queueState[key]?.kind === "loading";
+                        const hopping = chatState?.key === key && chatState.kind === "loading";
+                        return (
+                          <li key={key} className="flex flex-wrap items-start gap-2 px-3 py-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <strong className="text-[12.5px]">{item.name}</strong>
+                                {item.dni && (
+                                  <span className="text-[10.5px] text-text-3">DNI {item.dni}</span>
+                                )}
+                                {(item.tags || []).slice(0, 3).map((tag, tagIdx) => (
+                                  <span
+                                    key={`${tag}:${tagIdx}`}
+                                    className="rounded-full border px-1.5 py-[1px] text-[9.5px] font-semibold"
+                                    style={airtableTagStyle(tag) ?? undefined}
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                              <p className="text-[11.5px] text-text-2">{item.detail}</p>
+                              <p className="text-[10.5px] text-text-3">{item.extra}</p>
+                              {queueState[key]?.kind === "error" && (
+                                <p className="text-[11px] text-danger-text">{queueState[key]!.text}</p>
+                              )}
+                              {chatState?.key === key && chatState.kind === "error" && (
+                                <p className="text-[11px] text-danger-text">{chatState.text}</p>
+                              )}
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <button
+                                className="inline-flex items-center gap-1 rounded-md border border-brand-soft bg-brand-tint px-2 py-0.5 text-[11px] font-semibold text-brand-text transition-opacity hover:opacity-90 disabled:opacity-60"
+                                disabled={generating || hopping}
+                                title="La IA redacta el mensaje para este cliente, lo busca en el sistema y abre su chat con el borrador cargado"
+                                onClick={() => void sendQueueMessage(play, item, idx)}
+                              >
+                                <Send size={11} />
+                                {generating ? "Redactando…" : hopping ? "Buscando…" : "Mandar mensaje"}
+                              </button>
+                              {item.phone && (
+                                <a
+                                  className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                                  href={`tel:${item.phone}`}
+                                  title={`Llamar a ${item.phone}`}
+                                >
+                                  <Phone size={11} />
+                                  Llamar
+                                </a>
+                              )}
+                              {item.links?.[0] && (
+                                <a
+                                  className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                                  href={item.links[0].url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  <Link2 size={11} />
+                                  Ficha
+                                </a>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {play.total > play.items.length && (
+                      <footer className="border-t bg-subtle/30 px-3 py-1.5 text-[10.5px] text-text-3">
+                        Mostrando {number(play.items.length)} de {number(play.total)} — los primeros son
+                        los más urgentes.
+                      </footer>
+                    )}
+                  </article>
+                ))}
+              </div>
+            )}
+          </Section>
+        </div>
+      )}
+
       {tab === "crm" && (
         <div className="space-y-3">
           <HelpZone help={MODULE_HELP.crm} id="crm" onAction={applyHelpAction} />
 
           {data.crm?.available && aiRow("crm")}
+
+          {data.crm?.available && (
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-3">
+              <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-[3px]">
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    data.crm.snapshotSource === "live" ? "bg-[#20C933]" : "bg-[#f2a71b]"
+                  )}
+                />
+                {data.crm.snapshotSource === "live"
+                  ? `CRM en vivo${
+                      typeof data.crm.snapshotAgeMinutes === "number"
+                        ? ` · sincronizado hace ${Math.max(data.crm.snapshotAgeMinutes, 0)} min`
+                        : ""
+                    }`
+                  : "CRM · snapshot del archivo local"}
+              </span>
+              {data.crm.kpis.respondedRecently > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-[3px]">
+                  <UserRoundCheck size={11} className="text-[#20C933]" />
+                  {number(data.crm.kpis.respondedRecently)} contestaron el último mes
+                </span>
+              )}
+              {data.crm.kpis.noReply > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-[3px]">
+                  <Hourglass size={11} />
+                  {number(data.crm.kpis.noReply)} sin respuesta a nuestros mensajes
+                </span>
+              )}
+            </div>
+          )}
 
           {listsRow("crm")}
 
@@ -2627,6 +2867,39 @@ export function ExecDashboard() {
                   icon={<Activity size={17} />}
                 />
               </section>
+
+              {data.crm.actions && data.crm.actions.sent > 0 && (
+                <Section
+                  title="Acciones desde el tablero"
+                  subtitle="De la sugerencia a la acción: mensajes abiertos desde el tablero en los últimos 30 días y cuántos respondieron"
+                >
+                  <div className="space-y-1.5">
+                    {data.crm.actions.byPlay.map((play) => {
+                      const share = play.sent ? play.responded / play.sent : 0;
+                      return (
+                        <div
+                          key={play.key}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card px-2.5 py-1.5 text-[12px]"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <Send size={11} className="text-brand" />
+                            {play.label}
+                          </span>
+                          <span className="text-text-3">
+                            {number(play.sent)} {play.sent === 1 ? "mensaje" : "mensajes"} ·{" "}
+                            {number(play.responded)}{" "}
+                            {play.responded === 1 ? "respuesta" : "respuestas"} ({percent(share)})
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 text-[10.5px] text-text-3">
+                    Total 30 días: {number(data.crm.actions.sent)} acciones ·{" "}
+                    {percent(data.crm.actions.rate)} respondidas.
+                  </p>
+                </Section>
+              )}
 
               <Section
                 title="Venta — pipeline desde el CRM"

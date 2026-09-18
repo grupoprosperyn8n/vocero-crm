@@ -203,6 +203,13 @@ export type DashboardResponse = {
   crm: CrmAnalytics;
 
   /*
+   * Cola de hoy: jugadas accionables calculadas por el motor de datos
+   * (renovaciones, reactivación, venta cruzada, retención). Cada item
+   * viene listo para que el CRM dispare la acción.
+   */
+  playlists?: Playlist[];
+
+  /*
    * Listas dinamicas: el "por dentro" de cada numero del tablero.
    * Cada lista trae los registros reales (clientes / polizas /
    * gestiones) detras de una metrica, con su link a la ficha en el
@@ -342,6 +349,10 @@ export type CrmMatchRow = {
   activePremium: number;
   expiring30: number;
   historicalOperations: number;
+
+  /* Señales de WhatsApp del contacto vinculado (último inbound real). */
+  lastInboundAt?: string;
+  responded30?: boolean;
 };
 
 export type CrmAnalytics = {
@@ -369,6 +380,27 @@ export type CrmAnalytics = {
     matchedPremium: number;
     matchedWithActive: number;
     expiring30: number;
+    respondedRecently: number;
+    noReply: number;
+  };
+
+  /* Frescura del snapshot del CRM: en vivo (HTTP) o archivo local. */
+  snapshotSource?: "live" | "file";
+  snapshotAgeMinutes?: number;
+
+  /* Resultado de las acciones disparadas desde el tablero (30 días). */
+  actions?: {
+    total: number;
+    windowDays: number;
+    sent: number;
+    responded: number;
+    rate: number;
+    byPlay: {
+      key: string;
+      label: string;
+      sent: number;
+      responded: number;
+    }[];
   };
 
   channels: {
@@ -453,4 +485,34 @@ export type ModuleInsight = {
   model: string;
   generatedAt: string;
   cached: boolean;
+};
+
+/*
+ * COLA DE HOY (playlists): jugadas accionables que calcula el motor de
+ * datos del cockpit y que el CRM convierte en acción (Mandar mensaje).
+ */
+
+export type PlaylistItem = {
+  clientId?: string;
+  name: string;
+  dni?: string;
+  phone?: string;
+  detail: string;
+  extra: string;
+  tags?: string[];
+  /** Enlaces a la ficha del cliente en el backoffice. */
+  links?: DrillLink[];
+  context: ClientInsightContext;
+};
+
+export type PlaylistTone = "danger" | "warning" | "brand" | "success";
+
+export type Playlist = {
+  id: string;
+  title: string;
+  subtitle: string;
+  reason: string;
+  tone: PlaylistTone;
+  total: number;
+  items: PlaylistItem[];
 };
