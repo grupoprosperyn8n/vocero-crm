@@ -1532,8 +1532,8 @@ export function ExecDashboard() {
             className={cn(
               "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] font-semibold transition-colors",
               tab === id
-                ? "border-brand bg-brand text-brand-fg"
-                : "border-border bg-card text-text-2 hover:bg-accent"
+                ? "border-brand bg-brand text-brand-fg shadow-sm"
+                : "border-brand-soft bg-brand-tint text-brand-text hover:bg-brand-soft"
             )}
             onClick={() => setTab(id)}
           >
