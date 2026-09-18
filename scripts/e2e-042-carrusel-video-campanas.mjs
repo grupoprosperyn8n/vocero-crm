@@ -21,6 +21,7 @@ const envOf = (k) => {
   return m ? m[1].trim() : undefined;
 };
 const ADMIN_KEY = envOf("ADMIN_API_KEY");
+const BOT_KEY = envOf("BOT_API_KEY");
 const ORIGIN = envOf("APP_BASE_URL") ?? BASE;
 
 let pass = 0;
@@ -302,13 +303,69 @@ const overflow = await sp.evaluate(
 check("26. pública en celu 390px sin scroll horizontal", overflow <= 2, `+${overflow}px`);
 await small.close();
 
+/* ---------- 042b: el asesor firma la página y el aviso vuelve a su chat ---------- */
+
+// Derivar a una PERSONA: la página la firma con su nombre y el texto la nombra.
+const dirRes = await ctx.request.get(`${BASE}/api/staff/directory`);
+const viewer = (await dirRes.json().catch(() => ({})))?.viewer ?? {};
+const derPer = await ctx.request.post(`${BASE}/api/proposals/${prop.id}/derive`, {
+  data: { assigneeUserId: viewer.userId, priority: "alta", note: null },
+  headers: { origin: ORIGIN, "content-type": "application/json" },
+});
+const perData = await derPer.json().catch(() => ({}));
+const asesor = perData?.proposal?.assigneeName ?? "";
+check(
+  "27. derivada a un empleado (el asesor que la envía)",
+  derPer.status() === 200 && asesor.length > 0,
+  `${derPer.status()} ${asesor}`
+);
+
+const htmlAs = await (await anon.get(`${BASE}${prop.publicUrl}`)).text();
+const firmaOk = htmlAs.includes("Te la envió") && Boolean(asesor) && htmlAs.includes(asesor);
+const refOk = htmlAs.includes("ref%20") && /wa\.me\/525500000000\?text=/.test(htmlAs);
+check(
+  "28. la página la firma el asesor y el texto lleva la referencia",
+  firmaOk && refOk,
+  `firma=${firmaOk} ref=${refOk}`
+);
+
+// El cliente manda el texto prellenado (lo entrega el bot por /api/bot/inbound):
+// al entrar al CRM, el aviso tiene que caerle al asesor en su chat interno.
+const waText = `¡Hola! Vi la propuesta «${prop.title}» que me envió ${asesor}. ¿Me cuentan un poco más? (ref ${prop.token})`;
+const inRes = await fetch(`${BASE}/api/bot/inbound`, {
+  method: "POST",
+  headers: { "content-type": "application/json", "x-api-key": BOT_KEY ?? "" },
+  body: JSON.stringify({
+    channel: "whatsapp",
+    externalId: "5491100000042",
+    profileName: "Cliente Referido E2E",
+    text: waText,
+    eventId: `e2e-042-ref-${stamp}`,
+  }),
+});
+check("29. el texto referido entra al CRM (conector del bot)", inRes.status === 200, String(inRes.status));
+
+let aviso = false;
+const roomsRes = await ctx.request.get(`${BASE}/api/internal/rooms`);
+const rooms = (await roomsRes.json().catch(() => ({})))?.rooms ?? [];
+for (const r of rooms.slice(0, 12)) {
+  const mRes = await ctx.request.get(`${BASE}/api/internal/rooms/${r.id}/messages`);
+  const data = await mRes.json().catch(() => ({}));
+  const msgs = data?.messages ?? data?.items ?? [];
+  if (msgs.some((m) => String(m?.body ?? "").includes("respondió a tu publicidad"))) {
+    aviso = true;
+    break;
+  }
+}
+check("30. el asesor recibe el aviso en su chat interno", aviso, `${rooms.length} salas`);
+
 /* ---------- limpieza ---------- */
 
 const del = await ctx.request.post(`${BASE}/api/proposals/${prop.id}/lifecycle`, {
   data: { action: "delete" },
   headers: { origin: ORIGIN, "content-type": "application/json" },
 });
-check("27. limpieza: campaña de prueba eliminada", del.status() === 200, String(del.status()));
+check("31. limpieza: campaña de prueba eliminada", del.status() === 200, String(del.status()));
 for (const email of [EMAIL_OWNER, EMAIL_MEMBER]) {
   await fetch(`${BASE}/api/admin/users?email=${encodeURIComponent(email)}`, {
     method: "DELETE",
@@ -317,7 +374,7 @@ for (const email of [EMAIL_OWNER, EMAIL_MEMBER]) {
 }
 
 const errTrasLimpieza = consoleErrors.filter((e) => !/sign-in|401/.test(e)).slice(0, 3);
-check("28. sin errores de consola (fuera de auth)", errTrasLimpieza.length === 0, errTrasLimpieza.join(" | ").slice(0, 220));
+check("32. sin errores de consola (fuera de auth)", errTrasLimpieza.length === 0, errTrasLimpieza.join(" | ").slice(0, 220));
 
 await anon.dispose();
 await ctxMember.dispose();

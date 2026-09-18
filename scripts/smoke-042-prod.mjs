@@ -143,6 +143,25 @@ const cookieM = (loginM.headers.get("set-cookie") ?? "").split(";")[0];
 const ovM = await fetch(`${BASE}/api/proposals/overview`, { headers: { cookie: cookieM, origin: ORIGIN } });
 check("18. el empleado NO ve el tablero maestro (403)", ovM.status === 403, `${altaM.status}/${ovM.status}`);
 
+// 042b — derivar a una PERSONA: la página la firma y el texto lleva la
+// referencia «(ref …)» para que el CRM sepa a qué asesor avisarle.
+const dirM = await fetch(`${BASE}/api/staff/directory`, { headers: { cookie: cookieM, origin: ORIGIN } });
+const memberUserId = (await dirM.json().catch(() => ({})))?.viewer?.userId;
+const derPer = await fetch(`${BASE}/api/proposals/${prop.id}/derive`, {
+  method: "POST",
+  headers: { ...H, "content-type": "application/json" },
+  body: JSON.stringify({ assigneeUserId: memberUserId, priority: "alta", note: null }),
+});
+const htmlAs = await (await fetch(`${BASE}/p/${prop.token}`)).text();
+check(
+  "19. la página la firma el asesor derivado y el texto lleva la referencia",
+  derPer.status === 200 &&
+    htmlAs.includes("Te la envió") &&
+    htmlAs.includes("Smoke 042 empleado") &&
+    /\?text=[^"]*ref%20/.test(htmlAs),
+  `derive=${derPer.status} firma=${htmlAs.includes("Te la envió")} ref=${/\?text=[^"]*ref%20/.test(htmlAs)}`
+);
+
 // ---- baja: la pieza se elimina y la página deja de existir -----------------
 const del = await fetch(`${BASE}/api/proposals/${prop?.id}/lifecycle`, {
   method: "POST",
@@ -150,12 +169,12 @@ const del = await fetch(`${BASE}/api/proposals/${prop?.id}/lifecycle`, {
   body: JSON.stringify({ action: "delete" }),
 });
 const paginaMuerta = await fetch(`${BASE}/p/${prop?.token}`);
-check("19. pieza eliminada (API + página 404)", del.status === 200 && paginaMuerta.status === 404, `${del.status}/${paginaMuerta.status}`);
+check("20. pieza eliminada (API + página 404)", del.status === 200 && paginaMuerta.status === 404, `${del.status}/${paginaMuerta.status}`);
 
 for (const mail of [EMAIL, EMAIL_M]) {
   await fetch(`${BASE}/api/admin/users?email=${encodeURIComponent(mail)}`, { method: "DELETE", headers: { "x-admin-key": ADMIN_KEY } });
 }
-check("20. baja de los usuarios sintéticos", true);
+check("21. baja de los usuarios sintéticos", true);
 
 console.log(`\nSMOKE 042: ${pass} PASS / ${fail} FAIL`);
 process.exit(fail === 0 ? 0 : 1);

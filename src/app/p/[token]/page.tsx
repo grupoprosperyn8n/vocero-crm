@@ -71,13 +71,27 @@ export default async function ProposalPage({ params }: Props) {
     .map((p) => p.trim())
     .filter(Boolean);
 
+  const advisorName = proposal.assigneeName?.trim() || null;
+  const advisorInitials =
+    (advisorName ?? branding?.name ?? "Asesor")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? "")
+      .join("") || "A";
+
   const h = await headers();
   const host = h.get("host") ?? "";
   const proto = host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https";
   const absoluteUrl = host ? `${proto}://${host}/p/${token}` : `/p/${token}`;
 
+  // 042b — el texto viaja firmado: nombra al asesor que la envió y lleva la
+  // referencia «(ref <token>)». Cuando el cliente lo manda, el CRM detecta la
+  // referencia y le avisa a ese asesor en su chat interno.
   const waText = encodeURIComponent(
-    `¡Hola! Vi la propuesta que me armaron: «${proposal.title}». ¿Me cuentan un poco más?\n${absoluteUrl}`
+    `¡Hola! Vi la propuesta «${proposal.title}»${
+      advisorName ? ` que me envió ${advisorName}` : ""
+    }. ¿Me cuentan un poco más? (ref ${token})\n${absoluteUrl}`
   );
   const waHref = proposal.whatsappPhone
     ? `https://wa.me/${proposal.whatsappPhone}?text=${waText}`
@@ -155,6 +169,29 @@ export default async function ProposalPage({ params }: Props) {
           className={`space-y-4 border border-white/70 bg-white/70 px-4 py-5 shadow-[0_24px_60px_-28px_rgba(30,64,175,0.35)] backdrop-blur-xl sm:px-6 sm:py-6 ${proposal.media.length > 0 ? "border-t-0" : "rounded-t-3xl"}`}
           style={{ animation: "rp-fade-up 0.55s cubic-bezier(0.16,1,0.3,1) 0.1s both" }}
         >
+          {/* 042b — quién la envía: el cliente ve el nombre del asesor detrás */}
+          <div className="flex items-center gap-3 rounded-2xl border border-cyan-200/70 bg-gradient-to-r from-white/85 to-sky-50/85 px-3.5 py-2.5 shadow-sm">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 text-[13px] font-bold text-white shadow-md shadow-cyan-400/30">
+              {advisorInitials}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-bold text-neutral-800">
+                {advisorName ? (
+                  <>
+                    Te la envió <span data-asesor>{advisorName}</span>
+                  </>
+                ) : (
+                  <>Te la envía tu equipo{branding?.name ? ` de ${branding.name}` : " de asesoramiento"}</>
+                )}
+              </p>
+              <p className="text-[11.5px] text-neutral-500">
+                {advisorName
+                  ? `Tu asesor${branding?.name ? ` · ${branding.name}` : ""}`
+                  : "Respuesta al instante · asesoramiento personalizado"}
+              </p>
+            </div>
+          </div>
+
           <div>
             <h1 className="font-serif text-[22px] leading-tight font-normal text-neutral-900 sm:text-[25px]">
               {proposal.title}

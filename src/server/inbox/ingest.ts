@@ -22,6 +22,7 @@ import { applyStatusUpdate } from "@/server/inbox/status";
 import { atribucionEnabled } from "@/server/attribution/flag";
 import { recordAttribution } from "@/server/attribution/store";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
+import { notifyProposalRef } from "@/server/proposals/ref-notify";
 
 /** Tipos de contenido soportados; el resto se ignora sin error. */
 const SUPPORTED_TYPES = new Set([
@@ -499,6 +500,13 @@ export async function ingestInboundMessage(input: {
   publish(organizationId, {
     type: "conversation.updated",
     data: { conversation: { id: conversation.id } },
+  });
+
+  // 042b — la publicidad referida: si el texto trae «(ref <token>)» y esa
+  // propuesta tiene asesor derivado, le avisa en su chat interno. Nunca
+  // tumba la ingesta (el helper se traga sus propios errores).
+  await notifyProposalRef({ organizationId, text: input.text }).catch((err) => {
+    console.error("[inbox] aviso de publicidad referida falló:", err);
   });
 
   // 020: el emisor decide si el agente interno toma el turno (el conector
