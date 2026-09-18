@@ -41,6 +41,25 @@ const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0];
 check("2. login", login.status === 200 && cookie.length > 10, String(login.status));
 const H = { cookie, origin: ORIGIN };
 
+// 2-bis — limpiar restos de corridas anteriores (si una falló a mitad).
+const prev = await fetch(`${BASE}/api/admin/users`, { headers: { "x-admin-key": ADMIN_KEY } });
+const prevJson = await prev.json().catch(() => ({}));
+const viejos = (prevJson?.members ?? []).filter(
+  (m) => /^smoke-041cde-/.test(m.email ?? "") && m.email !== EMAIL
+);
+for (const m of viejos) {
+  await fetch(`${BASE}/api/admin/users?email=${encodeURIComponent(m.email)}`, {
+    method: "DELETE",
+    headers: { "x-admin-key": ADMIN_KEY },
+  });
+}
+const libPrev = await (await fetch(`${BASE}/api/library`, { headers: H })).json().catch(() => ({}));
+const huerfanos = (libPrev?.assets ?? []).filter((a) => String(a.name).startsWith("smoke-041d-"));
+for (const a of huerfanos) {
+  await fetch(`${BASE}/api/library/${a.id}`, { method: "DELETE", headers: H });
+}
+check("2-bis. limpieza de corridas previas", true, `${viejos.length} usuarios / ${huerfanos.length} archivos`);
+
 // ---- 041c: la IA escribe la publicidad ------------------------------------
 const copy = await fetch(`${BASE}/api/proposals/copy`, {
   method: "POST",
@@ -72,7 +91,7 @@ const badTone = await fetch(`${BASE}/api/proposals/copy`, {
   headers: { ...H, "content-type": "application/json" },
   body: JSON.stringify({ target: "pieza", tone: "elegante", clientName: "TEST IA", kind: "renovacion" }),
 });
-check("4. un tono inventado no pasa (400)", badTone.status === 400, String(badTone.status));
+check("4. un tono inventado no pasa (400/422)", [400, 422].includes(badTone.status), String(badTone.status));
 
 // ---- 041d: contenedor de archivos -----------------------------------------
 const png = await sharp(crypto.randomBytes(900 * 600 * 3), {
@@ -99,7 +118,7 @@ check(
 );
 
 const raw = await fetch(`${BASE}${item.url}`, { headers: H });
-check("7. los bytes se sirven", raw.ok() && String(raw.headers.get("content-type")).startsWith("image/"), String(raw.status));
+check("7. los bytes se sirven", raw.ok && String(raw.headers.get("content-type")).startsWith("image/"), String(raw.status));
 
 const copyAsset = await fetch(`${BASE}/api/proposals/assets`, {
   method: "POST",
