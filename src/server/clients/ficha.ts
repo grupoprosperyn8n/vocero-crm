@@ -613,6 +613,8 @@ export function proposalToDto(
     assigneeName?: string | null;
     createdByName?: string | null;
     respondedAt?: string | null;
+    /** 042 — tipos alineados con mediaIds (los aporta quien ya los leyó). */
+    mediaTypes?: ("image" | "video")[] | null;
   } = {}
 ): ProposalDto {
   return {
@@ -653,6 +655,11 @@ export function proposalToDto(
     assigneeName: extra.assigneeName ?? null,
     createdByName: extra.createdByName ?? null,
     imageUrl: p.assetId ? `/api/public/propuesta/img/${p.assetId}` : null,
+    mediaIds:
+      Array.isArray(p.mediaIds) && p.mediaIds.length
+        ? p.mediaIds.filter((id): id is string => typeof id === "string")
+        : null,
+    mediaTypes: extra.mediaTypes ?? null,
     contactId: p.contactId,
     conversationId: p.conversationId,
     statusLabel:

@@ -1807,6 +1807,8 @@ export const proposal = pgTable(
     assetId: text("asset_id").references(() => proposalAsset.id, {
       onDelete: "set null",
     }),
+    /** 042 — medios de la publicidad en orden (carrusel de fotos + video). */
+    mediaIds: jsonb("media_ids").$type<string[]>(),
     /** Empleado del CRM que la trabaja (derivación, como las alertas). */
     assigneeUserId: text("assignee_user_id").references(() => user.id, {
       onDelete: "set null",

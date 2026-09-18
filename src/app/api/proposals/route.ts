@@ -57,6 +57,8 @@ const createSchema = z.object({
   ctaKind: z.enum(["link", "pdf"]).optional(),
   assetId: z.string().trim().max(60).optional().nullable(),
   logoAssetId: z.string().trim().max(60).optional().nullable(),
+  /** 042 — medios en orden: fotos del carrusel + video (mp4/webm). */
+  mediaIds: z.array(z.string().trim().max(60)).max(8).optional().nullable(),
   assigneeUserId: z.string().trim().max(60).optional().nullable(),
   priority: z
     .string()

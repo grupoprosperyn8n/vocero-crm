@@ -24,6 +24,7 @@ import {
   Infinity as InfinityIcon,
   LayoutDashboard,
   Lightbulb,
+  Megaphone,
   Link2,
   ListChecks,
   ListTree,
@@ -67,6 +68,7 @@ import type { SystemClientSearchResultDto } from "@/lib/types";
 import { airtableTagStyle } from "@/lib/dashboard-management/airtable-colors";
 import { ClientPanel, type PanelCustomer } from "./client-panel";
 import { ProposalsPanel } from "./proposals-panel";
+import { CampaignsPanel } from "./campaigns-panel";
 import { FollowUpPanel } from "./followup-panel";
 import {
   MODULE_HELP,
@@ -897,6 +899,7 @@ const MODULE_TABS: { id: TabId; label: string; Icon: typeof TrendingUp }[] = [
   { id: "crm", label: "CRM · Venta y gestión", Icon: MessageSquareText },
   { id: "propuestas", label: "Propuestas", Icon: FileText },
   { id: "seguimiento", label: "Seguimiento", Icon: History },
+  { id: "campanas", label: "Campañas 360", Icon: Megaphone },
   { id: "migracion", label: "Calidad de datos", Icon: Database },
 ];
 
@@ -919,6 +922,7 @@ const TAB_FILTERS: Record<
   crm: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   propuestas: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   seguimiento: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
+  campanas: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   migracion: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
 };
 
@@ -933,6 +937,7 @@ const FILTER_SCOPE: Record<TabId, string> = {
   crm: "Este módulo muestra el CRM completo: los filtros de cartera y gestiones no lo afectan.",
   propuestas: "La pestaña tiene sus propios filtros: empleado asignado y estado del embudo.",
   seguimiento: "El archivo comercial tiene sus propios filtros: quién gestiona, origen (cola, ficha o propuesta) y búsqueda por cliente.",
+  campanas: "El tablero de campañas tiene sus propios filtros: estado del embudo y búsqueda por cliente.",
   migracion: "Este módulo muestra la base completa: los filtros no lo afectan.",
 };
 
@@ -945,6 +950,8 @@ export function ExecDashboard() {
   const [tab, setTab] = useState<TabId>("pulso");
   // 041 — panel de control del cliente (Cliente 360°), a pantalla completa.
   const [panelClient, setPanelClient] = useState<PanelCustomer | null>(null);
+  // 042 — el rol del visor decide si ve el tablero de campañas (owner/admin/manager).
+  const [viewerRole, setViewerRole] = useState<string | null>(null);
   const [modEngines, setModEngines] = useState<Partial<Record<ModuleAiId, InsightMode>>>({});
   const [modInsights, setModInsights] = useState<
     Record<string, { status: "loading" | "error" | "done"; data?: ModuleInsight; error?: string }>
@@ -1039,6 +1046,28 @@ export function ExecDashboard() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 042 — rol del visor: el tablero de campañas es para owner/admin/manager.
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const res = await fetch("/api/staff/directory", { cache: "no-store" }).catch(() => null);
+      if (!alive || !res?.ok) return;
+      const body = (await res.json().catch(() => ({}))) as { viewer?: { role?: string } };
+      if (body.viewer?.role) setViewerRole(body.viewer.role);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const visibleTabs = useMemo(
+    () =>
+      viewerRole === "owner" || viewerRole === "admin" || viewerRole === "manager"
+        ? MODULE_TABS
+        : MODULE_TABS.filter((t) => t.id !== "campanas"),
+    [viewerRole]
+  );
 
   /* — Lecturas con IA — */
 
@@ -1821,7 +1850,7 @@ export function ExecDashboard() {
 
       {/* Módulos */}
       <nav className="flex flex-wrap gap-1.5">
-        {MODULE_TABS.map(({ id, label, Icon }) => (
+        {visibleTabs.map(({ id, label, Icon }) => (
           <button
             key={id}
             className={cn(
@@ -2632,6 +2661,18 @@ export function ExecDashboard() {
         </div>
       )}
 
+      {tab === "campanas" && (
+        <div className="space-y-3">
+          <HelpZone
+            help={MODULE_HELP.campanas}
+            id="campanas"
+            onAction={applyHelpAction}
+          />
+
+          <CampaignsPanel onOpenPanel={(c) => setPanelClient(c)} />
+        </div>
+      )}
+
       {tab === "migracion" && (
         <div className="space-y-3">
           <HelpZone help={MODULE_HELP.migracion} id="migracion" onAction={applyHelpAction} />
@@ -2817,6 +2858,25 @@ export function ExecDashboard() {
                                 <Send size={11} />
                                 {generating ? "Redactando…" : hopping ? "Buscando…" : "Mandar mensaje"}
                               </button>
+                              {item.clientId && (
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                                  title="Panel de control del cliente (Cliente 360°): métricas, campañas y gestión sugerida"
+                                  onClick={() =>
+                                    setPanelClient({
+                                      id: item.clientId!,
+                                      name: item.name,
+                                      dni: item.dni ?? null,
+                                      phone: item.phone ?? null,
+                                      backendUrl: item.links?.[0]?.url ?? null,
+                                    })
+                                  }
+                                >
+                                  <LayoutDashboard size={11} />
+                                  Panel 360
+                                </button>
+                              )}
                               {item.phone && (
                                 <a
                                   className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"

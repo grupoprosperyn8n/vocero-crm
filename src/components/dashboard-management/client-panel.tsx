@@ -478,7 +478,10 @@ function PanelBody({
                   paddingAngle={2}
                 >
                   {ficha.premiumByProduct.map((s, i) => (
-                    <Cell key={s.productId} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                    <Cell
+                      key={s.productId ?? `${s.nombre}-${i}`}
+                      fill={PIE_COLORS[i % PIE_COLORS.length]}
+                    />
                   ))}
                 </Pie>
                 <Tooltip
@@ -898,7 +901,6 @@ function ProposalFlow({
     assetId: null as string | null,
     logoAssetId: null as string | null,
   });
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | "save" | "derive" | "send">(null);
   const [error, setError] = useState<string | null>(null);
@@ -910,7 +912,8 @@ function ProposalFlow({
   const [stage, setStage] = useState<{ derived?: string; sent?: boolean }>({});
   const [groups, setGroups] = useState<TeamGroupLiteDto[]>([]);
   const [viewerRole, setViewerRole] = useState<string>("member");
-  const [targetKind, setTargetKind] = useState<"employee" | "group">("employee");
+  // 042 — por defecto deriva a la IA: atiende primero; después se reasigna.
+  const [targetKind, setTargetKind] = useState<"ia" | "employee" | "group">("ia");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [draftText, setDraftText] = useState("");
   // 041c — asistente de redacción: tono + concepto de venta.
@@ -922,7 +925,11 @@ function ProposalFlow({
   const [prevForm, setPrevForm] = useState<typeof form | null>(null);
   const [msgTone, setMsgTone] = useState<ProposalToneId>("cercana");
   // 041d — elegir la imagen desde el contenedor universal.
-  const [pickerTarget, setPickerTarget] = useState<null | "assetId" | "logoAssetId">(null);
+  // 042 — "media": el carrusel de fotos + video de la publicidad.
+  const [pickerTarget, setPickerTarget] = useState<null | "media" | "logoAssetId">(null);
+  // 042 — medios de la publicidad EN ORDEN (fotos y un video mp4/webm).
+  const [media, setMedia] = useState<{ id: string; url: string; mime: string }[]>([]);
+  const [mediaBusy, setMediaBusy] = useState(false);
 
   // 041b — derivan (y ven todo el seguimiento) propietario, administrador y
   // gerente, los mismos roles que en las alertas.
@@ -949,7 +956,11 @@ function ProposalFlow({
         assetId: null,
         logoAssetId: null,
       }));
-      setImagePreview(t.assetId ? `/api/public/propuesta/img/${t.assetId}` : null);
+      setMedia(
+        t.assetId
+          ? [{ id: t.assetId, url: `/api/public/propuesta/img/${t.assetId}`, mime: "image/*" }]
+          : []
+      );
       setLogoPreview(t.logoAssetId ? `/api/public/propuesta/img/${t.logoAssetId}` : null);
     },
     []
@@ -998,7 +1009,7 @@ function ProposalFlow({
     };
   }, []);
 
-  const uploadImage = async (file: File, target: "assetId" | "logoAssetId") => {
+  const uploadImage = async (file: File) => {
     setError(null);
     if (file.size > 8_000_000) {
       setError("La imagen no puede pasar de 8 MB");
@@ -1018,11 +1029,75 @@ function ProposalFlow({
         setError(data?.message ?? "No se pudo subir la imagen");
         return;
       }
-      setForm((f) => ({ ...f, [target]: data.id! }));
-      if (target === "assetId") setImagePreview(dataUrl);
-      else setLogoPreview(dataUrl);
+      setForm((f) => ({ ...f, logoAssetId: data.id! }));
+      setLogoPreview(dataUrl);
     };
     reader.readAsDataURL(file);
+  };
+
+  // 042 — medios de la publicidad: sube fotos y UN video (mp4/webm, hasta
+  // 40 MB). Uno por uno para que el error sea del archivo puntual y el resto
+  // entre igual. Quedan en orden: carrusel.
+  const uploadMediaFiles = async (files: FileList) => {
+    setError(null);
+    setMediaBusy(true);
+    const agregados: { id: string; url: string; mime: string }[] = [];
+    const yaHayVideo = media.some((m) => m.mime.startsWith("video/"));
+    let videoEnLote = false;
+    for (const file of Array.from(files)) {
+      const esVideo =
+        file.type.startsWith("video/") || /\.(mp4|webm|mov)$/i.test(file.name);
+      if (esVideo && (yaHayVideo || videoEnLote)) {
+        setError("La publicidad lleva UN video: quitá el que está para cambiarlo");
+        continue;
+      }
+      const tope = esVideo ? 40 * 1024 * 1024 : 8 * 1024 * 1024;
+      if (file.size > tope) {
+        setError(
+          esVideo
+            ? "El video no puede pasar de 40 MB"
+            : "La imagen no puede pasar de 8 MB"
+        );
+        continue;
+      }
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? "").split(",")[1] ?? "");
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/proposals/assets", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          mime: file.type || (esVideo ? "video/mp4" : "image/png"),
+          filename: file.name,
+          data: base64,
+          purpose: "media",
+        }),
+      }).catch(() => null);
+      const data = res
+        ? ((await res.json().catch(() => ({}))) as { id?: string; mime?: string; message?: string })
+        : null;
+      if (!res?.ok || !data?.id) {
+        setError(data?.message ?? "No se pudo subir el archivo");
+        continue;
+      }
+      agregados.push({
+        id: data.id,
+        url: `/api/public/propuesta/img/${data.id}`,
+        mime: data.mime ?? (file.type || "image/png"),
+      });
+      if (esVideo) videoEnLote = true;
+    }
+    setMediaBusy(false);
+    if (agregados.length) {
+      setMedia((prev) => [...prev, ...agregados].slice(0, 8));
+      setError(null);
+    }
+  };
+
+  const removeMedia = (id: string) => {
+    setMedia((prev) => prev.filter((m) => m.id !== id));
   };
 
   // 041c — la IA escribe la pieza con el tono y el concepto elegidos. Nunca
@@ -1091,32 +1166,44 @@ function ProposalFlow({
 
     setError(null);
 
+    const esMedia = pickerTarget === "media";
+
     const res = await fetch("/api/proposals/assets", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ libraryId: asset.id }),
+      body: JSON.stringify({
+        libraryId: asset.id,
+        purpose: esMedia ? "media" : "logo",
+      }),
     });
     const data = (await res.json().catch(() => null)) as
-      | { id?: string; error?: { message?: string } }
+      | { id?: string; mime?: string; error?: { message?: string } }
       | null;
 
     if (!res.ok || !data?.id) {
-      setError(data?.error?.message ?? "No se pudo usar la imagen del contenedor");
+      setError(
+        data?.error?.message ??
+          `No se pudo usar ${esMedia ? "el archivo" : "la imagen"} del contenedor`
+      );
       setPickerTarget(null);
       return;
     }
 
     const copiada = data.id;
 
-    setForm((f) =>
-      pickerTarget === "assetId"
-        ? { ...f, assetId: copiada }
-        : { ...f, logoAssetId: copiada }
-    );
-
-    if (pickerTarget === "assetId") {
-      setImagePreview(`/api/public/propuesta/img/${copiada}`);
+    if (esMedia) {
+      const mime = data.mime ?? asset.mime;
+      if (mime.startsWith("video/") && media.some((m) => m.mime.startsWith("video/"))) {
+        setError("La publicidad lleva UN video: quitá el que está para cambiarlo");
+        setPickerTarget(null);
+        return;
+      }
+      setMedia((prev) => [
+        ...prev,
+        { id: copiada, url: `/api/public/propuesta/img/${copiada}`, mime },
+      ]);
     } else {
+      setForm((f) => ({ ...f, logoAssetId: copiada }));
       setLogoPreview(`/api/public/propuesta/img/${copiada}`);
     }
 
@@ -1189,7 +1276,8 @@ function ProposalFlow({
         ctaUrl: form.ctaUrl || null,
         ctaKind: form.ctaKind,
         companyRef: form.companyRef || null,
-        assetId: form.assetId,
+        assetId: media.find((m) => m.mime.startsWith("image/"))?.id ?? null,
+        mediaIds: media.map((m) => m.id),
         logoAssetId: form.logoAssetId,
         tone,
         angle,
@@ -1223,16 +1311,19 @@ function ProposalFlow({
   };
 
   const derive = async () => {
-    if (!created || !assignee) return;
+    if (!created) return;
+    if (targetKind !== "ia" && !assignee) return;
     setBusy("derive");
     setError(null);
     const res = await fetch(`/api/proposals/${created.id}/derive`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(
-        targetKind === "group"
-          ? { assigneeGroupId: assignee, priority, note: note || null }
-          : { assigneeUserId: assignee, priority, note: note || null }
+        targetKind === "ia"
+          ? { assigneeKind: "ia", priority, note: note || null }
+          : targetKind === "group"
+            ? { assigneeGroupId: assignee, priority, note: note || null }
+            : { assigneeUserId: assignee, priority, note: note || null }
       ),
     }).catch(() => null);
     const data = res ? ((await res.json().catch(() => ({}))) as { proposal?: ProposalDto; message?: string }) : null;
@@ -1243,9 +1334,11 @@ function ProposalFlow({
     }
     setCreated(data.proposal);
     const who =
-      targetKind === "group"
-        ? groups.find((g) => g.id === assignee)?.name ?? "el grupo"
-        : directory?.find((m) => m.userId === assignee)?.name ?? "el empleado";
+      targetKind === "ia"
+        ? "la IA"
+        : targetKind === "group"
+          ? groups.find((g) => g.id === assignee)?.name ?? "el grupo"
+          : directory?.find((m) => m.userId === assignee)?.name ?? "el empleado";
     setStage((s) => ({ ...s, derived: who }));
     setDeriveOpen(false);
     onProposalChange();
@@ -1458,50 +1551,91 @@ function ProposalFlow({
             ))}
           </select>
         </label>
-        <div className="flex items-center gap-2">
-          <label className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed bg-card px-3 py-2 text-[12px] font-semibold text-text-2 hover:bg-subtle">
-            <ImageIcon size={14} /> {imagePreview ? "Cambiar foto publicidad" : "Foto de la publicidad"}
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void uploadImage(f, "assetId");
-              }}
-            />
-          </label>
-          <label className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed bg-card px-3 py-2 text-[12px] font-semibold text-text-2 hover:bg-subtle">
-            <ImageIcon size={14} /> {logoPreview ? "Cambiar logo" : "Logo del emisor"}
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void uploadImage(f, "logoAssetId");
-              }}
-            />
-          </label>
-        </div>
+        <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed bg-card px-3 py-2 text-[12px] font-semibold text-text-2 hover:bg-subtle">
+          <ImageIcon size={14} />
+          {media.length ? "Sumar fotos o video" : "Fotos o video (carrusel)"}
+          <input
+            type="file"
+            accept="image/*,video/mp4,video/webm"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const list = e.target.files;
+              if (list?.length) void uploadMediaFiles(list);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed bg-card px-3 py-2 text-[12px] font-semibold text-text-2 hover:bg-subtle">
+          <ImageIcon size={14} /> {logoPreview ? "Cambiar logo" : "Logo del emisor"}
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void uploadImage(f);
+            }}
+          />
+        </label>
         <button
           type="button"
-          onClick={() => setPickerTarget("assetId")}
+          onClick={() => setPickerTarget("media")}
           className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed bg-subtle/40 px-3 py-2 text-[12px] font-semibold text-text-2 hover:bg-subtle"
         >
-          <FolderOpen size={14} /> Elegir foto del contenedor del equipo
+          <FolderOpen size={14} /> Elegir del contenedor (fotos o video)
         </button>
       </div>
 
-      {(imagePreview || logoPreview) && (
-        <div className="flex items-center gap-3">
+      {/* 042 — los medios en orden: así se ven el carrusel y el video */}
+      {(media.length > 0 || logoPreview || mediaBusy) && (
+        <div className="flex flex-wrap items-center gap-2">
           {logoPreview && (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoPreview} alt="Logo" className="h-10 max-w-[140px] rounded border object-contain" />
           )}
-          {imagePreview && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={imagePreview} alt="Publicidad" className="h-16 max-w-[220px] rounded border object-cover" />
+          {media.map((m, i) => (
+            <div key={m.id} className="relative">
+              {m.mime.startsWith("video/") ? (
+                <video
+                  src={m.url}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  className="h-16 w-24 rounded border object-cover"
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={m.url}
+                  alt={`Medio ${i + 1}`}
+                  className="h-16 w-24 rounded border object-cover"
+                />
+              )}
+              <span className="absolute top-1 left-1 rounded bg-black/60 px-1 py-px text-[9px] font-bold text-white">
+                {i + 1}
+                {m.mime.startsWith("video/") ? " · VIDEO" : ""}
+              </span>
+              <button
+                type="button"
+                aria-label={`Quitar medio ${i + 1}`}
+                onClick={() => removeMedia(m.id)}
+                className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-rose-600 text-[11px] font-bold text-white shadow hover:bg-rose-700"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          {mediaBusy && (
+            <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-text-2">
+              <Loader2 size={13} className="animate-spin" /> Subiendo…
+            </span>
+          )}
+          {media.length > 0 && (
+            <span className="text-[11px] text-text-3">
+              {media.length} medio{media.length > 1 ? "s" : ""} · carrusel
+              {media.some((m) => m.mime.startsWith("video/")) ? " + video" : ""}
+            </span>
           )}
         </div>
       )}
@@ -1510,7 +1644,12 @@ function ProposalFlow({
 
       {pickerTarget !== null && (
         <LibraryPicker
-          title="Elegir del contenedor del equipo"
+          title={
+            pickerTarget === "media"
+              ? "Elegir fotos o video del contenedor"
+              : "Elegir el logo del contenedor"
+          }
+          kind={pickerTarget === "media" ? "all" : "image"}
           onPick={pickFromLibrary}
           onClose={() => setPickerTarget(null)}
         />
@@ -1531,6 +1670,20 @@ function ProposalFlow({
           <p className="text-[12.5px] font-bold text-text-1">
             ✓ Propuesta creada — página pública lista para abrir desde cualquier computadora
           </p>
+          {/* 042 — qué se le creó, de un vistazo */}
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-text-2">
+            <span className="rounded-full border bg-card px-2 py-0.5">🌐 Página pública</span>
+            <span className="rounded-full border bg-card px-2 py-0.5">
+              🖼️{" "}
+              {media.length
+                ? `${media.length} medio${media.length > 1 ? "s" : ""}${media.some((m) => m.mime.startsWith("video/")) ? " (con video)" : ""}`
+                : "sin medios"}
+            </span>
+            <span className="rounded-full border bg-card px-2 py-0.5">
+              {form.ctaUrl ? "🔗 con botón CTA" : "🔗 sin CTA — se carga en Ajustes → Propuestas"}
+            </span>
+            <span className="rounded-full border bg-card px-2 py-0.5">📲 mensaje con tono a elección</span>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <a
               href={created.publicUrl}
@@ -1553,12 +1706,15 @@ function ProposalFlow({
                 onClick={() => void openDerive()}
                 className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-[12px] font-bold text-white hover:opacity-90"
               >
-                <UserCheck size={13} /> Derivar a un empleado o grupo
+                <UserCheck size={13} /> Derivar: IA, empleado o grupo
               </button>
             )}
             {stage.derived && (
               <span className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[12px] font-semibold text-emerald-700">
-                <UserCheck size={13} /> Derivada a {stage.derived} · aviso enviado al chat
+                <UserCheck size={13} /> Derivada a {stage.derived}
+                {stage.derived === "la IA"
+                  ? " · atiende al instante por WhatsApp"
+                  : " · aviso enviado al chat"}
               </span>
             )}
           </div>
@@ -1569,6 +1725,7 @@ function ProposalFlow({
                 <span className="font-bold text-text-2">Derivar a:</span>
                 {(
                   [
+                    { k: "ia" as const, l: "🤖 IA primero" },
                     { k: "employee" as const, l: "👤 Empleado" },
                     { k: "group" as const, l: "👥 Grupo" },
                   ]
@@ -1591,7 +1748,12 @@ function ProposalFlow({
                 ))}
               </div>
               <div className="grid gap-2 md:grid-cols-3">
-                {targetKind === "employee" ? (
+                {targetKind === "ia" ? (
+                  <p className="flex items-center rounded-lg border border-dashed bg-subtle/40 px-3 py-2 text-[11.5px] text-text-2 md:col-span-1">
+                    🛡️ Si al cliente le interesa, seguís vos. La IA atiende y
+                    avisa qué pasó.
+                  </p>
+                ) : targetKind === "employee" ? (
                   <select
                     value={assignee}
                     onChange={(e) => setAssignee(e.target.value)}
@@ -1638,31 +1800,69 @@ function ProposalFlow({
               <button
                 type="button"
                 onClick={() => void derive()}
-                disabled={!assignee || busy === "derive"}
+                disabled={(targetKind !== "ia" && !assignee) || busy === "derive"}
                 className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[12.5px] font-bold text-white hover:opacity-90 disabled:opacity-50"
               >
                 {busy === "derive" ? <Loader2 size={14} className="animate-spin" /> : <UserCheck size={14} />}
-                {targetKind === "group" ? "Derivar al grupo y avisar" : "Derivar y avisar por el chat"}
+                {targetKind === "ia"
+                  ? "Derivar a la IA (atiende primero)"
+                  : targetKind === "group"
+                    ? "Derivar al grupo y avisar"
+                    : "Derivar y avisar por el chat"}
               </button>
             </div>
           )}
 
           {!previewOpen && (
-            <button
-              type="button"
-              onClick={() => {
-                const firstName = customer.name.split(" ")[0] ?? "";
-                const absUrl = `${window.location.origin}${created.publicUrl}`;
-                setDraftText(
-                  `¡Hola ${firstName}! 👋 Te preparé una propuesta pensada para vos${form.benefit ? `: ${form.benefit}` : ""}. Miralá acá 👉 ${absUrl}`
-                );
-                setPreviewOpen(true);
-              }}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-[13px] font-bold text-white hover:opacity-90"
-            >
-              <Send size={14} />
-              Enviar por WhatsApp — con vista previa
-            </button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const absUrl = `${window.location.origin}${created.publicUrl}`;
+                  setDraftText(
+                    `¡Hola ${customer.name}! 👋 Te preparé una propuesta pensada para vos${form.benefit ? `: ${form.benefit}` : ""}. Miralá acá 👉 ${absUrl}`
+                  );
+                  setPreviewOpen(true);
+                }}
+                className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-[13px] font-bold text-white hover:opacity-90"
+              >
+                <Send size={14} />
+                Enviar por WhatsApp — con vista previa
+              </button>
+              {/* 042 — el tono del mensaje, a mano desde el primer momento:
+                  tocás uno, la IA lo reescribe y se abre la vista previa. */}
+              <span className="flex items-center gap-1 text-[11.5px] font-bold text-text-2">
+                <Wand2 size={12} /> Tono del mensaje:
+              </span>
+              {TONE_IDS.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    if (!previewOpen) {
+                      const absUrl = `${window.location.origin}${created.publicUrl}`;
+                      setDraftText(
+                        `¡Hola ${customer.name}! 👋 Te preparé una propuesta pensada para vos${form.benefit ? `: ${form.benefit}` : ""}. Miralá acá 👉 ${absUrl}`
+                      );
+                      setPreviewOpen(true);
+                    }
+                    setMsgTone(id);
+                    void rewriteMessage(id);
+                  }}
+                  disabled={aiBusy !== null}
+                  aria-pressed={msgTone === id}
+                  title={TONES[id].hint}
+                  className={
+                    msgTone === id
+                      ? "rounded-full border border-emerald-600 bg-emerald-600 px-2 py-0.5 text-[11.5px] font-semibold text-white disabled:opacity-60"
+                      : "rounded-full border bg-card px-2 py-0.5 text-[11.5px] font-semibold text-text-2 hover:bg-subtle disabled:opacity-60"
+                  }
+                >
+                  {TONES[id].label}
+                </button>
+              ))}
+              {aiBusy === "mensaje" && <Loader2 size={12} className="animate-spin text-text-3" />}
+            </div>
           )}
 
           {previewOpen && (
@@ -1671,10 +1871,10 @@ function ProposalFlow({
                 Así le llega por WhatsApp — revisalo antes de abrir el chat
               </p>
               <div className="flex flex-col gap-3 sm:flex-row">
-                {(imagePreview ?? created.imageUrl) && (
+                {(media.find((m) => m.mime.startsWith("image/"))?.url ?? created.imageUrl) && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={imagePreview ?? created.imageUrl ?? ""}
+                    src={media.find((m) => m.mime.startsWith("image/"))?.url ?? created.imageUrl ?? ""}
                     alt="Imagen de la propuesta"
                     className="h-32 w-32 shrink-0 self-start rounded-lg border object-cover"
                   />
@@ -1718,7 +1918,7 @@ function ProposalFlow({
                   </div>
                   <p className="text-[11px] text-text-3">
                     {created.imageUrl
-                      ? "Va con la imagen de la publicación adjunta y el link a la página. Queda cargado en el chat sin enviar."
+                      ? "Va con la primera foto de la publicación adjunta y el link a la página. Queda cargado en el chat sin enviar."
                       : "Queda cargado en el chat sin enviar: lo revisás y lo mandás desde ahí."}
                   </p>
                   {!stage.derived && canDerive && (

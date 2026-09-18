@@ -26,10 +26,13 @@ export function LibraryPicker({
   title,
   onPick,
   onClose,
+  kind = "image",
 }: {
   title: string;
   onPick: (asset: PickerAsset) => void | Promise<void>;
   onClose: () => void;
+  /** 042 — «all» para los medios de la publicidad (fotos + video). */
+  kind?: "image" | "video" | "all";
 }) {
   const [assets, setAssets] = useState<PickerAsset[] | null>(null);
   const [search, setSearch] = useState("");
@@ -39,7 +42,7 @@ export function LibraryPicker({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/library?kind=image");
+    const res = await fetch(kind === "all" ? "/api/library" : `/api/library?kind=${kind}`);
 
     if (!res.ok) {
       setError("No se pudo cargar el contenedor");
@@ -52,7 +55,7 @@ export function LibraryPicker({
     } | null;
 
     setAssets(body?.assets ?? []);
-  }, []);
+  }, [kind]);
 
   useEffect(() => {
     void load();
@@ -181,13 +184,30 @@ export function LibraryPicker({
                   }`}
                 >
                   <span className="relative block h-28 w-full bg-subtle/60">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={asset.url}
-                      alt={asset.name}
-                      loading="lazy"
-                      className="h-full w-full object-cover"
-                    />
+                    {asset.kind === "video" ? (
+                      <video
+                        src={asset.url}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={asset.url}
+                          alt={asset.name}
+                          loading="lazy"
+                          className="h-full w-full object-cover"
+                        />
+                      </>
+                    )}
+                    {asset.kind === "video" && (
+                      <span className="absolute bottom-1 left-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        VIDEO
+                      </span>
+                    )}
                     {pickedId === asset.id && (
                       <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-[11px] font-bold text-white">
                         <Loader2 size={16} className="animate-spin" />

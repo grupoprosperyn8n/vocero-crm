@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
-import { ProposalError, storeAsset } from "@/server/proposals/service";
+import { ProposalError, storeAssetFull } from "@/server/proposals/service";
 import { loadLibraryAssetBytes } from "@/server/library/service";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ const schema = z.object({
   data: z
     .string()
     .min(16)
-    .max(12_000_000)
+    .max(56_000_000)
     .refine(
       (s) =>
         /^[A-Za-z0-9+/\s]*$/.test(s.slice(0, 4096)) &&
@@ -35,6 +35,8 @@ const schema = z.object({
     .regex(/^lib_[A-Za-z0-9_-]{4,40}$/, "id de biblioteca inválido")
     .optional()
     .nullable(),
+  /** 042 — para qué se elige: los medios aceptan video, el logo no. */
+  purpose: z.enum(["media", "logo"]).optional(),
 });
 
 /**
@@ -47,7 +49,7 @@ export const POST = withAuth(async (session, req: Request) => {
   const body = await parseBody(req, schema);
   if (!body.ok) return body.response;
 
-  const { mime, filename, data, libraryId } = body.data;
+  const { mime, filename, data, libraryId, purpose } = body.data;
 
   try {
     if (libraryId) {
@@ -60,36 +62,54 @@ export const POST = withAuth(async (session, req: Request) => {
         return apiError(404, "not_found", "El archivo elegido ya no está");
       }
 
-      if (!file.mime.startsWith("image/")) {
+      const esVideo = file.mime.startsWith("video/");
+      if (!file.mime.startsWith("image/") && !(esVideo && purpose === "media")) {
         return apiError(
           415,
           "not_an_image",
-          "Para la pieza elegí una imagen del contenedor"
+          esVideo
+            ? "Ese archivo es un video: usalo en los medios de la publicidad, no como logo"
+            : "Para la pieza elegí una imagen del contenedor"
         );
       }
 
-      const id = await storeAsset({
+      const stored = await storeAssetFull({
         organizationId: session.organizationId,
         mime: file.mime,
         filename: file.name,
         data: file.data.toString("base64"),
       });
 
-      return Response.json({ id, url: `/api/public/propuesta/img/${id}` }, { status: 201 });
+      return Response.json(
+        { id: stored.id, mime: stored.mime, url: `/api/public/propuesta/img/${stored.id}` },
+        { status: 201 }
+      );
     }
 
     if (!mime || !data) {
       return apiError(422, "invalid_body", "Faltan la imagen o el archivo elegido");
     }
 
-    const id = await storeAsset({
+    // 042 — el logo va con imagen; el video es solo para los medios.
+    if (purpose === "logo" && mime.toLowerCase().startsWith("video/")) {
+      return apiError(
+        415,
+        "not_an_image",
+        "El logo va con una imagen: el video se usa en los medios de la publicidad"
+      );
+    }
+
+    const stored = await storeAssetFull({
       organizationId: session.organizationId,
       mime,
       filename: filename ?? null,
       data,
     });
 
-    return Response.json({ id, url: `/api/public/propuesta/img/${id}` }, { status: 201 });
+    return Response.json(
+      { id: stored.id, mime: stored.mime, url: `/api/public/propuesta/img/${stored.id}` },
+      { status: 201 }
+    );
   } catch (err) {
     if (err instanceof ProposalError) {
       return apiError(err.status, err.code, err.message);

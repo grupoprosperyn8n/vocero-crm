@@ -638,6 +638,10 @@ export type ProposalDto = {
   createdByName: string | null;
   /** URL pública de la imagen de la pieza (anexo al mandarla por WhatsApp). */
   imageUrl: string | null;
+  /** 042 — medios en orden: ids de imágenes y/o video (carrusel). */
+  mediaIds: string[] | null;
+  /** 042 — mimes alineados con mediaIds (para saber cuál es el video). */
+  mediaTypes: ("image" | "video")[] | null;
   contactId: string | null;
   conversationId: string | null;
   statusLabel: string;

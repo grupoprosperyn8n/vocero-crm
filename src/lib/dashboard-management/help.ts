@@ -9,6 +9,7 @@ export type TabId =
   | "crm"
   | "propuestas"
   | "seguimiento"
+  | "campanas"
   | "migracion";
 
 export type HelpAction =
@@ -319,6 +320,31 @@ export const MODULE_HELP: Record<
         text: "Ver las propuestas y su embudo",
         action: { kind: "goto", tab: "propuestas" },
       },
+    ],
+  },
+
+  campanas: {
+    title: "Campañas 360",
+    tagline:
+      "El macro de todas las publicidades comerciales: quién las trabaja y cómo responden.",
+    what: [
+      "Junta TODAS las campañas creadas en la ficha 360° de cada cliente: creadas, derivadas, enviadas, vistas y respondidas.",
+      "Cada campaña nace en el panel de un cliente y vive acá como parte del embudo comercial del equipo.",
+    ],
+    measures: [
+      "El embudo completo: creadas → derivadas → enviadas → con vistas → respondieron.",
+      "Cómo va cada integrante: cuántas gestiona y cuántas le respondieron.",
+      "Qué tipo de campaña funciona mejor (renovación, retención, venta cruzada…).",
+      "La actividad de los últimos 14 días.",
+    ],
+    usage: [
+      "Mirá primero «Respondieron»: es la única métrica que significa plata.",
+      "Filtrá por estado o buscá un cliente para seguirlo puntualmente.",
+      "«Panel 360» abre el cliente completo: sus métricas y todas sus campañas.",
+    ],
+    suggestions: [
+      { text: "Ver la cola de hoy", action: { kind: "goto", tab: "cola" } },
+      { text: "Ir a Propuestas", action: { kind: "goto", tab: "propuestas" } },
     ],
   },
 

@@ -1,0 +1,1 @@
+ALTER TABLE "proposal" ADD COLUMN "media_ids" jsonb;

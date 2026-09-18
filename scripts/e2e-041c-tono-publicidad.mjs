@@ -171,7 +171,14 @@ const pressedAhorro = await ahorroBtn.getAttribute("aria-pressed");
 check("12. se eligen tono Formal y concepto Ahorro (aria-pressed)", pressedFormal === "true" && pressedAhorro === "true");
 
 const titleInput = page.getByPlaceholder("Título").first();
-const before = await titleInput.inputValue();
+// El prefill de la plantilla llega async: esperar a que el título tenga texto
+// (si no, «before» sale vacío y el Deshacer compara contra nada).
+let before = "";
+for (let i = 0; i < 40; i++) {
+  before = await titleInput.inputValue();
+  if (before.trim() !== "") break;
+  await page.waitForTimeout(500);
+}
 await escribeBtn.click();
 const escrito = await page
   .waitForFunction(
@@ -191,7 +198,10 @@ const undoVisible = await undoBtn
   .waitFor({ state: "visible", timeout: 10_000 })
   .then(() => true)
   .catch(() => false);
-if (undoVisible) await undoBtn.click().catch(() => {});
+if (undoVisible) {
+  await undoBtn.click().catch(() => {});
+  await page.waitForTimeout(700);
+}
 const restaurado = (await titleInput.inputValue()) === before;
 check("14. «Deshacer» restaura el texto anterior", undoVisible && restaurado, `«${before.slice(0, 40)}»`);
 

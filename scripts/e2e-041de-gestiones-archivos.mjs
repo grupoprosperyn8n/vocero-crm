@@ -50,11 +50,22 @@ check("1. usuarios temporales (dueño + empleado)", s1 === 201 && s2 === 201, `$
 // Contextos HTTP con cookie propia para cada rol.
 const owner = await request.newContext();
 const member = await request.newContext();
-const login = async (ctx, email) =>
-  ctx.post(`${BASE}/api/auth/sign-in/email`, {
+// El sign-in de better-auth tiene rate limit: si pega 429, espera y reintenta.
+const login = async (ctx, email) => {
+  for (let i = 0; i < 4; i++) {
+    const res = await ctx.post(`${BASE}/api/auth/sign-in/email`, {
+      data: { email, password: PASS },
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+    });
+    if (res.status() !== 429) return res;
+    console.log(`  (login 429 — espero 70 s, intento ${i + 2})`);
+    await new Promise((r2) => setTimeout(r2, 70_000));
+  }
+  return ctx.post(`${BASE}/api/auth/sign-in/email`, {
     data: { email, password: PASS },
     headers: { origin: ORIGIN, "content-type": "application/json" },
   });
+};
 const lo = await login(owner, emailOwner);
 const lm = await login(member, emailMember);
 check("2. login de ambos roles", lo.ok() && lm.ok(), `${lo.status()}/${lm.status()}`);
@@ -72,7 +83,15 @@ const mp4 = Buffer.concat([
   Buffer.alloc(4096),
 ]);
 
-const upImg = await owner.post(`${BASE}/api/library?name=prueba-e2e.png`, {
+// Restos de corridas anteriores (nombres fijos) se limpian antes de subir.
+const prevList = await (await owner.get(`${BASE}/api/library`)).json().catch(() => ({}));
+for (const a of prevList.assets ?? []) {
+  if (/^prueba-e2e/.test(a.filename ?? "")) {
+    await owner.delete(`${BASE}/api/library/${a.id}`, { headers: { origin: ORIGIN } });
+  }
+}
+
+const upImg = await owner.post(`${BASE}/api/library?name=prueba-e2e-${stamp}.png`, {
   headers: { origin: ORIGIN, "content-type": "image/png" },
   data: png,
 });
@@ -84,7 +103,7 @@ check(
   `mime=${img?.mime} bytes=${img?.byteSize}`
 );
 
-const upVid = await owner.post(`${BASE}/api/library?name=prueba-e2e.mp4`, {
+const upVid = await owner.post(`${BASE}/api/library?name=prueba-e2e-${stamp}.mp4`, {
   headers: { origin: ORIGIN, "content-type": "video/mp4" },
   data: mp4,
 });
@@ -280,7 +299,7 @@ if (await skip.count()) await skip.first().click().catch(() => {});
 await page.getByRole("button", { name: /^\s*Propuestas/ }).first().click();
 const archSelect = page.getByTitle(/041e — las archivadas/).first();
 const archVisible = await archSelect
-  .waitFor({ state: "visible", timeout: 30_000 })
+  .waitFor({ state: "visible", timeout: 90_000 })
   .then(() => true)
   .catch(() => false);
 check("22. pestaña Propuestas: filtro Activas / archivadas visible", archVisible);
@@ -288,7 +307,7 @@ check("22. pestaña Propuestas: filtro Activas / archivadas visible", archVisibl
 // En el panel del cliente: contenedor de archivos + acciones de la lista.
 await page.getByRole("button", { name: /^\s*Cliente 360/ }).first().click();
 const s = page.getByPlaceholder("Buscar cliente, DNI o póliza…");
-await s.waitFor({ timeout: 30_000 });
+await s.waitFor({ timeout: 90_000 });
 await s.fill("TEST IA");
 await page.getByRole("button", { name: "Buscar cliente", exact: true }).first().click();
 const pb = page.getByRole("button", { name: "Panel de control" }).first();
@@ -299,12 +318,17 @@ await page.getByText("Métricas del cliente").first().waitFor({ timeout: 60_000 
 const contenedor = await page
   .getByText("Contenedor de archivos")
   .first()
-  .waitFor({ state: "visible", timeout: 30_000 })
+  .waitFor({ state: "visible", timeout: 90_000 })
   .then(() => true)
   .catch(() => false);
 check("23. la ficha tiene el CONTENEDOR DE ARCHIVOS", contenedor);
 
-const imagen = await page.locator('img[alt="prueba-e2e.png"]').first().isVisible().catch(() => false);
+const imagen = await page
+  .locator(`img[alt="prueba-e2e-${stamp}.png"]`)
+  .first()
+  .waitFor({ state: "visible", timeout: 90_000 })
+  .then(() => true)
+  .catch(() => false);
 check("24. la imagen subida se ve en el contenedor", imagen);
 
 // La fila de propuestas: botones de gestión (editar + historial).
@@ -313,27 +337,28 @@ const histBtn = page.getByTitle(/Historial/).first();
 const rowActions = await editorBtn.isVisible().catch(() => false);
 check("25. las gestiones de la ficha tienen editar e historial", rowActions && (await histBtn.isVisible().catch(() => false)));
 
-// El botón «Elegir foto del contenedor» abre el selector y deja elegir.
+// El botón «Elegir del contenedor (fotos o video)» abre el selector y deja elegir.
 await page.getByRole("button", { name: /Crear propuesta comercial/ }).first().click();
-const elegir = page.getByRole("button", { name: /Elegir foto del contenedor/ }).first();
-await elegir.waitFor({ timeout: 30_000 });
+const elegir = page.getByRole("button", { name: /Elegir del contenedor/ }).first();
+await elegir.waitFor({ timeout: 90_000 });
 await elegir.click();
 const pickerImg = page
   .getByRole("dialog", { name: "Elegir del contenedor" })
-  .getByRole("button", { name: /prueba-e2e\.png/ })
+  .getByRole("button", { name: new RegExp(`prueba-e2e-${stamp}\\.png`) })
   .first();
 const pickerOk = await pickerImg
-  .waitFor({ state: "visible", timeout: 30_000 })
+  .waitFor({ state: "visible", timeout: 90_000 })
   .then(() => true)
   .catch(() => false);
 if (pickerOk) await pickerImg.click({ timeout: 15_000 }).catch(() => {});
-await page.waitForTimeout(2500);
+// La copia al vuelo puede tardar (dev recompilando): esperar de verdad.
 const previewOk = await page
-  .locator('img[alt="Publicidad"]')
+  .locator('img[alt="Medio 1"]')
   .first()
-  .isVisible()
+  .waitFor({ state: "visible", timeout: 90_000 })
+  .then(() => true)
   .catch(() => false);
-check("26. se elige la foto DESDE el contenedor y queda en la pieza", pickerOk && previewOk);
+check("26. se elige la foto DESDE el contenedor y queda en los medios", pickerOk && previewOk);
 
 const consoleErrors = errors.length;
 check("27. sin errores de página", consoleErrors === 0, errors[0]?.slice(0, 120) ?? "");

@@ -323,15 +323,72 @@ export const ASSET_MAX_BYTES = 2_500_000;
 /** 041b — Tope de la SUBIDA, antes de adaptar: las fotos reales pesan esto. */
 export const ASSET_UPLOAD_MAX_BYTES = 8_000_000;
 
+/** 042 — Tope del video de la publicidad (mp4/webm). */
+export const ASSET_VIDEO_UPLOAD_MAX_BYTES = 40 * 1024 * 1024;
+
+/**
+ * 042 — El video se reconoce por sus bytes reales (nunca por el mime que
+ * declara el navegador): MP4 trae «ftyp» en el offset 4; WebM/MKV arranca
+ * con la firma EBML 1A 45 DF A3.
+ */
+function sniffVideoMime(bytes: Uint8Array): string | null {
+  if (
+    bytes.length > 12 &&
+    bytes[4] === 0x66 && // f
+    bytes[5] === 0x74 && // t
+    bytes[6] === 0x79 && // y
+    bytes[7] === 0x70 //    p
+  ) {
+    return "video/mp4";
+  }
+  if (bytes.length > 8 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) {
+    return "video/webm";
+  }
+  return null;
+}
+
 export async function storeAsset(input: {
   organizationId: string;
   mime: string;
   filename?: string | null;
   data: string; // base64 sin prefijo
 }): Promise<string> {
+  return (await storeAssetFull(input)).id;
+}
+
+/** 042 — Como storeAsset pero devuelve también el mime REAL guardado. */
+export async function storeAssetFull(input: {
+  organizationId: string;
+  mime: string;
+  filename?: string | null;
+  data: string; // base64 sin prefijo
+}): Promise<{ id: string; mime: string }> {
   const buf = Buffer.from(input.data, "base64");
   if (!buf.byteLength) {
     throw new ProposalError("La imagen llegó vacía", 422, "empty_asset");
+  }
+  // 042 — VIDEO (mp4/webm): entra tal cual, sin adaptar. La publicidad lo
+  // reproduce en el carrusel de la página pública.
+  const video = sniffVideoMime(new Uint8Array(buf.subarray(0, 16)));
+  if (video) {
+    if (buf.byteLength > ASSET_VIDEO_UPLOAD_MAX_BYTES) {
+      throw new ProposalError(
+        `El video no puede pasar de ${Math.round(ASSET_VIDEO_UPLOAD_MAX_BYTES / (1024 * 1024))} MB`,
+        422,
+        "asset_too_big"
+      );
+    }
+    const videoId = newId("proposalAsset");
+    const videoDb = getDb();
+    await videoDb.insert(schema.proposalAsset).values({
+      id: videoId,
+      organizationId: input.organizationId,
+      mime: video,
+      filename: cleanText(input.filename, 160),
+      byteSize: buf.byteLength,
+      data: buf.toString("base64"),
+    });
+    return { id: videoId, mime: video };
   }
   // 041b — El formato sale de los BYTES, no del mime declarado: la foto que
   // sale del celular es HEIC y antes se rechazaba. Entra igual y se ADAPTA a
@@ -376,7 +433,49 @@ export async function storeAsset(input: {
     byteSize: stored.byteLength,
     data: stored.toString("base64"),
   });
-  return id;
+  return { id, mime: storedMime };
+}
+
+/**
+ * 042 — Depura los medios de una publicidad: ids ordenados, existentes en la
+ * organización, máximo 8, y UN solo video (el resto fotos). La publicidad no
+ * puede quedar apuntando a archivos de otra cuenta ni a basura.
+ */
+export async function sanitizeMediaIds(
+  organizationId: string,
+  ids: unknown
+): Promise<string[] | null> {
+  if (!Array.isArray(ids)) return null;
+  const clean = ids
+    .filter(
+      (v): v is string =>
+        typeof v === "string" && /^pass_[A-Za-z0-9_-]{4,40}$/.test(v)
+    )
+    .slice(0, 8);
+  if (!clean.length) return null;
+  const db = getDb();
+  const rows = await db
+    .select({ id: schema.proposalAsset.id, mime: schema.proposalAsset.mime })
+    .from(schema.proposalAsset)
+    .where(
+      scoped(
+        schema.proposalAsset.organizationId,
+        organizationId,
+        inArray(schema.proposalAsset.id, clean)
+      )
+    );
+  const mimeById = new Map(rows.map((r) => [r.id, r.mime]));
+  let seenVideo = false;
+  const ordered = clean.filter((id) => {
+    const mime = mimeById.get(id);
+    if (!mime) return false;
+    if (mime.startsWith("video/")) {
+      if (seenVideo) return false;
+      seenVideo = true;
+    }
+    return mime.startsWith("image/") || mime.startsWith("video/");
+  });
+  return ordered.length ? ordered : null;
 }
 
 async function downloadToAsset(input: {
@@ -475,6 +574,8 @@ export async function createProposal(input: {
   ctaKind?: "link" | "pdf";
   assetId?: string | null;
   logoAssetId?: string | null;
+  /** 042 — medios en orden (fotos del carrusel + video): ids de assets. */
+  mediaIds?: string[] | null;
   assigneeUserId?: string | null;
   priority?: ProposalPriority;
   /** 041c — tono y concepto de venta elegidos para escribir la publicidad. */
@@ -503,6 +604,26 @@ export async function createProposal(input: {
   const id = newId("proposal");
   const token = newToken();
   const db = getDb();
+
+  // 042 — medios de la publicidad (carrusel + video) + compatibilidad: la
+  // primera FOTO sigue siendo `assetId` (adjunto del chat, miniaturas).
+  const mediaIds = await sanitizeMediaIds(input.organizationId, input.mediaIds);
+  let firstImageId: string | null = null;
+  if (mediaIds?.length) {
+    const mediaRows = await db
+      .select({ id: schema.proposalAsset.id, mime: schema.proposalAsset.mime })
+      .from(schema.proposalAsset)
+      .where(
+        scoped(
+          schema.proposalAsset.organizationId,
+          input.organizationId,
+          inArray(schema.proposalAsset.id, mediaIds)
+        )
+      );
+    const mimeById = new Map(mediaRows.map((r) => [r.id, r.mime]));
+    firstImageId = mediaIds.find((mid) => (mimeById.get(mid) ?? "").startsWith("image/")) ?? null;
+  }
+
   await db.insert(schema.proposal).values({
     id,
     organizationId: input.organizationId,
@@ -525,7 +646,8 @@ export async function createProposal(input: {
     ctaLabel: cleanText(input.ctaLabel, 60) ?? tpl.ctaLabel,
     ctaUrl: cleanUrl(input.ctaUrl) ?? tpl.ctaUrl,
     ctaKind: input.ctaKind ?? tpl.ctaKind,
-    assetId: input.assetId ?? tpl.assetId ?? null,
+    assetId: input.assetId ?? firstImageId ?? tpl.assetId ?? null,
+    mediaIds: mediaIds ?? (input.assetId ? [input.assetId] : null),
     assigneeUserId: input.assigneeUserId ?? null,
     priority: input.priority && isPriority(input.priority) ? input.priority : "media",
     tone: isToneId(input.tone) ? input.tone : null,
@@ -727,6 +849,8 @@ export async function deriveProposal(input: {
   /** 041b — destino: empleado del CRM O grupo del chat interno (uno solo). */
   assigneeUserId?: string | null;
   assigneeGroupId?: string | null;
+  /** 042 — «ia»: la atiende el asistente primero (sin empleado ni grupo). */
+  assigneeKind?: "ia" | null;
   priority: ProposalPriority;
   note?: string | null;
 }): Promise<ProposalDto> {
@@ -750,9 +874,15 @@ export async function deriveProposal(input: {
 
   // El destino: un empleado del equipo (con su DM) o un grupo del chat
   // interno (la sala ya existe) — la misma mecánica que las alertas.
+  // 042 — o NADIE: «derivar a la IA», que atiende primero y avisa después.
+  const destinoIa = input.assigneeKind === "ia";
   const destinoEmpleado = input.assigneeUserId?.trim() || null;
   const destinoGrupo = input.assigneeGroupId?.trim() || null;
-  if ((destinoEmpleado && destinoGrupo) || (!destinoEmpleado && !destinoGrupo)) {
+  if (destinoIa) {
+    if (destinoEmpleado || destinoGrupo) {
+      throw new ProposalError("Elegí un solo destino: la IA, un empleado o un grupo", 422, "bad_target");
+    }
+  } else if ((destinoEmpleado && destinoGrupo) || (!destinoEmpleado && !destinoGrupo)) {
     throw new ProposalError("Elegí un empleado o un grupo (uno solo)", 422, "bad_target");
   }
 
@@ -763,7 +893,10 @@ export async function deriveProposal(input: {
   let assigneeName: string | null = null;
   let assigneeGroupName: string | null = null;
 
-  if (destinoEmpleado) {
+  if (destinoIa) {
+    // La IA atiende sola: sin asignación de personas (el aviso del chat no
+    // hace falta — ella responde por WhatsApp y avisa cuando haga falta).
+  } else if (destinoEmpleado) {
     // Tiene que ser parte del equipo (mismo requisito que el DM).
     const memberRow = await db
       .select({ userId: schema.member.userId, name: schema.user.name })
@@ -834,30 +967,33 @@ export async function deriveProposal(input: {
   });
 
   // AVISO: al empleado por DM; al grupo en su propia sala (no hace falta
-  // crearla). Mismo mecanismo que las alertas.
-  const url = absoluteProposalUrl(p.token);
-  const bodyLines = [
-    `🎯 Propuesta de ${kindLabel(p.kind).toLowerCase()} para ${p.clientName}`,
-    `Prioridad: ${input.priority.toUpperCase()}`,
-    p.offer ? `Oferta: ${p.offer}` : null,
-    p.benefit ? `Beneficio: ${p.benefit}` : null,
-    input.note ? `Nota: ${input.note}` : null,
-    "",
-    `Abrila y compartila desde acá: ${url}`,
-  ].filter((l): l is string => l !== null);
-  try {
-    const roomId =
-      avisoRoomId ??
-      (await createDmRoom(input.organizationId, input.userId, assigneeUserId!)).id;
-    await postChatMessage({
-      organizationId: input.organizationId,
-      roomId,
-      senderId: input.userId,
-      body: bodyLines.join("\n"),
-    });
-  } catch (err) {
-    // El aviso no puede tumbar la derivación: queda registrada igual.
-    console.error("[proposals] no se pudo enviar el aviso al chat:", err);
+  // crearla). Mismo mecanismo que las alertas. 042 — derivada a la IA: sin
+  // aviso, ella atiende por WhatsApp.
+  if (!destinoIa) {
+    const url = absoluteProposalUrl(p.token);
+    const bodyLines = [
+      `🎯 Propuesta de ${kindLabel(p.kind).toLowerCase()} para ${p.clientName}`,
+      `Prioridad: ${input.priority.toUpperCase()}`,
+      p.offer ? `Oferta: ${p.offer}` : null,
+      p.benefit ? `Beneficio: ${p.benefit}` : null,
+      input.note ? `Nota: ${input.note}` : null,
+      "",
+      `Abrila y compartila desde acá: ${url}`,
+    ].filter((l): l is string => l !== null);
+    try {
+      const roomId =
+        avisoRoomId ??
+        (await createDmRoom(input.organizationId, input.userId, assigneeUserId!)).id;
+      await postChatMessage({
+        organizationId: input.organizationId,
+        roomId,
+        senderId: input.userId,
+        body: bodyLines.join("\n"),
+      });
+    } catch (err) {
+      // El aviso no puede tumbar la derivación: queda registrada igual.
+      console.error("[proposals] no se pudo enviar el aviso al chat:", err);
+    }
   }
 
   // 041e — al historial: quién la derivó y a quién.
@@ -867,9 +1003,11 @@ export async function deriveProposal(input: {
     actorId: input.userId,
     actorName: await resolveUserName(input.userId),
     action: "derivada",
-    detail: destinoEmpleado
-      ? `Derivada a ${assigneeName ?? "un empleado"} · prioridad ${input.priority}`
-      : `Derivada al grupo «${assigneeGroupName ?? "grupo"}» · prioridad ${input.priority}`,
+    detail: destinoIa
+      ? `Derivada a la IA — atiende primero · prioridad ${input.priority}`
+      : destinoEmpleado
+        ? `Derivada a ${assigneeName ?? "un empleado"} · prioridad ${input.priority}`
+        : `Derivada al grupo «${assigneeGroupName ?? "grupo"}» · prioridad ${input.priority}`,
   });
 
   return getProposalById(input.organizationId, input.id);
@@ -982,6 +1120,8 @@ export type PublicProposal = {
   companyAssetId: string | null;
   logoAssetId: string | null;
   assetId: string | null;
+  /** 042 — medios en orden: carrusel de fotos y/o video (mp4/webm). */
+  media: { id: string; mime: string }[];
   ctaLabel: string | null;
   ctaUrl: string | null;
   ctaKind: "link" | "pdf";
@@ -989,7 +1129,22 @@ export type PublicProposal = {
   kind: string;
   /** 041e — la publicidad se puede pausar (online/offline) desde el panel. */
   online: boolean;
+  /** 042 — quién atiende la propuesta (empleado derivado) y el WhatsApp del equipo. */
+  assigneeName: string | null;
+  whatsappPhone: string | null;
 };
+
+/** 042 — WhatsApp público del equipo (wa.me): solo los dígitos, sin «+». */
+export async function getPublicWhatsappPhone(organizationId: string): Promise<string | null> {
+  const db = getDb();
+  const rows = await db
+    .select({ phone: schema.metaCredentials.displayPhoneNumber })
+    .from(schema.metaCredentials)
+    .where(eq(schema.metaCredentials.organizationId, organizationId))
+    .limit(1);
+  const digits = (rows[0]?.phone ?? "").replace(/\D/g, "");
+  return digits.length >= 8 ? digits : null;
+}
 
 /** Lectura pública por token + registro de vista (primera y última). */
 export async function loadPublicProposal(
@@ -1020,6 +1175,37 @@ export async function loadPublicProposal(
       .where(eq(schema.proposal.id, p.id));
   }
 
+  // 042 — los medios del carrusel (en orden) + quién atiende + WhatsApp del
+  // equipo. Todo en paralelo: la página se abre al instante.
+  const mediaIds =
+    Array.isArray(p.mediaIds) && p.mediaIds.length
+      ? p.mediaIds.filter((id): id is string => typeof id === "string")
+      : p.assetId
+        ? [p.assetId]
+        : [];
+
+  const [mediaRows, assigneeRows, whatsappPhone] = await Promise.all([
+    mediaIds.length
+      ? db
+          .select({ id: schema.proposalAsset.id, mime: schema.proposalAsset.mime })
+          .from(schema.proposalAsset)
+          .where(inArray(schema.proposalAsset.id, mediaIds))
+      : Promise.resolve([] as { id: string; mime: string }[]),
+    p.assigneeUserId
+      ? db
+          .select({ name: schema.user.name })
+          .from(schema.user)
+          .where(eq(schema.user.id, p.assigneeUserId))
+          .limit(1)
+      : Promise.resolve([] as { name: string }[]),
+    getPublicWhatsappPhone(p.organizationId),
+  ]);
+
+  const mimeById = new Map(mediaRows.map((r) => [r.id, r.mime]));
+  const media = mediaIds
+    .map((id) => ({ id, mime: mimeById.get(id) ?? "" }))
+    .filter((m) => m.mime.startsWith("image/") || m.mime.startsWith("video/"));
+
   return {
     token: p.token,
     title: p.title,
@@ -1032,12 +1218,15 @@ export async function loadPublicProposal(
     companyAssetId: p.companyAssetId,
     logoAssetId: p.logoAssetId,
     assetId: p.assetId,
+    media,
     ctaLabel: p.ctaLabel,
     ctaUrl: p.ctaUrl,
     ctaKind: p.ctaKind,
     clientName: p.clientName,
     kind: p.kind,
     online: p.online,
+    assigneeName: assigneeRows[0]?.name ?? null,
+    whatsappPhone,
   };
 }
 

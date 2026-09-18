@@ -16,6 +16,8 @@ const schema = z.object({
   /** 041b — destino: empleado O grupo del chat interno (exactamente uno). */
   assigneeUserId: z.string().trim().min(1).max(60).optional().nullable(),
   assigneeGroupId: z.string().trim().min(1).max(60).optional().nullable(),
+  /** 042 — «ia»: la atiende el asistente primero (sin empleado ni grupo). */
+  assigneeKind: z.literal("ia").optional().nullable(),
   priority: z.string().trim().refine(isPriority, "prioridad inválida"),
   note: z.string().trim().max(300).optional().nullable(),
 });
@@ -51,6 +53,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
       id,
       assigneeUserId: body.data.assigneeUserId ?? null,
       assigneeGroupId: body.data.assigneeGroupId ?? null,
+      assigneeKind: body.data.assigneeKind === "ia" ? "ia" : null,
       priority: body.data.priority as ProposalPriority,
       note: body.data.note ?? null,
     });
