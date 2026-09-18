@@ -93,7 +93,17 @@ const img2 = await sharp({
 })
   .png()
   .toBuffer();
-const video = fs.readFileSync("/tmp/probe-video.mp4");
+/* El video de prueba se auto-genera si no está (ffmpeg), así el e2e nunca
+   depende de un temporal de otro bloque. */
+const PROBE_VIDEO = "/tmp/probe-video.mp4";
+if (!fs.existsSync(PROBE_VIDEO)) {
+  const { execSync } = await import("node:child_process");
+  execSync(
+    `ffmpeg -y -f lavfi -i color=c=0x0e7490:s=640x360:d=2 -f lavfi -i sine=frequency=440:duration=2 -shortest -c:v libx264 -pix_fmt yuv420p -c:a aac ${PROBE_VIDEO} >/dev/null 2>&1`,
+    { shell: "/bin/bash" }
+  );
+}
+const video = fs.readFileSync(PROBE_VIDEO);
 
 const subir = async (mime, filename, buf, purpose = "media") => {
   const res = await ctx.request.post(`${BASE}/api/proposals/assets`, {
