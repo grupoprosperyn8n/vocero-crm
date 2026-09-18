@@ -225,6 +225,13 @@ export type DrillItem = {
   dni?: string;
   detail?: string;
   extra?: string;
+  /*
+   * 039 — Valores crudos de campos de selección de Airtable (estado de la
+   * póliza, forma de pago…). El CRM los pinta como chips con el mismo color
+   * de la opción en el backoffice (airtable-colors.ts). Opcional: si la
+   * lista no los trae, no se muestra ningún chip.
+   */
+  tags?: string[];
   links: DrillLink[];
 };
 

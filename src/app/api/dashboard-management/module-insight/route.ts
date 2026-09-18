@@ -1,43 +1,54 @@
-import { apiError, withAuth } from "@/lib/api";
-import { CockpitUnavailableError, cockpitFetch } from "@/server/dashboard-management/cockpit";
+import { z } from "zod";
+
+import { apiError, parseBody, withAuth } from "@/lib/api";
+import { MODULE_AI_IDS } from "@/lib/dashboard-management/types";
+import { generateModuleInsight } from "@/server/dashboard-management/ai";
 
 export const dynamic = "force-dynamic";
 
 /**
- * 038b — Análisis con IA por módulo (proxy al cockpit).
+ * 039 — Análisis con IA de un módulo del tablero.
  *
- * El cockpit arma el análisis con su propio motor (OpenAI/Groq según su
- * configuración). El CRM solo transporta el pedido y devuelve la respuesta.
+ * La generación corre ACÁ, server-side, con la conexión de IA del CRM
+ * (Ajustes → IA; respaldo legacy por env OPENROUTER_*). Antes (038) se
+ * delegaba al cockpit con su propio token — eso ya no hace falta.
+ *
+ * Mismo contrato de respuesta que 038:
+ *   200 { ok: true, insight: { resumen, focos, acciones, mensaje, … } }
+ *   403 member · 422 body inválido
+ *   429 tope diario · 502 proveedor · 503 IA no conectada
  */
+
+const bodySchema = z.object({
+  module: z.enum(MODULE_AI_IDS),
+  mode: z.enum(["dual", "ia"]),
+  context: z.record(z.unknown()),
+  force: z.boolean().optional(),
+});
+
 export const POST = withAuth(async (session, req: Request) => {
   if (session.role === "member") {
     return apiError(403, "forbidden", "Solo dueño y propietarios.");
   }
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return apiError(422, "invalid_body", "El body debe ser JSON válido.");
+  const parsed = await parseBody(req, bodySchema);
+  if (!parsed.ok) {
+    return parsed.response;
   }
 
-  try {
-    const res = await cockpitFetch("/api/module-insight", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      timeoutMs: 180_000,
-    });
+  const result = await generateModuleInsight(session.organizationId, {
+    module: parsed.data.module,
+    mode: parsed.data.mode,
+    context: parsed.data.context,
+    force: parsed.data.force ?? false,
+  });
 
-    const json = await res.json().catch(() => null);
-    if (!res.ok || !json) {
-      return apiError(502, "cockpit", "El cockpit no pudo generar el análisis.");
-    }
-    return Response.json(json);
-  } catch (err) {
-    if (err instanceof CockpitUnavailableError) {
-      return apiError(503, "cockpit_offline", err.message);
-    }
-    throw err;
+  if (!result.ok) {
+    return Response.json(
+      { ok: false, error: result.message },
+      { status: result.status }
+    );
   }
+
+  return Response.json({ ok: true, insight: result.insight });
 });

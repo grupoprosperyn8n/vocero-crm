@@ -5,23 +5,38 @@ import {
   Activity,
   AlertTriangle,
   ArrowUpRight,
+  Blend,
+  Bot,
   BriefcaseBusiness,
+  CalendarDays,
+  CalendarRange,
   ChevronDown,
   CircleDollarSign,
   Clock3,
   Database,
   HeartHandshake,
   HelpCircle,
+  History,
+  Hourglass,
+  Info,
+  Infinity as InfinityIcon,
   Lightbulb,
+  Link2,
+  ListChecks,
   ListTree,
   MessageSquareText,
+  Phone,
   RefreshCcw,
+  RotateCcw,
   Search,
+  Settings2,
   ShieldCheck,
-  SlidersHorizontal,
+  Sigma,
   Sparkles,
   Target,
   TrendingUp,
+  Unlink,
+  UserRound,
   UserRoundCheck,
   Users,
   X,
@@ -44,6 +59,7 @@ import {
   YAxis,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import { airtableTagStyle } from "@/lib/dashboard-management/airtable-colors";
 import {
   MODULE_HELP,
   type HelpAction,
@@ -185,7 +201,15 @@ function Section({
   );
 }
 
-function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: string }) {
+function Badge({
+  children,
+  tone = "neutral",
+  icon,
+}: {
+  children: React.ReactNode;
+  tone?: string;
+  icon?: React.ReactNode;
+}) {
   const tones: Record<string, string> = {
     neutral: "border-border bg-subtle text-text-2",
     warning: "border-warning-soft bg-warning-tint text-warning-text",
@@ -195,12 +219,87 @@ function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
         tones[tone] ?? tones.neutral
       )}
     >
+      {icon}
       {children}
     </span>
+  );
+}
+
+/*
+ * 039 — Etiquetas con los colores del backend de Airtable.
+ *
+ * El valor llega crudo (ej. "VIGENTE", "CREDITO") y se pinta con el mismo
+ * color que tiene la opción del campo de selección en Airtable. Un valor
+ * desconocido cae a un chip neutro: nunca se rompe la lista.
+ */
+function AirtableChip({ value }: { value: string }) {
+  const style = airtableTagStyle(value);
+
+  if (!style) {
+    return (
+      <span className="inline-flex items-center rounded-full border border-border bg-subtle px-2 py-0.5 text-[10.5px] font-semibold text-text-2">
+        {value}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold"
+      style={style}
+      title={`Etiqueta del backoffice de Airtable: ${value}`}
+    >
+      {value}
+    </span>
+  );
+}
+
+/*
+ * 039 — Estado de la conexión de IA del tablero (la del CRM):
+ * «IA conectada · modelo» con acceso a Ajustes → IA, o CTA para conectarla.
+ */
+type AiStatus = {
+  configured: boolean;
+  source: "org" | "env" | null;
+  provider: string | null;
+  model: string | null;
+};
+
+function AiStatusChip({ status }: { status: AiStatus | null }) {
+  if (!status) return null;
+
+  if (status.configured) {
+    return (
+      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-success-soft bg-success-tint px-2 py-1 text-[11px] font-semibold text-success-text">
+        <Bot size={12} className="shrink-0" />
+        <span className="max-w-[180px] truncate" title={`IA conectada (${status.source === "org" ? "Ajustes → IA" : "configuración del servidor"}) · ${status.model ?? ""}`}>
+          IA conectada · {status.model ?? "modelo activo"}
+        </span>
+        <a
+          href="/settings/ai"
+          className="inline-flex shrink-0 items-center gap-0.5 underline-offset-2 hover:underline"
+          title="Configurar la conexión de IA del CRM (Ajustes → IA)"
+        >
+          <Settings2 size={11} /> Ajustes
+        </a>
+      </span>
+    );
+  }
+
+  return (
+    <a
+      href="/settings/ai"
+      className="inline-flex items-center gap-1.5 rounded-full border border-warning-soft bg-warning-tint px-2 py-1 text-[11px] font-semibold text-warning-text transition-opacity hover:opacity-90"
+      title="El tablero usa la conexión de IA del CRM. Conectala en Ajustes → IA para activar los análisis."
+    >
+      <Bot size={12} />
+      IA no conectada — Conectar IA
+      <ArrowUpRight size={11} />
+    </a>
   );
 }
 
@@ -419,7 +518,7 @@ function ModuleLists({
   const normalized = query.trim().toLowerCase();
   const visible = normalized
     ? current.items.filter((item) =>
-        [item.name, item.dni, item.detail, item.extra]
+        [item.name, item.dni, item.detail, item.extra, ...(item.tags ?? [])]
           .filter(Boolean)
           .join(" ")
           .toLowerCase()
@@ -504,7 +603,14 @@ function ModuleLists({
               >
                 <div className="min-w-0 flex-1">
                   <strong className="block truncate text-[12.5px]">{item.name}</strong>
-                  {item.dni && <span className="text-[11px] text-text-3">DNI {item.dni}</span>}
+                  {(item.dni || (item.tags && item.tags.length > 0)) && (
+                    <span className="mt-0.5 flex flex-wrap items-center gap-1">
+                      {item.dni && <span className="text-[11px] text-text-3">DNI {item.dni}</span>}
+                      {item.tags?.map((tag) => (
+                        <AirtableChip key={tag} value={tag} />
+                      ))}
+                    </span>
+                  )}
                 </div>
                 <div className="min-w-0 flex-1 text-right text-[11.5px] text-text-2">
                   <span className="block truncate">{item.detail}</span>
@@ -559,6 +665,7 @@ function ModuleAiRow({
   onGenerate,
   onCopy,
   copied,
+  aiStatus,
 }: {
   id: ModuleAiId;
   engine: InsightMode;
@@ -571,6 +678,7 @@ function ModuleAiRow({
   onGenerate: () => void;
   onCopy: (text: string) => void;
   copied: boolean;
+  aiStatus?: AiStatus | null;
 }) {
   const label = MODULE_AI_TITLES[id];
   const insight = state?.status === "done" ? state.data : undefined;
@@ -582,25 +690,26 @@ function ModuleAiRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine]);
 
-  const options: { id: InsightMode; label: string; hint: string }[] = [
+  const options: { id: InsightMode; label: string; hint: string; Icon: typeof TrendingUp }[] = [
     {
       id: "algoritmo",
-      label: "Algoritmo solo",
-      hint: "Sin IA: solo los datos y las reglas del sistema.",
+      label: "Algoritmo",
+      hint: "Sin IA: solo los datos y las reglas del sistema — instantáneo y auditable.",
+      Icon: Sigma,
     },
     {
       id: "dual",
-      label: "Dual (IA + datos)",
+      label: "Dual",
       hint: "Los datos del módulo + la lectura de la IA (la generás cuando quieras).",
+      Icon: Blend,
     },
     {
       id: "ia",
       label: "Solo IA",
       hint: "La IA lee los datos reales de este módulo y arma el resumen y las acciones; se genera sola.",
+      Icon: Bot,
     },
   ];
-
-  const current = options.find((option) => option.id === engine) ?? options[1]!;
 
   return (
     <div className="rounded-lg border bg-card p-3">
@@ -609,23 +718,28 @@ function ModuleAiRow({
           Motor
         </span>
         <div className="inline-flex rounded-md border bg-subtle p-0.5">
-          {options.map((option) => (
-            <button
-              key={option.id}
-              className={cn(
-                "rounded-sm px-2.5 py-1 text-[11.5px] font-semibold transition-colors",
-                engine === option.id
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-text-2 hover:text-foreground"
-              )}
-              onClick={() => onEngine(option.id)}
-              title={option.hint}
-            >
-              {option.label}
-            </button>
-          ))}
+          {options.map((option) => {
+            const OptionIcon = option.Icon;
+            return (
+              <button
+                key={option.id}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-[11.5px] font-semibold transition-colors",
+                  engine === option.id
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-text-2 hover:text-foreground"
+                )}
+                onClick={() => onEngine(option.id)}
+                title={option.hint}
+              >
+                <OptionIcon size={12} />
+                {option.label}
+              </button>
+            );
+          })}
         </div>
-        <span className="text-[11.5px] text-text-3">{current.hint}</span>
+        <span className="flex-1" />
+        <AiStatusChip status={aiStatus ?? null} />
       </div>
 
       {engine !== "algoritmo" && (
@@ -639,15 +753,25 @@ function ModuleAiRow({
             <div className="mt-2 text-[12.5px] text-text-2">Generando análisis con la IA…</div>
           )}
 
-          {!state && (
-            <button
-              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-brand-soft bg-card px-2.5 py-1.5 text-[12px] font-semibold text-brand-text transition-colors hover:bg-brand-tint"
-              onClick={onGenerate}
-            >
-              <Sparkles size={13} />
-              Generar análisis con IA
-            </button>
-          )}
+          {!state &&
+            (aiStatus && !aiStatus.configured ? (
+              <a
+                href="/settings/ai"
+                className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-warning-soft bg-warning-tint px-2.5 py-1.5 text-[12px] font-semibold text-warning-text transition-opacity hover:opacity-90"
+              >
+                <Bot size={13} />
+                Conectar la IA en Ajustes → IA
+                <ArrowUpRight size={12} />
+              </a>
+            ) : (
+              <button
+                className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-brand-soft bg-card px-2.5 py-1.5 text-[12px] font-semibold text-brand-text transition-colors hover:bg-brand-tint"
+                onClick={onGenerate}
+              >
+                <Sparkles size={13} />
+                Generar análisis con IA
+              </button>
+            ))}
 
           {state?.status === "error" && (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] text-danger-text">
@@ -755,6 +879,34 @@ export function ExecDashboard() {
   const [copiedInsight, setCopiedInsight] = useState<string | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+
+  /* 039 — Estado de la conexión de IA (la del CRM), sin secretos. */
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/dashboard-management/ai-status", {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const json = await response.json();
+        if (!cancel && json && typeof json.configured === "boolean") {
+          setAiStatus({
+            configured: json.configured,
+            source: json.source ?? null,
+            provider: json.provider ?? null,
+            model: json.model ?? null,
+          });
+        }
+      } catch {
+        /* el chip simplemente no se muestra */
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, []);
 
   const load = useCallback(
     async (override?: typeof filters) => {
@@ -1017,6 +1169,7 @@ export function ExecDashboard() {
         onGenerate={() => void requestModuleInsight(module, mode === "ia" ? "ia" : "dual")}
         onCopy={(text) => void copyModuleMessage(module, text)}
         copied={copiedMod === module}
+        aiStatus={aiStatus}
       />
     );
   };
@@ -1168,6 +1321,11 @@ export function ExecDashboard() {
   const selectClass =
     "h-8 rounded-md border border-border-strong bg-background px-2 text-[12px] text-text-2";
 
+  const maxCompanyPremium = Math.max(
+    ...data.companies.map((company) => company.activePremium),
+    1
+  );
+
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain">
     <div className="w-full space-y-3 px-3 pb-8 lg:px-5">
@@ -1185,7 +1343,16 @@ export function ExecDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge tone="warning">Pólizas en proceso de carga</Badge>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-full border border-warning-soft bg-warning-tint px-2.5 py-1 text-[11px] font-semibold text-warning-text transition-colors hover:opacity-90"
+            title="Hay pólizas todavía en proceso de carga en el sistema nuevo — abrilo para ver la lista"
+            onClick={() => gotoList("cartera", "loaded")}
+          >
+            <Hourglass size={12} />
+            Pólizas en proceso de carga
+            <ArrowUpRight size={11} />
+          </button>
           <button
             className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent disabled:opacity-50"
             onClick={() => void load()}
@@ -1215,15 +1382,15 @@ export function ExecDashboard() {
         <div className="flex flex-wrap items-center gap-2">
           {(
             [
-              ["Este mes", "month"],
-              ["Mes pasado", "lastMonth"],
-              ["Este año", "year"],
-              ["Todo el tiempo", "all"],
+              ["Este mes", "month", CalendarDays],
+              ["Mes pasado", "lastMonth", History],
+              ["Este año", "year", CalendarRange],
+              ["Todo el tiempo", "all", InfinityIcon],
             ] as const
-          ).map(([label, preset]) => (
+          ).map(([label, preset, Icon]) => (
             <button
               key={label}
-              className="rounded-full border border-border px-2.5 py-1 text-[11.5px] font-semibold text-text-2 transition-colors hover:bg-accent"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11.5px] font-semibold text-text-2 transition-colors hover:bg-accent"
               onClick={() => {
                 const range = presetRange(preset);
                 const next = { ...filters, from: range.from, to: range.to };
@@ -1231,6 +1398,7 @@ export function ExecDashboard() {
                 void load(next);
               }}
             >
+              <Icon size={12} />
               {label}
             </button>
           ))}
@@ -1337,17 +1505,22 @@ export function ExecDashboard() {
               </span>
             ))}
             <button
-              className="rounded-full border px-2.5 py-0.5 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
+              className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
               onClick={clearFilters}
+              title="Quitar todos los filtros y recargar"
             >
+              <RotateCcw size={11} />
               Limpiar todo
             </button>
           </div>
         )}
 
-        <p className="mt-2 flex items-center gap-1.5 text-[11px] text-text-3">
-          <SlidersHorizontal size={12} />
-          Estos filtros afectan a todos los módulos del tablero.
+        <p
+          className="mt-2 flex items-center gap-1.5 text-[11px] text-text-3"
+          title="Los filtros de esta barra (fechas, oficina, producto, canal, empleado, compañía y búsqueda) afectan a todos los módulos del tablero."
+        >
+          <Info size={12} />
+          Afectan a todos los módulos del tablero
         </p>
       </section>
 
@@ -1534,16 +1707,17 @@ export function ExecDashboard() {
 
           {listsRow("cartera")}
 
-          <div className="flex items-start gap-2.5 rounded-md border border-warning-soft bg-warning-tint px-3 py-2.5">
-            <AlertTriangle size={18} className="mt-0.5 shrink-0 text-warning-text" />
-            <div className="text-[12.5px] text-text-2">
-              <strong className="block text-foreground">Cartera todavía en proceso de carga</strong>
-              <span>
-                Estos indicadores reflejan únicamente las pólizas ya creadas y cargadas en el sistema
-                nuevo (Seguros Agénticos). No deben interpretarse como la cartera final.
-              </span>
-            </div>
-          </div>
+          <details className="rounded-md border border-warning-soft bg-warning-tint px-3 py-2">
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-[12px] font-semibold text-warning-text [&::-webkit-details-marker]:hidden">
+              <AlertTriangle size={15} className="shrink-0" />
+              Cartera en proceso de carga — indicadores parciales
+              <Info size={12} className="text-text-3" />
+            </summary>
+            <p className="mt-1.5 pl-[23px] text-[12px] text-text-2">
+              Reflejan únicamente las pólizas ya creadas y cargadas en el sistema nuevo (Seguros
+              Agénticos). No deben interpretarse como la cartera final.
+            </p>
+          </details>
 
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Kpi
@@ -1626,7 +1800,23 @@ export function ExecDashboard() {
                         {number(company.policies)}
                       </td>
                       <td className="px-3 py-2 text-[12.5px] tabular-nums">
-                        {money(company.activePremium)}
+                        <div className="flex items-center justify-end gap-2">
+                          <div
+                            className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-subtle"
+                            title={`Participación sobre la mayor compañía (${money(maxCompanyPremium)})`}
+                          >
+                            <div
+                              className="h-full rounded-full bg-brand"
+                              style={{
+                                width: `${Math.max(
+                                  (company.activePremium / maxCompanyPremium) * 100,
+                                  company.activePremium > 0 ? 4 : 0
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                          {money(company.activePremium)}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1844,20 +2034,20 @@ export function ExecDashboard() {
 
           <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
             <span className="text-[11.5px] font-bold uppercase tracking-wide text-text-3">
-              Motor de sugerencias
+              Motor
             </span>
             <div className="inline-flex rounded-md border bg-subtle p-0.5">
               {(
                 [
-                  ["algoritmo", "Algoritmo solo", "Solo reglas del sistema: instantáneo y auditable"],
-                  ["dual", "Dual (IA + algoritmo)", "El sistema prioriza con reglas y la IA enriquece el análisis"],
-                  ["ia", "Solo IA", "La IA analiza el contexto real y decide la mejor acción"],
+                  ["algoritmo", "Algoritmo", "Solo reglas del sistema: instantáneo, gratis y auditable", Sigma],
+                  ["dual", "Dual", "El sistema prioriza con reglas y la IA enriquece el por qué y los pasos con el mismo contexto", Blend],
+                  ["ia", "Solo IA", "La IA analiza el contexto real del cliente y propone la mejor acción", Bot],
                 ] as const
-              ).map(([id, label, hint]) => (
+              ).map(([id, label, hint, Icon]) => (
                 <button
                   key={id}
                   className={cn(
-                    "rounded-sm px-2.5 py-1 text-[11.5px] font-semibold transition-colors",
+                    "inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-[11.5px] font-semibold transition-colors",
                     engine === id
                       ? "bg-card text-foreground shadow-sm"
                       : "text-text-2 hover:text-foreground"
@@ -1865,28 +2055,25 @@ export function ExecDashboard() {
                   onClick={() => chooseEngine(id)}
                   title={hint}
                 >
+                  <Icon size={12} />
                   {label}
                 </button>
               ))}
             </div>
-            <span className="text-[11.5px] text-text-3">
-              {engine === "algoritmo" && "Reglas del sistema: instantáneo, gratis y auditable."}
-              {engine === "dual" &&
-                "El sistema prioriza con reglas y la IA enriquece el por qué y los pasos con el mismo contexto."}
-              {engine === "ia" &&
-                "La IA analiza el contexto real del cliente y propone la mejor acción."}
-            </span>
+            <span className="flex-1" />
+            <AiStatusChip status={aiStatus} />
           </div>
 
-          <p className="text-[11.5px] text-text-3">
+          <p className="flex items-center gap-1.5 text-[11.5px] text-text-3">
+            <ListChecks size={12} className="shrink-0" />
             {filters.search
               ? data.customers.length === 0
                 ? "Sin resultados. Probá con otro nombre, DNI o teléfono."
                 : data.customerStats && data.customerStats.matched > data.customers.length
-                  ? `Mostrando las últimas ${data.customers.length} de ${data.customerStats.matched} coincidencias. Afiná la búsqueda para ver menos.`
+                  ? `Mostrando ${data.customers.length} de ${data.customerStats.matched} coincidencias.`
                   : `${data.customers.length} resultado${data.customers.length === 1 ? "" : "s"}.`
               : data.customerStats
-                ? `Últimas ${data.customers.length} de ${data.customerStats.total} clientes cargados (los más recientes). Buscá por nombre, DNI o teléfono para ir directo a una ficha.`
+                ? `Últimas ${data.customers.length} de ${data.customerStats.total} fichas cargadas · buscá por nombre, DNI o teléfono.`
                 : ""}
           </p>
 
@@ -1986,15 +2173,25 @@ export function ExecDashboard() {
                             </div>
                           )}
 
-                          {!insightState && (
-                            <button
-                              className="mt-1 inline-flex items-center gap-1 rounded-md border border-brand-soft bg-card px-2 py-1 text-[11.5px] font-semibold text-brand-text transition-colors hover:bg-brand-tint"
-                              onClick={() => void requestInsight(customer, withAi)}
-                            >
-                              <Sparkles size={11} />
-                              Generar análisis con IA
-                            </button>
-                          )}
+                          {!insightState &&
+                            (aiStatus && !aiStatus.configured ? (
+                              <a
+                                href="/settings/ai"
+                                className="mt-1 inline-flex items-center gap-1 rounded-md border border-warning-soft bg-warning-tint px-2 py-1 text-[11.5px] font-semibold text-warning-text transition-opacity hover:opacity-90"
+                              >
+                                <Bot size={11} />
+                                Conectar IA en Ajustes → IA
+                                <ArrowUpRight size={11} />
+                              </a>
+                            ) : (
+                              <button
+                                className="mt-1 inline-flex items-center gap-1 rounded-md border border-brand-soft bg-card px-2 py-1 text-[11.5px] font-semibold text-brand-text transition-colors hover:bg-brand-tint"
+                                onClick={() => void requestInsight(customer, withAi)}
+                              >
+                                <Sparkles size={11} />
+                                Generar análisis con IA
+                              </button>
+                            ))}
 
                           {insightState?.status === "error" && (
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11.5px] text-danger-text">
@@ -2276,7 +2473,19 @@ export function ExecDashboard() {
                         className="grid grid-cols-[150px_1fr] items-center gap-3 sm:grid-cols-[220px_1fr_auto]"
                       >
                         <div className="min-w-0">
-                          <strong className="block truncate text-[12.5px]">{stage.name}</strong>
+                          <strong className="flex items-center gap-1.5 text-[12.5px]">
+                            <span
+                              className={cn(
+                                "h-2 w-2 shrink-0 rounded-full",
+                                stage.kind === "won"
+                                  ? "bg-[#20C933]"
+                                  : stage.kind === "lost"
+                                    ? "bg-[#F82B60]"
+                                    : "bg-brand"
+                              )}
+                            />
+                            <span className="truncate">{stage.name}</span>
+                          </strong>
                           <small className="text-[10.5px] text-text-3">
                             {stage.kind === "won"
                               ? "ganada"
@@ -2287,7 +2496,14 @@ export function ExecDashboard() {
                         </div>
                         <div className="h-2.5 overflow-hidden rounded-full bg-subtle">
                           <div
-                            className="h-full rounded-full bg-brand"
+                            className={cn(
+                              "h-full rounded-full",
+                              stage.kind === "won"
+                                ? "bg-[#20C933]"
+                                : stage.kind === "lost"
+                                  ? "bg-[#F82B60]"
+                                  : "bg-brand"
+                            )}
                             style={{ width: `${width}%` }}
                           />
                         </div>
@@ -2443,10 +2659,21 @@ export function ExecDashboard() {
                           </td>
                           <td className="px-3 py-2 text-[12.5px]">
                             {row.link === "sin-match" ? (
-                              <Badge>Sin vínculo</Badge>
+                              <Badge icon={<Unlink size={11} />}>Sin vínculo</Badge>
                             ) : (
                               <>
-                                <Badge tone={row.link === "sgsa" ? "success" : "accent"}>
+                                <Badge
+                                  tone={row.link === "sgsa" ? "success" : "accent"}
+                                  icon={
+                                    row.link === "sgsa" ? (
+                                      <Link2 size={11} />
+                                    ) : row.link === "telefono" ? (
+                                      <Phone size={11} />
+                                    ) : (
+                                      <UserRound size={11} />
+                                    )
+                                  }
+                                >
                                   {row.link === "sgsa"
                                     ? "Vínculo directo"
                                     : row.link === "telefono"
