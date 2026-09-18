@@ -9,10 +9,14 @@ const schema = z.object({
   mime: z.string().trim().min(3).max(60).optional(),
   filename: z.string().trim().max(160).optional().nullable(),
   /**
-   * Base64 sin prefijo `data:` (máx ~8 MB decodificado, antes de adaptar).
+   * Base64 sin prefijo `data:` (máx ~42 MB decodificado, video incluido).
    * El charset se verifica sobre los extremos y no con un regex sobre los
-   * ~9 MB completos: RegExp.test sobre una cadena de ese tamaño revienta la
-   * pila de V8 (Maximum call stack size exceeded, visto en producción).
+   * ~53 M chars completos: RegExp.test sobre una cadena de ese tamaño revienta
+   * la pila de V8 (Maximum call stack size exceeded, visto en producción).
+   * Ojo: el `=` del padding solo puede ir al final; cuando el texto es más
+   * corto que el tramo, el primer slice ES el string completo — por eso el
+   * primer tramo se exige sin `=` únicamente si el payload es largo (bug de
+   * prod 042: una foto chica daba 422 por el `=` del final).
    */
   data: z
     .string()
@@ -20,7 +24,7 @@ const schema = z.object({
     .max(56_000_000)
     .refine(
       (s) =>
-        /^[A-Za-z0-9+/\s]*$/.test(s.slice(0, 4096)) &&
+        (s.length <= 4096 || /^[A-Za-z0-9+/\s]*$/.test(s.slice(0, 4096))) &&
         /^[A-Za-z0-9+/=\s]*$/.test(s.slice(-4096)),
       "base64 inválido"
     )
