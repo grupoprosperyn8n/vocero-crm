@@ -211,7 +211,7 @@ export async function upsertTemplate(input: {
   benefit?: string | null;
   ctaLabel?: string | null;
   ctaUrl?: string | null;
-  ctaKind?: "link" | "pdf";
+  ctaKind?: "link" | "pdf" | "agenda";
   assetId?: string | null;
   logoAssetId?: string | null;
 }): Promise<ProposalTemplateDto> {
@@ -288,7 +288,7 @@ function sanitizeTemplateInput(input: {
   benefit?: string | null;
   ctaLabel?: string | null;
   ctaUrl?: string | null;
-  ctaKind?: "link" | "pdf";
+  ctaKind?: "link" | "pdf" | "agenda";
   assetId?: string | null;
   logoAssetId?: string | null;
 }): Record<string, unknown> {
@@ -304,7 +304,8 @@ function sanitizeTemplateInput(input: {
   if (input.ctaLabel !== undefined) out.ctaLabel = cleanText(input.ctaLabel, 60);
   if (input.ctaUrl !== undefined) out.ctaUrl = cleanUrl(input.ctaUrl);
   if (input.ctaKind !== undefined)
-    out.ctaKind = input.ctaKind === "pdf" ? "pdf" : "link";
+    out.ctaKind =
+      input.ctaKind === "pdf" ? "pdf" : input.ctaKind === "agenda" ? "agenda" : "link";
   if (input.assetId !== undefined)
     out.assetId = input.assetId ? String(input.assetId).slice(0, 60) : null;
   if (input.logoAssetId !== undefined)
@@ -571,7 +572,7 @@ export async function createProposal(input: {
   companyName?: string | null;
   ctaLabel?: string | null;
   ctaUrl?: string | null;
-  ctaKind?: "link" | "pdf";
+  ctaKind?: "link" | "pdf" | "agenda";
   assetId?: string | null;
   logoAssetId?: string | null;
   /** 042 — medios en orden (fotos del carrusel + video): ids de assets. */
@@ -643,7 +644,14 @@ export async function createProposal(input: {
     companyName,
     companyAssetId,
     logoAssetId: input.logoAssetId ?? tpl.logoAssetId ?? null,
-    ctaLabel: cleanText(input.ctaLabel, 60) ?? tpl.ctaLabel,
+    // 042d — la publicidad de TURNOS: sin etiqueta propia del operador, el
+    // botón no hereda la genérica de la plantilla («Quiero renovar») sino que
+    // invita a reservar la videollamada.
+    ctaLabel:
+      cleanText(input.ctaLabel, 60) ??
+      ((input.ctaKind ?? tpl.ctaKind) === "agenda"
+        ? "Agendar videollamada"
+        : tpl.ctaLabel),
     ctaUrl: cleanUrl(input.ctaUrl) ?? tpl.ctaUrl,
     ctaKind: input.ctaKind ?? tpl.ctaKind,
     assetId: input.assetId ?? firstImageId ?? tpl.assetId ?? null,
@@ -1124,7 +1132,7 @@ export type PublicProposal = {
   media: { id: string; mime: string }[];
   ctaLabel: string | null;
   ctaUrl: string | null;
-  ctaKind: "link" | "pdf";
+  ctaKind: "link" | "pdf" | "agenda";
   clientName: string;
   kind: string;
   /** 041e — la publicidad se puede pausar (online/offline) desde el panel. */
@@ -1149,6 +1157,22 @@ export async function getPublicWhatsappPhone(organizationId: string): Promise<st
   // lo lleva un bot externo): el número se configura por entorno.
   const fromEnv = (getEnv().WA_PUBLIC_PHONE ?? "").replace(/\D/g, "");
   return fromEnv.length >= 8 ? fromEnv : null;
+}
+
+/**
+ * 042d — Enlace para AGENDAR VIDEOLAMADA (CTA «agenda»).
+ *
+ * Es el link de agenda del negocio: por defecto el modal de asesoría del
+ * linktree de Rafael (calendario de turnos con videollamada). Se puede pisar
+ * por entorno (AGENDA_PUBLIC_URL) y cada publicidad puede cargar su propia
+ * URL en el CTA, que tiene prioridad.
+ */
+export const DEFAULT_AGENDA_PUBLIC_URL =
+  "https://linktree.rafaelallendeseguros.digital/?modal=asesoria";
+
+export function getAgendaPublicUrl(): string {
+  const fromEnv = (getEnv().AGENDA_PUBLIC_URL ?? "").trim();
+  return fromEnv.length > 0 ? fromEnv : DEFAULT_AGENDA_PUBLIC_URL;
 }
 
 /** Lectura pública por token + registro de vista (primera y última). */

@@ -30,6 +30,7 @@ import {
   PauseCircle,
   Pencil,
   Phone,
+  Play,
   PlayCircle,
   RefreshCw,
   RotateCcw,
@@ -892,7 +893,7 @@ function ProposalFlow({
     benefit: "",
     ctaLabel: "",
     ctaUrl: "",
-    ctaKind: "link" as "link" | "pdf",
+    ctaKind: "link" as "link" | "pdf" | "agenda",
     companyRef: "",
     assetId: null as string | null,
     logoAssetId: null as string | null,
@@ -1524,11 +1525,23 @@ function ProposalFlow({
         />
         <select
           value={form.ctaKind}
-          onChange={(e) => setForm((f) => ({ ...f, ctaKind: e.target.value as "link" | "pdf" }))}
+          onChange={(e) => {
+            const v = e.target.value as "link" | "pdf" | "agenda";
+            setForm((f) => ({
+              ...f,
+              ctaKind: v,
+              // 042d — al elegir videollamada, invitar a reservar (editable).
+              ctaLabel:
+                v === "agenda" && !f.ctaLabel.trim()
+                  ? "Agendar videollamada"
+                  : f.ctaLabel,
+            }));
+          }}
           className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
         >
           <option value="link">Enlace web</option>
           <option value="pdf">URL de PDF</option>
+          <option value="agenda">Videollamada (agenda)</option>
         </select>
       </div>
       <div className="grid gap-2 md:grid-cols-2">
@@ -1593,13 +1606,21 @@ function ProposalFlow({
           {media.map((m, i) => (
             <div key={m.id} className="relative">
               {m.mime.startsWith("video/") ? (
-                <video
-                  src={m.url}
-                  muted
-                  playsInline
-                  preload="metadata"
-                  className="h-16 w-24 rounded border object-cover"
-                />
+                <span className="relative block">
+                  <video
+                    src={m.url}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    className="h-16 w-24 rounded-lg border object-cover"
+                  />
+                  {/* 042d — miniaturas fundidas al diseño: botón play glass */}
+                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-black/10">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-sky-700 shadow-md">
+                      <Play size={12} fill="currentColor" />
+                    </span>
+                  </span>
+                </span>
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img

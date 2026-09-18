@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { MessageCircle } from "lucide-react";
-import { kindLabel, loadPublicProposal } from "@/server/proposals/service";
+import { MessageCircle, Video } from "lucide-react";
+import { getAgendaPublicUrl, kindLabel, loadPublicProposal } from "@/server/proposals/service";
 import { getBranding } from "@/server/branding";
 import { PrintButton } from "./print-button";
 import { MediaCarousel } from "./media-carousel";
@@ -97,7 +97,13 @@ export default async function ProposalPage({ params }: Props) {
     ? `https://wa.me/${proposal.whatsappPhone}?text=${waText}`
     : null;
 
-  const ctaHref = proposal.ctaUrl ?? null;
+  // 042d — CTA «videollamada»: botón grande y luminoso que lleva a agendar un
+  // turno (por defecto, el calendario de asesoría del linktree; la publicidad
+  // puede cargar su propia URL y esa manda).
+  const esAgenda = proposal.ctaKind === "agenda";
+  const ctaHref = esAgenda
+    ? proposal.ctaUrl ?? getAgendaPublicUrl()
+    : proposal.ctaUrl ?? null;
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-gradient-to-b from-sky-50 via-white to-indigo-50 px-3 py-6 sm:px-4 sm:py-10">
@@ -106,6 +112,8 @@ export default async function ProposalPage({ params }: Props) {
         @keyframes rp-fade-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes rp-blob { 0%, 100% { transform: translate(0, 0) scale(1); } 33% { transform: translate(26px, -20px) scale(1.08); } 66% { transform: translate(-18px, 16px) scale(0.95); } }
         @keyframes rp-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+        @keyframes rp-shine { 0% { transform: translateX(-130%) skewX(-16deg); } 55%, 100% { transform: translateX(240%) skewX(-16deg); } }
+        @keyframes rp-cta-glow { 0%, 100% { box-shadow: 0 16px 40px -12px rgba(124, 58, 237, 0.55); } 50% { box-shadow: 0 20px 52px -10px rgba(217, 70, 239, 0.6); } }
         @keyframes rp-glow { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.9; } }
       `}</style>
       <div
@@ -228,8 +236,55 @@ export default async function ProposalPage({ params }: Props) {
             </div>
           )}
 
-          {/* Botonera: WhatsApp directo + el CTA cargado en Ajustes */}
+          {/* Botonera: videollamada (si la publicidad es de agenda) + WhatsApp + CTA */}
           <div className="space-y-2 pt-1">
+            {esAgenda && ctaHref && (
+              <a
+                href={ctaHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-agenda-cta
+                className="group relative block overflow-hidden rounded-3xl border border-violet-200/80 bg-gradient-to-br from-white/95 via-violet-50/85 to-fuchsia-50/80 p-4 shadow-[0_18px_44px_-18px_rgba(139,92,246,0.5)] backdrop-blur-xl transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_52px_-18px_rgba(139,92,246,0.6)]"
+              >
+                {/* brillos suaves en movimiento (glam, sin ruido) */}
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute -top-10 -right-8 h-28 w-28 rounded-full bg-fuchsia-300/40 blur-2xl"
+                  style={{ animation: "rp-blob 16s ease-in-out infinite" }}
+                />
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute -bottom-12 -left-10 h-32 w-32 rounded-full bg-violet-300/40 blur-2xl"
+                  style={{ animation: "rp-blob 20s ease-in-out infinite reverse" }}
+                />
+                <span className="relative flex items-start gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-400/40">
+                    <Video size={20} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[15px] font-extrabold tracking-tight text-neutral-900">
+                      Videollamada con un asesor
+                    </span>
+                    <span className="mt-0.5 block text-[12px] text-neutral-600">
+                      Elegí día y horario en un minuto · te esperamos online
+                    </span>
+                  </span>
+                </span>
+                <span
+                  className="relative mt-3 flex min-h-[54px] w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-500 to-violet-600 px-5 py-3.5 text-center text-[15px] font-bold text-white transition-transform group-hover:scale-[1.015]"
+                  style={{ animation: "rp-cta-glow 3.4s ease-in-out infinite" }}
+                >
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-white/25 blur-md"
+                    style={{ animation: "rp-shine 3.2s ease-in-out infinite" }}
+                  />
+                  <Video size={17} />
+                  {proposal.ctaLabel ?? "Agendar videollamada"}
+                  <span aria-hidden>→</span>
+                </span>
+              </a>
+            )}
             {waHref && (
               <a
                 href={waHref}
@@ -253,7 +308,7 @@ export default async function ProposalPage({ params }: Props) {
                   : "Respuesta al instante de nuestro asistente virtual"}
               </p>
             )}
-            {ctaHref && (
+            {!esAgenda && ctaHref && (
               <a
                 href={ctaHref}
                 target="_blank"

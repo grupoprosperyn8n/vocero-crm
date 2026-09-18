@@ -359,13 +359,124 @@ for (const r of rooms.slice(0, 12)) {
 }
 check("30. el asesor recibe el aviso en su chat interno", aviso, `${rooms.length} salas`);
 
+/* ---------- 042d: reproductor minimalista + CTA videollamada ---------- */
+
+const playerOk = /data-video-player/.test(html1) && !/<video[^>]*\bcontrols\b/.test(html1);
+check(
+  "31. reproductor minimalista: sin barra nativa del navegador, fundido al diseño",
+  playerOk,
+  `player=${/data-video-player/.test(html1)} controls=${/<video[^>]*\bcontrols\b/.test(html1)}`
+);
+
+// La publicidad común (CTA web) NO muestra el bloque de videollamada.
+check(
+  "32. la publicidad común no muestra el bloque de videollamada",
+  !/data-agenda-cta/.test(html1),
+  `agendaBlock=${/data-agenda-cta/.test(html1)}`
+);
+
+// Publicidad especial de TURNOS: botón grande que lleva a agendar videollamada.
+const propAgRes = await ctx.request.post(`${BASE}/api/proposals`, {
+  data: {
+    kind: "renovacion",
+    clientRef: TEST_CLIENT,
+    clientName: "TEST IA",
+    clientDni: "26322995",
+    clientPhone: "3417035515",
+    title: `E2E 042d agenda ${stamp}`,
+    benefit: "Videollamada con un asesor",
+    ctaKind: "agenda",
+  },
+  headers: { origin: ORIGIN, "content-type": "application/json" },
+});
+const propAg = (await propAgRes.json().catch(() => ({})))?.proposal;
+const htmlAg = propAg?.publicUrl
+  ? await (await anon.get(`${BASE}${propAg.publicUrl}`)).text()
+  : "";
+const agendaOk =
+  propAgRes.status() === 201 &&
+  /data-agenda-cta/.test(htmlAg) &&
+  htmlAg.includes("?modal=asesoria") &&
+  htmlAg.includes("Videollamada con un asesor") &&
+  htmlAg.includes("Agendar videollamada");
+check(
+  "33. CTA videollamada: redirige al calendario (linktree ?modal=asesoria)",
+  agendaOk,
+  `${propAgRes.status()} block=${/data-agenda-cta/.test(htmlAg)} link=${htmlAg.includes("?modal=asesoria")}`
+);
+
+// Si la publicidad carga su propia URL de agenda, esa manda sobre la del negocio.
+const propAg2Res = await ctx.request.post(`${BASE}/api/proposals`, {
+  data: {
+    kind: "renovacion",
+    clientRef: TEST_CLIENT,
+    clientName: "TEST IA",
+    clientDni: "26322995",
+    clientPhone: "3417035515",
+    title: `E2E 042d agenda propia ${stamp}`,
+    ctaKind: "agenda",
+    ctaUrl: "https://agenda.equipo.test/turno",
+  },
+  headers: { origin: ORIGIN, "content-type": "application/json" },
+});
+const propAg2 = (await propAg2Res.json().catch(() => ({})))?.proposal;
+const htmlAg2 = propAg2?.publicUrl
+  ? await (await anon.get(`${BASE}${propAg2.publicUrl}`)).text()
+  : "";
+check(
+  "34. agenda con URL propia: manda la de la publicidad",
+  propAg2Res.status() === 201 && htmlAg2.includes("agenda.equipo.test/turno"),
+  String(propAg2Res.status())
+);
+
+// Mobile-first de verdad: las dos páginas (video + videollamada) miden 0 de
+// desborde horizontal en 320 (mínimo real) y en 390 (iPhone común).
+const medirOverflow = async (w, h, path) => {
+  const c = await browser.newContext({ viewport: { width: w, height: h } });
+  const pg = await c.newPage();
+  await pg.goto(`${BASE}${path}`, { waitUntil: "domcontentloaded" });
+  await pg.waitForTimeout(1200);
+  const over = await pg.evaluate(
+    () => document.scrollingElement.scrollWidth - window.innerWidth
+  );
+  await c.close();
+  return over;
+};
+const ov320v = prop?.publicUrl ? await medirOverflow(320, 568, prop.publicUrl) : 99;
+const ov390v = prop?.publicUrl ? await medirOverflow(390, 844, prop.publicUrl) : 99;
+const ov320a = propAg?.publicUrl ? await medirOverflow(320, 568, propAg.publicUrl) : 99;
+const ov390a = propAg?.publicUrl ? await medirOverflow(390, 844, propAg.publicUrl) : 99;
+check(
+  "35b. mobile-first: video y videollamada sin desborde en 320 y 390px",
+  ov320v <= 2 && ov390v <= 2 && ov320a <= 2 && ov390a <= 2,
+  `video +${ov320v}/+${ov390v} · agenda +${ov320a}/+${ov390a}`
+);
+
+const delAg = propAg?.id
+  ? await ctx.request.post(`${BASE}/api/proposals/${propAg.id}/lifecycle`, {
+      data: { action: "delete" },
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+    })
+  : null;
+const delAg2 = propAg2?.id
+  ? await ctx.request.post(`${BASE}/api/proposals/${propAg2.id}/lifecycle`, {
+      data: { action: "delete" },
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+    })
+  : null;
+check(
+  "35. limpieza 042d: publicidades de videollamada eliminadas",
+  (delAg?.status() ?? 0) === 200 && (delAg2?.status() ?? 0) === 200,
+  `${delAg?.status() ?? "-"} ${delAg2?.status() ?? "-"}`
+);
+
 /* ---------- limpieza ---------- */
 
 const del = await ctx.request.post(`${BASE}/api/proposals/${prop.id}/lifecycle`, {
   data: { action: "delete" },
   headers: { origin: ORIGIN, "content-type": "application/json" },
 });
-check("31. limpieza: campaña de prueba eliminada", del.status() === 200, String(del.status()));
+check("36. limpieza: campaña de prueba eliminada", del.status() === 200, String(del.status()));
 for (const email of [EMAIL_OWNER, EMAIL_MEMBER]) {
   await fetch(`${BASE}/api/admin/users?email=${encodeURIComponent(email)}`, {
     method: "DELETE",
@@ -374,7 +485,7 @@ for (const email of [EMAIL_OWNER, EMAIL_MEMBER]) {
 }
 
 const errTrasLimpieza = consoleErrors.filter((e) => !/sign-in|401/.test(e)).slice(0, 3);
-check("32. sin errores de consola (fuera de auth)", errTrasLimpieza.length === 0, errTrasLimpieza.join(" | ").slice(0, 220));
+check("37. sin errores de consola (fuera de auth)", errTrasLimpieza.length === 0, errTrasLimpieza.join(" | ").slice(0, 220));
 
 await anon.dispose();
 await ctxMember.dispose();

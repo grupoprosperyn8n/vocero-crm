@@ -19,7 +19,7 @@ type Draft = {
   benefit: string;
   ctaLabel: string;
   ctaUrl: string;
-  ctaKind: "link" | "pdf";
+  ctaKind: "link" | "pdf" | "agenda";
   assetId: string | null;
   logoAssetId: string | null;
 };
@@ -265,12 +265,13 @@ export function ProposalsSettings() {
             />
             <select
               value={current.ctaKind}
-              onChange={(e) => set("ctaKind", e.target.value as "link" | "pdf")}
+              onChange={(e) => set("ctaKind", e.target.value as "link" | "pdf" | "agenda")}
               disabled={!canEdit}
               className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
             >
               <option value="link">Enlace web</option>
               <option value="pdf">URL de PDF</option>
+              <option value="agenda">Videollamada (agenda)</option>
             </select>
           </div>
         </div>

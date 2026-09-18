@@ -261,7 +261,7 @@ export function LibraryPanel() {
               src={videoOpen.url}
               controls
               autoPlay
-              className="max-h-[70vh] w-full rounded-xl bg-black"
+              className="max-h-[70vh] w-full rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 shadow-2xl ring-1 ring-white/60"
             />
           </div>
         </div>

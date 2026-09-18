@@ -618,7 +618,7 @@ export type ProposalDto = {
   hasImage: boolean;
   ctaLabel: string | null;
   ctaUrl: string | null;
-  ctaKind: "link" | "pdf";
+  ctaKind: "link" | "pdf" | "agenda";
   clientRef: string;
   clientName: string;
   clientDni: string | null;
@@ -688,7 +688,7 @@ export type ProposalTemplateDto = {
   benefit: string | null;
   ctaLabel: string | null;
   ctaUrl: string | null;
-  ctaKind: "link" | "pdf";
+  ctaKind: "link" | "pdf" | "agenda";
   assetId?: string | null;
   logoAssetId?: string | null;
   hasImage: boolean;

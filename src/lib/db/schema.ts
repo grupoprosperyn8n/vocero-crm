@@ -1747,8 +1747,9 @@ export const proposalTemplate = pgTable(
     }),
     ctaLabel: text("cta_label"),
     ctaUrl: text("cta_url"),
-    /** "link" (página o publicación) o "pdf" (url directa a un PDF). */
-    ctaKind: text("cta_kind", { enum: ["link", "pdf"] })
+    /** "link" (página o publicación), "pdf" (url directa a un PDF) o "agenda"
+     * (videollamada: botón impactante que lleva a agendar un turno). */
+    ctaKind: text("cta_kind", { enum: ["link", "pdf", "agenda"] })
       .notNull()
       .default("link"),
     accent: text("accent"),
@@ -1801,7 +1802,7 @@ export const proposal = pgTable(
     }),
     ctaLabel: text("cta_label"),
     ctaUrl: text("cta_url"),
-    ctaKind: text("cta_kind", { enum: ["link", "pdf"] })
+    ctaKind: text("cta_kind", { enum: ["link", "pdf", "agenda"] })
       .notNull()
       .default("link"),
     assetId: text("asset_id").references(() => proposalAsset.id, {

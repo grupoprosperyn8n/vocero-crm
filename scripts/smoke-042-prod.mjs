@@ -162,14 +162,53 @@ check(
   `derive=${derPer.status} firma=${htmlAs.includes("Te la envió")} ref=${/\?text=[^"]*ref%20/.test(htmlAs)}`
 );
 
-// ---- baja: la pieza se elimina y la página deja de existir -----------------
+// ---- 042d: reproductor minimalista + CTA videollamada -----------------------
+check(
+  "19b. reproductor minimalista: sin controles nativos, fundido al diseño",
+  html.includes("data-video-player") && !/<video[^>]*\bcontrols\b/.test(html),
+  `player=${html.includes("data-video-player")} nativo=${/<video[^>]*\bcontrols\b/.test(html)}`
+);
+
+const crearAg = await fetch(`${BASE}/api/proposals`, {
+  method: "POST",
+  headers: { ...H, "content-type": "application/json" },
+  body: JSON.stringify({
+    clientRef: TEST_CLIENT,
+    clientName: "TEST IA",
+    kind: "renovacion",
+    title: `Smoke 042d agenda ${stamp}`,
+    benefit: "Videollamada con un asesor",
+    ctaKind: "agenda",
+  }),
+});
+const propAg = (await crearAg.json().catch(() => ({})))?.proposal;
+const htmlAg = await (await fetch(`${BASE}/p/${propAg?.token}`)).text();
+check(
+  "19c. CTA videollamada: lleva al calendario (linktree ?modal=asesoria)",
+  crearAg.status === 201 &&
+    htmlAg.includes("data-agenda-cta") &&
+    htmlAg.includes("?modal=asesoria") &&
+    htmlAg.includes("Videollamada con un asesor"),
+  `status=${crearAg.status} block=${htmlAg.includes("data-agenda-cta")} link=${htmlAg.includes("?modal=asesoria")}`
+);
+
+// ---- baja: las piezas se eliminan y las páginas dejan de existir -----------
 const del = await fetch(`${BASE}/api/proposals/${prop?.id}/lifecycle`, {
   method: "POST",
   headers: { ...H, "content-type": "application/json" },
   body: JSON.stringify({ action: "delete" }),
 });
+const delAg = await fetch(`${BASE}/api/proposals/${propAg?.id}/lifecycle`, {
+  method: "POST",
+  headers: { ...H, "content-type": "application/json" },
+  body: JSON.stringify({ action: "delete" }),
+});
 const paginaMuerta = await fetch(`${BASE}/p/${prop?.token}`);
-check("20. pieza eliminada (API + página 404)", del.status === 200 && paginaMuerta.status === 404, `${del.status}/${paginaMuerta.status}`);
+check(
+  "20. piezas eliminadas (API + páginas 404)",
+  del.status === 200 && delAg.status === 200 && paginaMuerta.status === 404,
+  `${del.status}/${delAg.status}/${paginaMuerta.status}`
+);
 
 for (const mail of [EMAIL, EMAIL_M]) {
   await fetch(`${BASE}/api/admin/users?email=${encodeURIComponent(mail)}`, { method: "DELETE", headers: { "x-admin-key": ADMIN_KEY } });

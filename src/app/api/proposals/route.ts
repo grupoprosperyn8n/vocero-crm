@@ -54,7 +54,7 @@ const createSchema = z.object({
   companyName: z.string().trim().max(120).optional().nullable(),
   ctaLabel: z.string().trim().max(60).optional().nullable(),
   ctaUrl: z.string().trim().max(500).optional().nullable(),
-  ctaKind: z.enum(["link", "pdf"]).optional(),
+  ctaKind: z.enum(["link", "pdf", "agenda"]).optional(),
   assetId: z.string().trim().max(60).optional().nullable(),
   logoAssetId: z.string().trim().max(60).optional().nullable(),
   /** 042 — medios en orden: fotos del carrusel + video (mp4/webm). */
