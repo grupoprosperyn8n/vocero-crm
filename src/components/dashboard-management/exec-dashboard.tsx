@@ -412,6 +412,13 @@ function HelpZone({
 
 /* ———————————————————— Sugerencias de hoy ———————————————————— */
 
+const SUGGESTION_TONES: Record<string, string> = {
+  danger: "border-danger-soft bg-danger-tint text-danger-text hover:opacity-90",
+  warning: "border-warning-soft bg-warning-tint text-warning-text hover:opacity-90",
+  brand: "border-brand-soft bg-brand-tint text-brand-text hover:opacity-90",
+  success: "border-success-soft bg-success-tint text-success-text hover:opacity-90",
+};
+
 function SuggestionsStrip({
   data,
   onGoto,
@@ -421,19 +428,26 @@ function SuggestionsStrip({
   onGoto: (tab: TabId) => void;
   onOpenList: (tab: TabId, listId: string) => void;
 }) {
-  const items: { text: string; tab: TabId; list?: string }[] = [];
+  const items: {
+    text: string;
+    tab: TabId;
+    list?: string;
+    tone: "danger" | "warning" | "brand" | "success";
+  }[] = [];
 
   if (data.current.expires7 > 0) {
     items.push({
       text: `${number(data.current.expires7)} pólizas vencen en ≤7 días — hablá hoy`,
       tab: "retencion",
       list: "expires7",
+      tone: "danger",
     });
   } else if (data.current.expires30 > 0) {
     items.push({
       text: `${number(data.current.expires30)} pólizas vencen este mes — prepará la ronda`,
       tab: "retencion",
       list: "expires30",
+      tone: "warning",
     });
   }
 
@@ -442,6 +456,7 @@ function SuggestionsStrip({
       text: `${number(data.opportunity.reactivationCandidates)} clientes para reactivar`,
       tab: "reactivacion",
       list: "candidates",
+      tone: "warning",
     });
   }
 
@@ -451,6 +466,7 @@ function SuggestionsStrip({
       text: `${topCross.opportunity}: ${number(topCross.customers)} clientes para ampliar`,
       tab: "cross",
       list: topCross.opportunity.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      tone: "brand",
     });
   }
 
@@ -459,12 +475,14 @@ function SuggestionsStrip({
     items.push({
       text: `CRM: ${number(leads)} ${leads === 1 ? "oportunidad abierta" : "oportunidades abiertas"}`,
       tab: "crm",
+      tone: "brand",
     });
   }
 
   items.push({
     text: `Migración: ${percent(data.migration.operationMatchRate)} de gestiones vinculadas`,
     tab: "migracion",
+    tone: "success",
   });
 
   if (!items.length) return null;
@@ -479,7 +497,10 @@ function SuggestionsStrip({
         {items.slice(0, 5).map((item) => (
           <button
             key={item.text}
-            className="rounded-full border border-border bg-card px-2.5 py-1 text-[11.5px] text-text-2 transition-colors hover:border-brand-soft hover:bg-brand-tint"
+            className={cn(
+              "rounded-full border px-2.5 py-1 text-[11.5px] font-semibold transition-opacity",
+              SUGGESTION_TONES[item.tone] ?? "border-border bg-card text-text-2 hover:opacity-90"
+            )}
             onClick={() => (item.list ? onOpenList(item.tab, item.list) : onGoto(item.tab))}
           >
             {item.text}
