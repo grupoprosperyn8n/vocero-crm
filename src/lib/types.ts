@@ -680,6 +680,10 @@ export type TeamGroupLiteDto = {
 export type ProposalTemplateDto = {
   id: string | null;
   kind: string;
+  /** 042e — nombre visible del tipo (los tipos propios); null = catálogo. */
+  label: string | null;
+  /** 042e — guía (system prompt) del asistente para esta acción comercial. */
+  aiPrompt: string | null;
   title: string;
   subtitle: string | null;
   body: string;
@@ -703,6 +707,8 @@ export const PROPOSAL_KINDS = [
   { id: "venta_cruzada", label: "Venta cruzada", emoji: "🧩" },
   { id: "reactivacion", label: "Reactivación", emoji: "🔁" },
   { id: "fidelizacion", label: "Fidelización", emoji: "💙" },
+  { id: "captacion", label: "Captación de clientes", emoji: "🧲" },
+  { id: "lanzamiento", label: "Lanzamiento de producto", emoji: "🚀" },
 ] as const;
 
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number]["id"];

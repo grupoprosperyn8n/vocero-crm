@@ -37,6 +37,9 @@ export type CopyContext = {
   instructions: string;
   clientName: string;
   kind: string;
+  /** 042e — guía del negocio para esta acción comercial (la resuelve el
+   * servidor: plantilla del tipo o la sugerida de fábrica). */
+  kindPrompt: string;
   productName: string;
   companyName: string;
   title: string;
@@ -83,6 +86,8 @@ export function sanitizeCopyContext(raw: unknown): CopyContext | null {
     instructions: clampText(data.instructions, 400).slice(0, 400),
     clientName,
     kind,
+    // 042e — la guía la resuelve el SERVIDOR (nunca se acepta del navegador).
+    kindPrompt: "",
     productName: clampText(data.productName, 120),
     companyName: clampText(data.companyName, 120),
     title: clampText(data.title, 160),
@@ -117,6 +122,12 @@ export function buildCopyPrompt(context: CopyContext): {
     "Cómo se vende sin prometer de más: empezá por el beneficio; una idea por párrafo; frases breves; sin mayúsculas sostenidas ni exceso de signos; cerrá con UNA llamada a la acción simple (responder, tocar el botón, pedir info).",
     tone.rule,
     angle ? angle.rule : "Sin concepto forzado: elegí el ángulo más honesto según los datos.",
+    ...(context.kindPrompt
+      ? [
+          "GUÍA DE ESTA ACCIÓN COMERCIAL (la definió el negocio: tomá ese rol de experto en marketing digital y asesor de seguros, y seguí la jugada al pie de la letra):",
+          context.kindPrompt,
+        ]
+      : []),
     'Devolvé SOLO un JSON válido, sin texto extra, con esta forma: {"title": "...", "subtitle": "...", "body": "...", "offer": "...", "benefit": "...", "ctaLabel": "...", "message": "...", "notes": "..."}',
     context.target === "pieza"
       ? 'TAREA: es una PUBLICACIÓN (pieza) que el cliente verá en una página web con su foto. Completá "title" (máx. 60 caracteres), "subtitle" (máx. 90), "body" (2 o 3 párrafos cortos separados por un salto de línea doble, máx. 700 caracteres), "offer" (la condición concreta si está en los datos; si no, una invitación a consultar sin inventar cifras; máx. 120), "benefit" (el beneficio principal en una frase de hasta 70 caracteres), "ctaLabel" (2 a 4 palabras para el botón). "message": cadena vacía.'

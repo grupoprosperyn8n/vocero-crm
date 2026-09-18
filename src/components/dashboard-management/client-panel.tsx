@@ -1378,7 +1378,14 @@ function ProposalFlow({
           }}
           className="rounded-lg border bg-card px-2 py-1.5 text-[12.5px] font-semibold text-text-1"
         >
-          {PROPOSAL_KINDS.map((k) => (
+          {(templates.length
+            ? templates.map((t) => ({
+                id: t.kind,
+                label: t.label?.trim() || kindTag(t.kind).label,
+                emoji: kindTag(t.kind).emoji,
+              }))
+            : PROPOSAL_KINDS.map((k) => ({ id: k.id, label: k.label, emoji: k.emoji }))
+          ).map((k) => (
             <option key={k.id} value={k.id}>
               {k.emoji} {k.label}
               {k.id === kindDefault ? " (sugerida)" : ""}

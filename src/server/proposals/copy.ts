@@ -9,6 +9,7 @@
 import { chatJson } from "@/lib/ai";
 import { createDailyLimiter, resolveAi } from "@/server/ai/resolve";
 
+import { getKindPrompt } from "./service";
 import {
   buildCopyPrompt,
   COPY_SCHEMA,
@@ -49,6 +50,10 @@ export async function draftProposalCopy(input: {
   }
 
   const ai = await resolveAi(input.organizationId);
+
+  // 042e — la guía de la acción comercial la pone el SERVIDOR: la del tipo
+  // (tipos propios o editados) o la sugerida de fábrica cuando está vacía.
+  context.kindPrompt = await getKindPrompt(input.organizationId, context.kind);
 
   if (!ai.configured) {
     return notConfigured();

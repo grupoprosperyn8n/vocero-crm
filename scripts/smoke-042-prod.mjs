@@ -192,6 +192,33 @@ check(
   `status=${crearAg.status} block=${htmlAg.includes("data-agenda-cta")} link=${htmlAg.includes("?modal=asesoria")}`
 );
 
+// ---- 042e: tipos administrables + guía por tipo ----------------------------
+const KIND_E2E = `smoke_tipo_${stamp}`;
+const GUIA_E2E = "Guía de humo: experto en marketing y seguros, una idea, sin inventar datos.";
+const tplNew = await fetch(`${BASE}/api/proposals/templates`, {
+  method: "PUT",
+  headers: { ...H, "content-type": "application/json" },
+  body: JSON.stringify({ kind: KIND_E2E, label: "Tipo de humo", aiPrompt: GUIA_E2E }),
+});
+const tplList = await (await fetch(`${BASE}/api/proposals/templates`, { headers: H })).json().catch(() => ({}));
+const tplRow = (tplList?.templates ?? []).find((t) => t.kind === KIND_E2E);
+const tplKinds = (tplList?.templates ?? []).map((t) => t.kind);
+check(
+  "19d. tipos administrables: crear tipo propio con su guía (catálogo con captación + lanzamiento)",
+  tplNew.status === 200 &&
+    tplRow?.label === "Tipo de humo" &&
+    tplRow?.aiPrompt === GUIA_E2E &&
+    tplKinds.includes("captacion") &&
+    tplKinds.includes("lanzamiento"),
+  `${tplNew.status} row=${tplRow?.label ?? "-"} total=${tplKinds.length}`
+);
+const tplDel = await fetch(`${BASE}/api/proposals/templates`, {
+  method: "DELETE",
+  headers: { ...H, "content-type": "application/json" },
+  body: JSON.stringify({ kind: KIND_E2E }),
+});
+check("19e. tipo propio eliminado (limpieza)", tplDel.status === 200, String(tplDel.status));
+
 // ---- baja: las piezas se eliminan y las páginas dejan de existir -----------
 const del = await fetch(`${BASE}/api/proposals/${prop?.id}/lifecycle`, {
   method: "POST",

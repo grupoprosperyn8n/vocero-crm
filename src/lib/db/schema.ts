@@ -1734,6 +1734,10 @@ export const proposalTemplate = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     kind: text("kind").notNull(),
+    /** 042e — nombre visible del tipo (los tipos propios lo usan; null = catálogo). */
+    label: text("label"),
+    /** 042e — guía (system prompt chico) del asistente para ESTA acción comercial. */
+    aiPrompt: text("ai_prompt"),
     title: text("title").notNull().default(""),
     subtitle: text("subtitle"),
     body: text("body").notNull().default(""),

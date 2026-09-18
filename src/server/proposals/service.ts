@@ -30,6 +30,7 @@ import { airtableList } from "@/server/clients/sgsa";
 import { createDmRoom, postChatMessage } from "@/server/internal/chat";
 import { sniffFaviconMime } from "@/lib/favicon";
 import { isAngleId, isToneId } from "@/lib/proposals/copy";
+import { defaultKindPrompt } from "@/lib/proposals/kind-prompts";
 import { normalizeAdImage } from "@/server/images/normalize";
 import { recordProposalEvent, resolveUserName } from "./events";
 
@@ -52,6 +53,11 @@ export function isProposalKind(kind: string): boolean {
   return PROPOSAL_KINDS.some((k) => k.id === kind);
 }
 
+/** 042e — slug válido para un tipo PROPIO: minúsculas, números y guión bajo. */
+export function isCustomKindSlug(kind: string): boolean {
+  return /^[a-z0-9][a-z0-9_]{1,39}$/.test(kind);
+}
+
 const PRIORITIES: ProposalPriority[] = ["alta", "media", "baja"];
 export function isPriority(p: string): p is ProposalPriority {
   return (PRIORITIES as string[]).includes(p);
@@ -62,6 +68,8 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
   {
     id: null,
     kind: "renovacion",
+    label: null,
+    aiPrompt: null,
     title: "Tu póliza está por renovarse",
     subtitle: "Renovación acompañada, sin sorpresas",
     body: "Faltan pocos días para el vencimiento de tu póliza. Renová con nosotros y seguís con la misma cobertura y atención de siempre.",
@@ -80,6 +88,8 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
   {
     id: null,
     kind: "retencion",
+    label: null,
+    aiPrompt: null,
     title: "Cuidamos lo que más te importa",
     subtitle: "Tu cobertura, siempre a mano",
     body: "Queremos que sigas protegido sin interrupciones. Revisemos juntos tu cobertura actual y ajustemos lo que haga falta.",
@@ -98,6 +108,8 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
   {
     id: null,
     kind: "venta_cruzada",
+    label: null,
+    aiPrompt: null,
     title: "Sumá una cobertura a tu medida",
     subtitle: "¿Sabías que podés ampliar tu protección?",
     body: "Ya tenés una cobertura con nosotros. Sumá la que te falta y protegé todo lo que construiste, con la comodidad de un solo lugar.",
@@ -116,6 +128,8 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
   {
     id: null,
     kind: "reactivacion",
+    label: null,
+    aiPrompt: null,
     title: "Volvé a estar protegido",
     subtitle: "Tu cobertura te está esperando",
     body: "Hace un tiempo no tenemos novedades tuyas. Las condiciones cambiaron y hoy podés retomar tu cobertura con beneficios pensados para vos.",
@@ -134,6 +148,8 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
   {
     id: null,
     kind: "fidelizacion",
+    label: null,
+    aiPrompt: null,
     title: "Gracias por confiar en nosotros",
     subtitle: "Beneficios por ser cliente",
     body: "Cuidar lo tuyo es nuestro trabajo. Te dejamos beneficios pensados para clientes que, como vos, eligen estar cubiertos.",
@@ -141,6 +157,46 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
     offer: "Beneficios exclusivos para clientes activos.",
     benefit: null,
     ctaLabel: "Ver mis beneficios",
+    ctaUrl: null,
+    ctaKind: "link",
+    assetId: null,
+    logoAssetId: null,
+    hasImage: false,
+    hasLogo: false,
+    updatedAt: null,
+  },
+  {
+    id: null,
+    kind: "captacion",
+    label: null,
+    aiPrompt: null,
+    title: "Tu primera cobertura, fácil y clara",
+    subtitle: "Cotizá en 2 minutos, sin compromiso",
+    body: "Si todavía no tenés tu seguro, te ayudamos a encontrar la cobertura que necesitás según lo que querés proteger y tu presupuesto. Un asesor te responde y te explica todo en simple.",
+    productName: null,
+    offer: "Cotización sin compromiso con un asesor humano.",
+    benefit: null,
+    ctaLabel: "Quiero mi cotización",
+    ctaUrl: null,
+    ctaKind: "link",
+    assetId: null,
+    logoAssetId: null,
+    hasImage: false,
+    hasLogo: false,
+    updatedAt: null,
+  },
+  {
+    id: null,
+    kind: "lanzamiento",
+    label: null,
+    aiPrompt: null,
+    title: "Nuevo producto que te conviene",
+    subtitle: "Recién llegado a nuestro catálogo",
+    body: "Sumamos un nuevo producto pensado para protegerte mejor. Queremos que seas de los primeros en conocerlo: te contamos qué cubre, para quién es y cómo acceder.",
+    productName: null,
+    offer: "Conocé el nuevo producto con asesoramiento personalizado.",
+    benefit: null,
+    ctaLabel: "Quiero saber más",
     ctaUrl: null,
     ctaKind: "link",
     assetId: null,
@@ -164,12 +220,15 @@ export async function listTemplates(
     .from(schema.proposalTemplate)
     .where(scoped(schema.proposalTemplate.organizationId, organizationId));
   const byKind = new Map(rows.map((r) => [r.kind, r]));
-  return DEFAULT_TEMPLATES.map((base) => {
+  const merged = DEFAULT_TEMPLATES.map((base) => {
     const row = byKind.get(base.kind);
     if (!row) return base;
     return {
       id: row.id,
       kind: row.kind,
+      // 042e — nombre visible y guía del asistente viajan siempre.
+      label: row.label,
+      aiPrompt: row.aiPrompt,
       title: row.title || base.title,
       subtitle: row.subtitle ?? base.subtitle,
       body: row.body || base.body,
@@ -186,6 +245,31 @@ export async function listTemplates(
       updatedAt: row.updatedAt.toISOString(),
     };
   });
+  // 042e — tipos PROPIOS (creados por el negocio): se suman después del catálogo.
+  const custom = rows
+    .filter((r) => !DEFAULT_TEMPLATES.some((b) => b.kind === r.kind))
+    .sort((a, b) => a.kind.localeCompare(b.kind))
+    .map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      label: row.label,
+      aiPrompt: row.aiPrompt,
+      title: row.title,
+      subtitle: row.subtitle,
+      body: row.body,
+      productName: row.productName,
+      offer: row.offer,
+      benefit: row.benefit,
+      ctaLabel: row.ctaLabel,
+      ctaUrl: row.ctaUrl,
+      ctaKind: row.ctaKind,
+      assetId: row.assetId,
+      logoAssetId: row.logoAssetId,
+      hasImage: Boolean(row.assetId),
+      hasLogo: Boolean(row.logoAssetId),
+      updatedAt: row.updatedAt.toISOString(),
+    }));
+  return [...merged, ...custom];
 }
 
 export async function getTemplate(
@@ -200,9 +284,97 @@ export async function getTemplate(
   return found;
 }
 
+/**
+ * 042e — Guía (system prompt) del asistente para un tipo: la del negocio si la
+ * cargó; si no, la sugerida de fábrica (o la genérica).
+ */
+export async function getKindPrompt(
+  organizationId: string,
+  kind: string
+): Promise<string> {
+  const db = getDb();
+  const rows = await db
+    .select({ aiPrompt: schema.proposalTemplate.aiPrompt })
+    .from(schema.proposalTemplate)
+    .where(
+      scoped(
+        schema.proposalTemplate.organizationId,
+        organizationId,
+        eq(schema.proposalTemplate.kind, kind)
+      )
+    )
+    .limit(1);
+  return cleanText(rows[0]?.aiPrompt, 2000) ?? defaultKindPrompt(kind);
+}
+
+/**
+ * 042e — Eliminar un tipo PROPIO (los del catálogo no se borran). Solo si
+ * ninguna publicidad lo está usando: el historial no se toca.
+ */
+export async function deleteProposalTemplate(
+  organizationId: string,
+  kind: string
+): Promise<void> {
+  if (isProposalKind(kind)) {
+    throw new ProposalError("Los tipos del catálogo no se eliminan", 400, "base_kind");
+  }
+  const db = getDb();
+  const inUse = await db
+    .select({ id: schema.proposal.id })
+    .from(schema.proposal)
+    .where(
+      scoped(
+        schema.proposal.organizationId,
+        organizationId,
+        eq(schema.proposal.kind, kind),
+        isNull(schema.proposal.deletedAt)
+      )
+    )
+    .limit(1);
+  if (inUse[0]) {
+    throw new ProposalError(
+      "Hay publicidades usando este tipo: eliminalas o archivá el tipo más adelante",
+      422,
+      "kind_in_use"
+    );
+  }
+  await db
+    .delete(schema.proposalTemplate)
+    .where(
+      scoped(
+        schema.proposalTemplate.organizationId,
+        organizationId,
+        eq(schema.proposalTemplate.kind, kind)
+      )
+    );
+}
+
+/** 042e — ¿existe una plantilla (tipo propio) para esta organización? */
+async function templateKindExists(
+  organizationId: string,
+  kind: string
+): Promise<boolean> {
+  const db = getDb();
+  const rows = await db
+    .select({ id: schema.proposalTemplate.id })
+    .from(schema.proposalTemplate)
+    .where(
+      scoped(
+        schema.proposalTemplate.organizationId,
+        organizationId,
+        eq(schema.proposalTemplate.kind, kind)
+      )
+    )
+    .limit(1);
+  return Boolean(rows[0]);
+}
+
 export async function upsertTemplate(input: {
   organizationId: string;
   kind: string;
+  /** 042e — nombre visible (tipos propios) y guía del asistente. */
+  label?: string | null;
+  aiPrompt?: string | null;
   title?: string;
   subtitle?: string | null;
   body?: string;
@@ -215,8 +387,12 @@ export async function upsertTemplate(input: {
   assetId?: string | null;
   logoAssetId?: string | null;
 }): Promise<ProposalTemplateDto> {
-  if (!isProposalKind(input.kind)) {
-    throw new ProposalError("Tipo de propuesta desconocido", 400, "bad_kind");
+  if (!isProposalKind(input.kind) && !isCustomKindSlug(input.kind)) {
+    throw new ProposalError(
+      "Tipo de propuesta inválido: usá minúsculas, números y guión bajo",
+      400,
+      "bad_kind"
+    );
   }
   const sanitized = sanitizeTemplateInput(input);
   const db = getDb();
@@ -252,15 +428,16 @@ async function ensureTemplateRow(
     .limit(1);
   if (existing[0]) return existing[0].id;
   const id = newId("proposalTemplate");
-  const base = DEFAULT_TEMPLATES.find((t) => t.kind === kind)!;
+  // 042e — los tipos PROPIOS arrancan en blanco; los del catálogo con sus textos.
+  const base = DEFAULT_TEMPLATES.find((t) => t.kind === kind);
   await db.insert(schema.proposalTemplate).values({
     id,
     organizationId,
     kind,
-    title: base.title,
-    subtitle: base.subtitle,
-    body: base.body,
-    ctaLabel: base.ctaLabel,
+    title: base?.title ?? "",
+    subtitle: base?.subtitle ?? null,
+    body: base?.body ?? "",
+    ctaLabel: base?.ctaLabel ?? null,
     ctaKind: "link",
   });
   return id;
@@ -280,6 +457,8 @@ function cleanUrl(v: unknown): string | null {
 }
 
 function sanitizeTemplateInput(input: {
+  label?: string | null;
+  aiPrompt?: string | null;
   title?: string;
   subtitle?: string | null;
   body?: string;
@@ -293,6 +472,8 @@ function sanitizeTemplateInput(input: {
   logoAssetId?: string | null;
 }): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  if (input.label !== undefined) out.label = cleanText(input.label, 60);
+  if (input.aiPrompt !== undefined) out.aiPrompt = cleanText(input.aiPrompt, 2000);
   if (input.title !== undefined) out.title = cleanText(input.title, 120) ?? "";
   if (input.subtitle !== undefined)
     out.subtitle = cleanText(input.subtitle, 160);
@@ -583,7 +764,11 @@ export async function createProposal(input: {
   tone?: string | null;
   angle?: string | null;
 }): Promise<ProposalDto> {
-  if (!isProposalKind(input.kind)) {
+  // 042e — vale el catálogo o un TIPO PROPIO ya configurado por el negocio.
+  if (
+    !isProposalKind(input.kind) &&
+    !(await templateKindExists(input.organizationId, input.kind))
+  ) {
     throw new ProposalError("Tipo de propuesta desconocido", 400, "bad_kind");
   }
   if (!/^rec[A-Za-z0-9]{4,30}$/.test(input.clientRef)) {
