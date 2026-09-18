@@ -879,6 +879,36 @@ const MODULE_TABS: { id: TabId; label: string; Icon: typeof TrendingUp }[] = [
   { id: "migracion", label: "Calidad de datos", Icon: Database },
 ];
 
+/* Filtros ideales por pestaña — verificado contra el motor real (buildDashboard):
+   · oficina / producto / empleado / compañía → cartera y gestiones de todos los módulos de cartera.
+   · fecha y canal → solo las gestiones del Pulso (listas altas / anulaciones / siniestros).
+   · búsqueda → Cliente 360° (nombre, DNI o teléfono) — cada lista tiene además su búsqueda propia.
+   · CRM y Calidad de datos → globales: no los afecta ningún filtro. */
+const TAB_FILTERS: Record<
+  TabId,
+  { date: boolean; office: boolean; product: boolean; channel: boolean; employee: boolean; company: boolean; search: boolean }
+> = {
+  pulso: { date: true, office: true, product: true, channel: true, employee: true, company: true, search: false },
+  cartera: { date: false, office: true, product: true, channel: false, employee: true, company: true, search: false },
+  retencion: { date: false, office: true, product: true, channel: false, employee: true, company: true, search: false },
+  reactivacion: { date: false, office: true, product: true, channel: false, employee: true, company: true, search: false },
+  cross: { date: false, office: true, product: true, channel: false, employee: true, company: true, search: false },
+  clientes: { date: false, office: true, product: false, channel: false, employee: false, company: false, search: true },
+  crm: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
+  migracion: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
+};
+
+const FILTER_SCOPE: Record<TabId, string> = {
+  pulso: "Fecha y canal acotan las gestiones del día a día; oficina, producto, empleado y compañía acotan además la cartera.",
+  cartera: "Filtran la cartera del tablero (pólizas y clientes).",
+  retencion: "Filtran la cartera; las ventanas de vencimiento (≤7 días, ≤30 días, a observar) son fijas.",
+  reactivacion: "Filtran el universo de clientes y su historia de gestión.",
+  cross: "Filtran la cartera y los productos usados para la venta cruzada.",
+  clientes: "Buscá por nombre, DNI o teléfono; la oficina acota el universo del cliente.",
+  crm: "Este módulo muestra el CRM completo: los filtros de cartera y gestiones no lo afectan.",
+  migracion: "Este módulo muestra la base completa: los filtros no lo afectan.",
+};
+
 export function ExecDashboard() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState("");
@@ -1342,6 +1372,9 @@ export function ExecDashboard() {
   const selectClass =
     "h-8 rounded-md border border-border-strong bg-background px-2 text-[12px] text-text-2";
 
+  const tabFilters = TAB_FILTERS[tab];
+  const hasTabFilters = Object.values(tabFilters).some(Boolean);
+
   const maxCompanyPremium = Math.max(
     ...data.companies.map((company) => company.activePremium),
     1
@@ -1401,115 +1434,138 @@ export function ExecDashboard() {
       {/* Filtros */}
       <section className="rounded-lg border bg-card p-3">
         <div className="flex flex-wrap items-center gap-2">
-          {(
-            [
-              ["Este mes", "month", CalendarDays],
-              ["Mes pasado", "lastMonth", History],
-              ["Este año", "year", CalendarRange],
-              ["Todo el tiempo", "all", InfinityIcon],
-            ] as const
-          ).map(([label, preset, Icon]) => (
-            <button
-              key={label}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11.5px] font-semibold text-text-2 transition-colors hover:bg-accent"
-              onClick={() => {
-                const range = presetRange(preset);
-                const next = { ...filters, from: range.from, to: range.to };
-                setFilters(next);
-                void load(next);
-              }}
+          {tabFilters.date && (
+            <>
+              {(
+                [
+                  ["Este mes", "month", CalendarDays],
+                  ["Mes pasado", "lastMonth", History],
+                  ["Este año", "year", CalendarRange],
+                  ["Todo el tiempo", "all", InfinityIcon],
+                ] as const
+              ).map(([label, preset, Icon]) => (
+                <button
+                  key={label}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11.5px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                  onClick={() => {
+                    const range = presetRange(preset);
+                    const next = { ...filters, from: range.from, to: range.to };
+                    setFilters(next);
+                    void load(next);
+                  }}
+                >
+                  <Icon size={12} />
+                  {label}
+                </button>
+              ))}
+
+              <span className="mx-1 h-5 w-px bg-border" />
+
+              <input
+                type="date"
+                value={filters.from}
+                onChange={(e) => updateFilter("from", e.target.value)}
+                className={selectClass}
+              />
+              <input
+                type="date"
+                value={filters.to}
+                onChange={(e) => updateFilter("to", e.target.value)}
+                className={selectClass}
+              />
+            </>
+          )}
+
+          {tabFilters.office && (
+            <select
+              value={filters.office}
+              onChange={(e) => updateFilter("office", e.target.value)}
+              className={selectClass}
             >
-              <Icon size={12} />
-              {label}
-            </button>
-          ))}
+              <option value="">Todas las oficinas</option>
+              {data.filters.offices.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          )}
 
-          <span className="mx-1 h-5 w-px bg-border" />
+          {tabFilters.product && (
+            <select
+              value={filters.product}
+              onChange={(e) => updateFilter("product", e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Todos los productos</option>
+              {data.filters.products.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          )}
 
-          <input
-            type="date"
-            value={filters.from}
-            onChange={(e) => updateFilter("from", e.target.value)}
-            className={selectClass}
-          />
-          <input
-            type="date"
-            value={filters.to}
-            onChange={(e) => updateFilter("to", e.target.value)}
-            className={selectClass}
-          />
+          {tabFilters.channel && (
+            <select
+              value={filters.channel}
+              onChange={(e) => updateFilter("channel", e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Todos los canales</option>
+              {data.filters.channels.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          )}
 
-          <select
-            value={filters.office}
-            onChange={(e) => updateFilter("office", e.target.value)}
-            className={selectClass}
-          >
-            <option value="">Todas las oficinas</option>
-            {data.filters.offices.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
+          {tabFilters.employee && (
+            <select
+              value={filters.employee}
+              onChange={(e) => updateFilter("employee", e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Todos los empleados</option>
+              {data.filters.employees.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          )}
 
-          <select
-            value={filters.product}
-            onChange={(e) => updateFilter("product", e.target.value)}
-            className={selectClass}
-          >
-            <option value="">Todos los productos</option>
-            {data.filters.products.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
+          {tabFilters.company && (
+            <select
+              value={filters.company}
+              onChange={(e) => updateFilter("company", e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Todas las compañías</option>
+              {data.filters.companies.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          )}
 
-          <select
-            value={filters.channel}
-            onChange={(e) => updateFilter("channel", e.target.value)}
-            className={selectClass}
-          >
-            <option value="">Todos los canales</option>
-            {data.filters.channels.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
+          {tabFilters.search && (
+            <input
+              value={filters.search}
+              onChange={(e) => updateFilter("search", e.target.value)}
+              placeholder="Buscar cliente, DNI o póliza…"
+              className="h-8 min-w-[200px] flex-1 rounded-md border border-border-strong bg-background px-2 text-[12.5px]"
+            />
+          )}
 
-          <select
-            value={filters.employee}
-            onChange={(e) => updateFilter("employee", e.target.value)}
-            className={selectClass}
-          >
-            <option value="">Todos los empleados</option>
-            {data.filters.employees.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={filters.company}
-            onChange={(e) => updateFilter("company", e.target.value)}
-            className={selectClass}
-          >
-            <option value="">Todas las compañías</option>
-            {data.filters.companies.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-
-          <input
-            value={filters.search}
-            onChange={(e) => updateFilter("search", e.target.value)}
-            placeholder="Buscar cliente, DNI o póliza…"
-            className="h-8 min-w-[200px] flex-1 rounded-md border border-border-strong bg-background px-2 text-[12.5px]"
-          />
+          {!hasTabFilters && (
+            <p className="flex items-center gap-1.5 text-[11.5px] text-text-3">
+              <Info size={12} />
+              Este módulo se muestra completo: no usa filtros.
+            </p>
+          )}
         </div>
 
         {activeFilterChips.length > 0 && (
@@ -1538,10 +1594,10 @@ export function ExecDashboard() {
 
         <p
           className="mt-2 flex items-center gap-1.5 text-[11px] text-text-3"
-          title="Los filtros de esta barra (fechas, oficina, producto, canal, empleado, compañía y búsqueda) afectan a todos los módulos del tablero."
+          title="Cada pestaña muestra solo los filtros que ese módulo usa realmente."
         >
           <Info size={12} />
-          Afectan a todos los módulos del tablero
+          {FILTER_SCOPE[tab]}
         </p>
       </section>
 

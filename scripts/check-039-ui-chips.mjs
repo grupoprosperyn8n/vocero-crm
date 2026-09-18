@@ -138,9 +138,17 @@ check("8. aviso de cartera plegable (details)", (await aviso.count()) > 0);
 const bars = page.locator('[title^="Participación sobre la mayor compañía"]');
 check("8b. barras de participación en Compañías", (await bars.count()) > 0, `${await bars.count()} barras`);
 
-// 9) Barra de filtros: presets con íconos
-const presetIcon = page.locator('button:has-text("Mes pasado") svg');
-check("9. presets de fecha con íconos", (await presetIcon.count()) > 0);
+// 9) Filtros ideales por pestaña: en Pulso están los presets y el canal; en Cartera no hay fechas
+await page.getByRole("button", { name: "Pulso del negocio", exact: true }).first().click();
+await page.waitForTimeout(700);
+const presetIcon = page.locator('section button:has-text("Mes pasado") svg');
+check("9. presets de fecha con íconos (Pulso)", (await presetIcon.count()) > 0);
+const canalSel = page.locator("section select").filter({ hasText: "Todos los canales" });
+check("9b. filtro de canal disponible en Pulso", (await canalSel.count()) > 0);
+await page.getByRole("button", { name: "Cartera", exact: true }).first().click();
+await page.waitForTimeout(700);
+const presetEnCartera = page.locator('section button:has-text("Mes pasado")');
+check("9c. Cartera sin fechas — filtros ideales por sección", (await presetEnCartera.count()) === 0);
 
 // 10) Módulo CRM: pipeline con punto por etapa + badges de vínculo con íconos
 await page.getByRole("button", { name: "CRM · Venta y gestión", exact: true }).first().click();
