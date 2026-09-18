@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Activity,
   AlertTriangle,
@@ -29,6 +30,7 @@ import {
   RefreshCcw,
   RotateCcw,
   Search,
+  Send,
   Settings2,
   ShieldCheck,
   Sigma,
@@ -58,7 +60,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { cn } from "@/lib/utils";
+import { cn, systemClientName } from "@/lib/utils";
+import type { SystemClientSearchResultDto } from "@/lib/types";
 import { airtableTagStyle } from "@/lib/dashboard-management/airtable-colors";
 import {
   MODULE_HELP,
@@ -910,6 +913,7 @@ const FILTER_SCOPE: Record<TabId, string> = {
 };
 
 export function ExecDashboard() {
+  const router = useRouter();
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -928,7 +932,13 @@ export function ExecDashboard() {
     Record<string, { status: "loading" | "error" | "done"; data?: ClientInsight; error?: string }>
   >({});
   const [copiedInsight, setCopiedInsight] = useState<string | null>(null);
+  // 039e — «Mandar mensaje»: estado del botón que abre el chat del cliente con el texto de la IA.
+  const [chatState, setChatState] = useState<
+    { key: string; kind: "loading" | "error"; text?: string } | null
+  >(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 039e — secuencia de cargas del tablero (anti-race): solo la última manda.
+  const loadSeq = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
 
@@ -962,6 +972,9 @@ export function ExecDashboard() {
   const load = useCallback(
     async (override?: typeof filters) => {
       const active = override || filters;
+      // 039e — anti-race: si una carga más nueva ya salió, esta respuesta vieja
+      // no debe pisar los datos (evita que la lista "vuelva atrás" al buscar).
+      const seq = ++loadSeq.current;
       setLoading(true);
       setError("");
       try {
@@ -973,18 +986,20 @@ export function ExecDashboard() {
           cache: "no-store",
         });
         const result = await response.json();
+        if (seq !== loadSeq.current) return;
         if (!response.ok) {
           throw new Error(result?.error?.message || "No se pudo cargar el dashboard.");
         }
         setData(result as DashboardResponse);
       } catch (err) {
+        if (seq !== loadSeq.current) return;
         setError(
           err instanceof Error && err.message
             ? err.message
             : "No se pudo cargar el dashboard."
         );
       } finally {
-        setLoading(false);
+        if (seq === loadSeq.current) setLoading(false);
       }
     },
     [filters]
@@ -1206,6 +1221,62 @@ export function ExecDashboard() {
       setCopiedInsight(key);
       setTimeout(() => setCopiedInsight(null), 1800);
     } catch {}
+  }
+
+  /**
+   * 039e — «Mandar mensaje»: agarra el texto de la IA, busca al cliente en el
+   * sistema de gestión (por DNI o nombre), asegura su hilo en la Bandeja
+   * (mismo camino que «Nueva conversación») y abre el chat con el mensaje
+   * ya cargado en el compositor, listo para revisar y enviar.
+   */
+  async function openClientChat(
+    key: string,
+    customer: { id: string; name: string; dni?: string; phone?: string },
+    message: string
+  ) {
+    setChatState({ key, kind: "loading" });
+    try {
+      const q = (customer.dni || customer.name || "").trim();
+      if (!q) throw new Error("El cliente no tiene DNI ni nombre para buscar en el sistema.");
+      const res = await fetch(`/api/clients/search?q=${encodeURIComponent(q)}`);
+      const data = (await res.json().catch(() => null)) as
+        | { results?: SystemClientSearchResultDto[]; error?: { message?: string } }
+        | null;
+      if (!res.ok) throw new Error(data?.error?.message ?? "No se pudo buscar en el sistema.");
+      const results = data?.results ?? [];
+      const norm = (s: string) => s.trim().toLowerCase();
+      const dni = (customer.dni ?? "").trim();
+      const hit =
+        (dni && results.find((r) => (r.client.dni ?? "").trim() === dni)) ||
+        results.find((r) => r.client.recordId === customer.id) ||
+        results.find((r) => norm(systemClientName(r.client)) === norm(customer.name)) ||
+        results[0];
+      if (!hit) throw new Error("No encontré este cliente en el buscador del sistema.");
+      const client = hit.client;
+      if (!client.telefono) throw new Error("El cliente no tiene teléfono cargado en el sistema.");
+      const link = await fetch("/api/clients/link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          recordId: client.recordId,
+          name: systemClientName(client),
+          phone: client.telefono,
+        }),
+      });
+      const linkData = (await link.json().catch(() => null)) as
+        | { contactId?: string; error?: { message?: string } }
+        | null;
+      if (!link.ok || !linkData?.contactId)
+        throw new Error(linkData?.error?.message ?? "No se pudo abrir la conversación.");
+      setChatState(null);
+      router.push(`/inbox?contact=${linkData.contactId}&draft=${encodeURIComponent(message)}`);
+    } catch (err) {
+      setChatState({
+        key,
+        kind: "error",
+        text: err instanceof Error && err.message ? err.message : "No se pudo abrir el chat.",
+      });
+    }
   }
 
   const aiRow = (module: ModuleAiId) => {
@@ -2156,7 +2227,11 @@ export function ExecDashboard() {
 
           <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
             {data.customers.map((customer) => (
-              <article key={customer.id} className="flex flex-col rounded-lg border bg-card p-4">
+              <article
+                key={customer.id}
+                data-dm-client={customer.id}
+                className="flex flex-col rounded-lg border bg-card p-4"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="truncate text-[13.5px] font-bold">{customer.name}</h3>
@@ -2298,14 +2373,34 @@ export function ExecDashboard() {
                                   <p className="text-[11.5px] text-text-2">
                                     {insight.mensajeWhatsapp}
                                   </p>
-                                  <button
-                                    className="mt-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
-                                    onClick={() =>
-                                      void copyInsightMessage(insightKey, insight.mensajeWhatsapp)
-                                    }
-                                  >
-                                    {copiedInsight === insightKey ? "Copiado ✓" : "Copiar mensaje"}
-                                  </button>
+                                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                    <button
+                                      className="rounded-md border px-2 py-0.5 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                                      onClick={() =>
+                                        void copyInsightMessage(insightKey, insight.mensajeWhatsapp)
+                                      }
+                                    >
+                                      {copiedInsight === insightKey ? "Copiado ✓" : "Copiar mensaje"}
+                                    </button>
+                                    <button
+                                      className="inline-flex items-center gap-1 rounded-md border border-brand-soft bg-brand-tint px-2 py-0.5 text-[11px] font-semibold text-brand-text transition-opacity hover:opacity-90 disabled:opacity-60"
+                                      disabled={
+                                        chatState?.key === insightKey && chatState.kind === "loading"
+                                      }
+                                      title="Busca el cliente en el sistema y abre su chat con este mensaje ya cargado, listo para revisar y enviar"
+                                      onClick={() =>
+                                        void openClientChat(insightKey, customer, insight.mensajeWhatsapp)
+                                      }
+                                    >
+                                      <Send size={11} />
+                                      {chatState?.key === insightKey && chatState.kind === "loading"
+                                        ? "Buscando…"
+                                        : "Mandar mensaje"}
+                                    </button>
+                                  </div>
+                                  {chatState?.key === insightKey && chatState.kind === "error" && (
+                                    <p className="mt-1 text-[11px] text-danger-text">{chatState.text}</p>
+                                  )}
                                 </div>
                               )}
                               <span className="block text-[10.5px] text-text-3">

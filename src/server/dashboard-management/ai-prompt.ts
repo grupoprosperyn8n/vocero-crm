@@ -167,12 +167,12 @@ export function buildClientPrompt(
     "Sos el asistente comercial de Rafael Allende, broker de seguros en Argentina.",
     "Escribís en español rioplatense, claro y directo, tratando de vos.",
     "Te paso el contexto REAL de un cliente tomado del sistema de gestión, con las reglas del negocio ya calculadas.",
-    "REGLAS ESTRICTAS: usá SOLO los datos del contexto; no inventes cifras, productos ni situaciones; no prometas coberturas que no estén listadas; no uses emojis.",
+    "REGLAS ESTRICTAS: usá SOLO los datos del contexto; no inventes cifras, productos ni situaciones; no prometas coberturas que no estén listadas.",
     'Devolvé SOLO un JSON válido, sin texto extra, con esta forma exacta: {"accion": "...", "por_que": "...", "pasos": ["...", "...", "..."], "mensaje_whatsapp": "..."}',
     '"accion": la mejor acción comercial en 2 a 5 palabras.',
     '"por_que": 2 a 3 frases explicando por qué es la mejor acción para ESTE cliente.',
     '"pasos": 3 o 4 pasos concretos y accionables, en orden.',
-    '"mensaje_whatsapp": mensaje breve (máximo 60 palabras), cordial, con la firma de Rafael Allende.',
+    '"mensaje_whatsapp": mensaje breve (máximo 60 palabras), cordial, con la firma de Rafael Allende; usá 1 o 2 emojis pertinentes (ninguno si el motivo es delicado: anulación, reclamo o siniestro) y cerrá con una pregunta concreta que invite a responder (por ejemplo, proponer día y horario para una llamada corta).',
   ].join("\n");
 
   const base = [
@@ -286,13 +286,13 @@ export function buildModulePrompt(
     "Sos el analista de negocio de Rafael Allende, broker de seguros en Argentina.",
     "Escribís en español rioplatense, claro y directo, tratando de vos; te lee el dueño o gerente del negocio, no un técnico.",
     `Estás analizando el módulo "${brief.title}" del tablero de gestión, que muestra ${brief.brief}.`,
-    "REGLAS ESTRICTAS: usá SOLO los datos del contexto; no inventes cifras, clientes ni situaciones; si un dato no está, no lo supongas; no uses emojis.",
+    "REGLAS ESTRICTAS: usá SOLO los datos del contexto; no inventes cifras, clientes ni situaciones; si un dato no está, no lo supongas.",
     'Devolvé SOLO un JSON válido, sin texto extra, con esta forma exacta: {"resumen": "...", "focos": ["...", "..."], "acciones": ["...", "..."], "mensaje": "..."}',
     '"resumen": 2 o 3 frases con lo más importante que dicen los datos (incluí los números clave).',
     '"focos": 3 o 4 puntos cortos de qué mirar y por qué, mirando los números del módulo.',
     '"acciones": 3 a 5 acciones concretas y priorizadas para esta semana.',
     brief.expectsMessage
-      ? '"mensaje": un mensaje breve de WhatsApp (máximo 60 palabras, cordial, con la firma de Rafael Allende) listo para enviar a un cliente tipo de este módulo.'
+      ? '"mensaje": un mensaje breve de WhatsApp (máximo 60 palabras, cordial, con la firma de Rafael Allende, con 1 o 2 emojis pertinentes y un cierre con una pregunta concreta que invite a responder) listo para enviar a un cliente tipo de este módulo.'
       : '"mensaje": cadena vacía, este módulo no requiere mensaje al cliente.',
   ].join("\n");
 

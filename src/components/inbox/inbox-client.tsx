@@ -248,6 +248,9 @@ export function InboxClient({
   // Enlace directo desde Contactos/Pipeline: /inbox?contact=<id>
   const searchParams = useSearchParams();
   const contactParam = searchParams.get("contact");
+  // 039e — Enlace desde el tablero: /inbox?contact=<id>&draft=<mensaje de la IA>.
+  // El compositor lo carga una sola vez, listo para revisar y enviar.
+  const draftParam = searchParams.get("draft");
   useEffect(() => {
     if (!contactParam || selectedIdRef.current) return;
     const match = conversations?.find((c) => c.contact.id === contactParam);
@@ -710,6 +713,7 @@ export function InboxClient({
             ) : (
               <Composer
                 conversation={selected}
+                initialDraft={draftParam}
                 onSend={sendText}
                 onSent={() => {
                   if (selectedIdRef.current)

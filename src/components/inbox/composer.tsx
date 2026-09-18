@@ -33,10 +33,13 @@ function parseCoords(raw: string): { latitude: number; longitude: number } | nul
 
 export function Composer({
   conversation,
+  initialDraft,
   onSend,
   onSent,
 }: {
   conversation: ConversationDto;
+  /** 039e — texto precargado (mensaje sugerido por la IA desde el tablero). */
+  initialDraft?: string | null;
   onSend: (text: string) => Promise<string | null>;
   onSent: () => void;
 }) {
@@ -53,6 +56,13 @@ export function Composer({
   const [contactPhone, setContactPhone] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // 039e — precarga del mensaje sugerido: se aplica al abrir el hilo si el
+  // compositor está vacío (nunca pisa lo que el operador ya escribió).
+  useEffect(() => {
+    if (!initialDraft) return;
+    setText((t) => (t ? t : initialDraft));
+  }, [initialDraft, conversation.id]);
 
   useEffect(() => {
     let cancelled = false;
