@@ -256,7 +256,6 @@ export function LibraryPanel() {
                 <X size={16} />
               </button>
             </div>
-            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
             <video
               src={videoOpen.url}
               controls
