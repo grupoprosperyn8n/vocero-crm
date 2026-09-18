@@ -1,6 +1,7 @@
 /** DTOs que viajan por la API interna (lado cliente). */
 
 import type { Channel } from "@/lib/channels";
+import type { ProposalAngleId, ProposalToneId } from "@/lib/proposals/copy";
 
 export type ConversationDto = {
   id: string;
@@ -625,6 +626,12 @@ export type ProposalDto = {
   assigneeUserId: string | null;
   /** 041b — derivada a un GRUPO del chat interno (alternativa al empleado). */
   assigneeGroupId: string | null;
+  /** 041c — cómo se escribió la publicidad (asistente de IA). */
+  tone: ProposalToneId | null;
+  angle: ProposalAngleId | null;
+  /** 041e — archivada (fuera del trabajo activo) y online/offline. */
+  archivedAt: string | null;
+  online: boolean;
   /** Quién la gestiona: empleado o grupo (null = sin derivar). */
   assigneeKind: "employee" | "group" | null;
   assigneeName: string | null;

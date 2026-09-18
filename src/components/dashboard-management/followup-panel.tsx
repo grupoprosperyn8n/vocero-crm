@@ -26,6 +26,8 @@ import {
   RefreshCcw,
   Send,
   Sparkles,
+  Archive,
+  PauseCircle,
   Target,
 } from "lucide-react";
 import type {
@@ -46,6 +48,8 @@ const WHAT_META: Record<
   enviada: { Icon: Send, chip: "border-brand-soft bg-brand-tint text-brand-text", label: "enviada" },
   vista: { Icon: Eye, chip: "border bg-card text-text-2", label: "vista" },
   respondio: { Icon: MessageCircle, chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700", label: "respondió" },
+  archivada: { Icon: Archive, chip: "border-border-strong bg-subtle text-text-3", label: "archivada" },
+  pausada: { Icon: PauseCircle, chip: "border-amber-500/30 bg-amber-500/10 text-amber-700", label: "publicidad pausada" },
   accion: { Icon: Activity, chip: "border bg-card text-text-3", label: "acción ejecutada" },
 };
 

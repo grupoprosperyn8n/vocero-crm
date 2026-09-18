@@ -14,22 +14,32 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Archive,
+  ArchiveRestore,
   Building2,
   CalendarClock,
   ClipboardCopy,
   ExternalLink,
   FileText,
+  FolderOpen,
+  History as HistoryIcon,
   Image as ImageIcon,
+  Lightbulb,
   Loader2,
   MessageCircle,
   PanelRightOpen,
+  PauseCircle,
+  Pencil,
   Phone,
+  PlayCircle,
   RefreshCw,
+  RotateCcw,
   Send,
   Sparkles,
   Target,
+  Trash2,
   TrendingUp,
   UserCheck,
+  Wand2,
   X,
 } from "lucide-react";
 import {
@@ -52,6 +62,22 @@ import {
   type TeamGroupLiteDto,
   type TeamMemberLiteDto,
 } from "@/lib/types";
+import {
+  ANGLES,
+  ANGLE_IDS,
+  TONES,
+  TONE_IDS,
+  type ProposalAngleId,
+  type ProposalToneId,
+} from "@/lib/proposals/copy";
+import { LibraryPanel } from "./library-panel";
+import { LibraryPicker, type PickerAsset } from "./library-picker";
+import {
+  ProposalEditModal,
+  ProposalHistoryModal,
+  proposalLifecycle,
+  type LifecycleAction,
+} from "./proposal-actions";
 
 export type PanelCustomer = {
   id: string;
@@ -352,6 +378,52 @@ function PanelBody({
   const [proposalFlow, setProposalFlow] = useState(false);
   const [iaBusy, setIaBusy] = useState(false);
   const [iaError, setIaError] = useState("");
+  // 041e — quién soy (para los permisos de la lista) y modales de gestión.
+  const [viewerRole, setViewerRole] = useState("member");
+  const [editing, setEditing] = useState<ProposalDto | null>(null);
+  const [historyFor, setHistoryFor] = useState<ProposalDto | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const res = await fetch("/api/staff/directory", { cache: "no-store" }).catch(() => null);
+      if (!alive || !res?.ok) return;
+      const data = (await res.json().catch(() => ({}))) as { viewer?: { role?: string } };
+      if (data.viewer?.role) setViewerRole(data.viewer.role);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const refreshFicha = async () => {
+    const res = await fetch(
+      `/api/clients/ficha?recordId=${encodeURIComponent(customer.id)}&refresh=1`,
+      { cache: "no-store" }
+    ).catch(() => null);
+    const data = res
+      ? ((await res.json().catch(() => ({}))) as { ficha?: ClientFichaDto })
+      : null;
+    if (data?.ficha) onFichaChange(data.ficha);
+  };
+
+  const handleLifecycle = async (p: ProposalDto, action: LifecycleAction) => {
+    if (
+      action === "delete" &&
+      !window.confirm(`¿Eliminar «${p.title}»? No se puede deshacer.`)
+    ) {
+      return;
+    }
+
+    const r = await proposalLifecycle(p.id, action);
+
+    if (!r.ok) {
+      window.alert(r.message ?? "No se pudo completar la acción");
+      return;
+    }
+
+    await refreshFicha();
+  };
 
   const wa = ficha.whatsapp;
   const gestiones12m = ficha.gestionesByMonth.reduce((a, m) => a + m.total, 0);
@@ -564,13 +636,20 @@ function PanelBody({
               <ProposalRow
                 key={p.id}
                 proposal={p}
+                viewerRole={viewerRole}
                 onCopy={(url) => void copyLink(url)}
                 onOpen={() => window.open(p.publicUrl, "_blank", "noopener")}
+                onLifecycle={(prop, action) => void handleLifecycle(prop, action)}
+                onEdit={(prop) => setEditing(prop)}
+                onHistory={(prop) => setHistoryFor(prop)}
               />
             ))}
           </div>
         )}
       </section>
+
+      {/* 4b · 041d — Contenedor universal de archivos (imágenes y videos) */}
+      <LibraryPanel />
 
       {/* 5 · Historial de gestiones */}
       <section>
@@ -614,6 +693,29 @@ function PanelBody({
         )}
       </section>
 
+      {/* 041e — editar / historial de una gestión */}
+      {editing && (
+        <ProposalEditModal
+          proposal={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(updated) => {
+            onFichaChange({
+              ...ficha,
+              proposals: ficha.proposals.map((pp) =>
+                pp.id === updated.id ? updated : pp
+              ),
+            });
+            setEditing(null);
+          }}
+        />
+      )}
+      {historyFor && (
+        <ProposalHistoryModal
+          proposal={historyFor}
+          onClose={() => setHistoryFor(null)}
+        />
+      )}
+
       {/* Whatsapp detalle */}
       {wa && (
         <section className="rounded-xl border bg-card px-4 py-3">
@@ -638,16 +740,30 @@ function PanelBody({
 
 function ProposalRow({
   proposal,
+  viewerRole,
   onCopy,
   onOpen,
+  onLifecycle,
+  onEdit,
+  onHistory,
 }: {
   proposal: ProposalDto;
+  viewerRole: string;
   onCopy: (url: string) => void;
   onOpen: () => void;
+  onLifecycle: (p: ProposalDto, action: LifecycleAction) => void;
+  onEdit: (p: ProposalDto) => void;
+  onHistory: (p: ProposalDto) => void;
 }) {
   const st = proposalStatusChip(proposal);
   const pr = priorityChip(proposal.priority);
   const k = kindTag(proposal.kind);
+  // 041e — quién puede qué: eliminar solo dueño/propietario; archivar y
+  // pausar el gerente para arriba; editar todos.
+  const canManage = viewerRole === "owner" || viewerRole === "admin" || viewerRole === "manager";
+  const canDelete = viewerRole === "owner" || viewerRole === "admin";
+  const actionBtn =
+    "rounded-lg border bg-card p-1.5 text-text-3 transition-colors hover:bg-subtle hover:text-text-1";
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-3 py-2.5">
       <span className="text-[15px]">{k.emoji}</span>
@@ -658,8 +774,14 @@ function ProposalRow({
           {proposal.assigneeName ? ` · ${proposal.assigneeName}` : ""} ·{" "}
           {new Date(proposal.createdAt).toLocaleDateString("es-AR")}
           {proposal.views > 0 ? ` · ${proposal.views} vista${proposal.views === 1 ? "" : "s"}` : ""}
+          {proposal.status === "enviada" ? (proposal.online ? " · online" : " · pausada") : ""}
         </p>
       </div>
+      {proposal.archivedAt && (
+        <span className="rounded-full border bg-subtle px-2 py-0.5 text-[10.5px] font-bold text-text-3">
+          Archivada
+        </span>
+      )}
       <span className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold ${st.className}`}>{st.label}</span>
       {proposal.status !== "borrador" && (
         <span className={`hidden rounded-full border px-2 py-0.5 text-[10.5px] font-semibold sm:inline ${pr.className}`}>
@@ -669,8 +791,54 @@ function ProposalRow({
       <div className="flex items-center gap-1">
         <button
           type="button"
+          onClick={() => onEdit(proposal)}
+          className={actionBtn}
+          title="Editar los textos (queda registrado quién)"
+        >
+          <Pencil size={13} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onHistory(proposal)}
+          className={actionBtn}
+          title="Historial: quién la creó, editó, envió…"
+        >
+          <HistoryIcon size={13} />
+        </button>
+        {canManage && (
+          <>
+            <button
+              type="button"
+              onClick={() => onLifecycle(proposal, proposal.archivedAt ? "restore" : "archive")}
+              className={actionBtn}
+              title={proposal.archivedAt ? "Sacar del archivo" : "Archivar (gerente y arriba)"}
+            >
+              {proposal.archivedAt ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => onLifecycle(proposal, proposal.online ? "offline" : "online")}
+              className={actionBtn}
+              title={proposal.online ? "Pausar la publicidad (offline)" : "Volver a ponerla online"}
+            >
+              {proposal.online ? <PauseCircle size={13} /> : <PlayCircle size={13} />}
+            </button>
+          </>
+        )}
+        {canDelete && (
+          <button
+            type="button"
+            onClick={() => onLifecycle(proposal, "delete")}
+            className="rounded-lg border bg-card p-1.5 text-rose-500 transition-colors hover:bg-rose-50"
+            title="Eliminar (solo dueño/propietario)"
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
+        <button
+          type="button"
           onClick={onOpen}
-          className="rounded-lg border bg-card p-1.5 text-text-3 transition-colors hover:bg-subtle hover:text-text-1"
+          className={actionBtn}
           title="Abrir página pública"
         >
           <ExternalLink size={13} />
@@ -678,7 +846,7 @@ function ProposalRow({
         <button
           type="button"
           onClick={() => onCopy(proposal.publicUrl)}
-          className="rounded-lg border bg-card p-1.5 text-text-3 transition-colors hover:bg-subtle hover:text-text-1"
+          className={actionBtn}
           title="Copiar link"
         >
           <ClipboardCopy size={13} />
@@ -745,6 +913,16 @@ function ProposalFlow({
   const [targetKind, setTargetKind] = useState<"employee" | "group">("employee");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [draftText, setDraftText] = useState("");
+  // 041c — asistente de redacción: tono + concepto de venta.
+  const [tone, setTone] = useState<ProposalToneId>("cercana");
+  const [angle, setAngle] = useState<ProposalAngleId | null>("beneficio");
+  const [aiInstructions, setAiInstructions] = useState("");
+  const [aiBusy, setAiBusy] = useState<null | "pieza" | "mensaje">(null);
+  const [aiNotes, setAiNotes] = useState<string | null>(null);
+  const [prevForm, setPrevForm] = useState<typeof form | null>(null);
+  const [msgTone, setMsgTone] = useState<ProposalToneId>("cercana");
+  // 041d — elegir la imagen desde el contenedor universal.
+  const [pickerTarget, setPickerTarget] = useState<null | "assetId" | "logoAssetId">(null);
 
   // 041b — derivan (y ven todo el seguimiento) propietario, administrador y
   // gerente, los mismos roles que en las alertas.
@@ -847,6 +1025,148 @@ function ProposalFlow({
     reader.readAsDataURL(file);
   };
 
+  // 041c — la IA escribe la pieza con el tono y el concepto elegidos. Nunca
+  // pisa el texto sin vuelta atrás: guarda el anterior para «Deshacer».
+  const aiWrite = async () => {
+    setAiBusy("pieza");
+    setError(null);
+    const companyName =
+      companies.find((c) => c.id === form.companyRef)?.name ?? "";
+    const res = await fetch("/api/proposals/copy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        target: "pieza",
+        tone,
+        angle,
+        instructions: aiInstructions.trim() || null,
+        clientName: customer.name,
+        kind,
+        productName: form.productName,
+        companyName,
+        title: form.title,
+        subtitle: form.subtitle,
+        body: form.body,
+        offer: form.offer,
+        benefit: form.benefit,
+        ctaLabel: form.ctaLabel,
+      }),
+    }).catch(() => null);
+    const data = res
+      ? ((await res.json().catch(() => ({}))) as {
+          copy?: {
+            title?: string;
+            subtitle?: string;
+            body?: string;
+            offer?: string;
+            benefit?: string;
+            ctaLabel?: string;
+            notes?: string;
+          };
+          message?: string;
+        })
+      : null;
+    setAiBusy(null);
+    if (!res?.ok || !data?.copy) {
+      setError(data?.message ?? "No se pudo escribir con IA");
+      return;
+    }
+    const copy = data.copy;
+    setPrevForm(form);
+    setForm((f) => ({
+      ...f,
+      title: copy.title ?? f.title,
+      subtitle: copy.subtitle ?? f.subtitle,
+      body: copy.body ?? f.body,
+      offer: copy.offer ?? f.offer,
+      benefit: copy.benefit ?? f.benefit,
+      ctaLabel: copy.ctaLabel ?? f.ctaLabel,
+    }));
+    setAiNotes(copy.notes ?? null);
+  };
+
+  // 041c — reescribir el mensaje de WhatsApp con otro tono, antes de mandarlo.
+  const pickFromLibrary = async (asset: PickerAsset) => {
+    if (!pickerTarget) return;
+
+    setError(null);
+
+    const res = await fetch("/api/proposals/assets", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ libraryId: asset.id }),
+    });
+    const data = (await res.json().catch(() => null)) as
+      | { id?: string; error?: { message?: string } }
+      | null;
+
+    if (!res.ok || !data?.id) {
+      setError(data?.error?.message ?? "No se pudo usar la imagen del contenedor");
+      setPickerTarget(null);
+      return;
+    }
+
+    const copiada = data.id;
+
+    setForm((f) =>
+      pickerTarget === "assetId"
+        ? { ...f, assetId: copiada }
+        : { ...f, logoAssetId: copiada }
+    );
+
+    if (pickerTarget === "assetId") {
+      setImagePreview(`/api/public/propuesta/img/${copiada}`);
+    } else {
+      setLogoPreview(`/api/public/propuesta/img/${copiada}`);
+    }
+
+    setPickerTarget(null);
+  };
+
+  const rewriteMessage = async (targetTone: ProposalToneId) => {
+    if (!created) return;
+    setAiBusy("mensaje");
+    setError(null);
+    const companyName =
+      companies.find((c) => c.id === form.companyRef)?.name ?? "";
+    const res = await fetch("/api/proposals/copy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        target: "mensaje",
+        tone: targetTone,
+        angle,
+        instructions: aiInstructions.trim() || null,
+        clientName: customer.name,
+        kind,
+        productName: form.productName,
+        companyName,
+        title: form.title,
+        subtitle: form.subtitle,
+        body: form.body,
+        offer: form.offer,
+        benefit: form.benefit,
+        ctaLabel: form.ctaLabel,
+        draftMessage: draftText,
+      }),
+    }).catch(() => null);
+    const data = res
+      ? ((await res.json().catch(() => ({}))) as {
+          copy?: { message?: string; notes?: string };
+          message?: string;
+        })
+      : null;
+    setAiBusy(null);
+    if (!res?.ok || !data?.copy?.message) {
+      setError(data?.message ?? "No se pudo reescribir el mensaje");
+      return;
+    }
+    const absUrl = `${window.location.origin}${created.publicUrl}`;
+    setDraftText(`${data.copy.message}\n\nMiralá acá 👉 ${absUrl}`);
+    setMsgTone(targetTone);
+    setAiNotes(data.copy.notes ?? null);
+  };
+
   const save = async () => {
     setBusy("save");
     setError(null);
@@ -871,6 +1191,8 @@ function ProposalFlow({
         companyRef: form.companyRef || null,
         assetId: form.assetId,
         logoAssetId: form.logoAssetId,
+        tone,
+        angle,
       }),
     }).catch(() => null);
     const data = res ? ((await res.json().catch(() => ({}))) as { proposal?: ProposalDto; message?: string }) : null;
@@ -995,6 +1317,82 @@ function ProposalFlow({
           className="rounded-lg border bg-card px-3 py-2 text-[13px]"
         />
       </div>
+      {/* 041c — Escribir con IA: tono (cercana ↔ formal…) + concepto de venta */}
+      <div className="space-y-2 rounded-xl border border-border-strong bg-subtle/60 p-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="flex items-center gap-1 text-[12px] font-bold text-text-2">
+            <Wand2 size={13} /> Tono
+          </span>
+          {TONE_IDS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTone(id)}
+              aria-pressed={tone === id}
+              title={TONES[id].hint}
+              className={
+                tone === id
+                  ? "rounded-full border border-brand bg-brand px-2.5 py-1 text-[12px] font-semibold text-white"
+                  : "rounded-full border bg-card px-2.5 py-1 text-[12px] font-semibold text-text-2 hover:bg-subtle"
+              }
+            >
+              {TONES[id].label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="flex items-center gap-1 text-[12px] font-bold text-text-2">
+            <Lightbulb size={13} /> Concepto de venta
+          </span>
+          {ANGLE_IDS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setAngle((a) => (a === id ? null : id))}
+              aria-pressed={angle === id}
+              title={ANGLES[id].hint}
+              className={
+                angle === id
+                  ? "rounded-full border border-brand bg-brand px-2.5 py-1 text-[12px] font-semibold text-white"
+                  : "rounded-full border bg-card px-2.5 py-1 text-[12px] font-semibold text-text-2 hover:bg-subtle"
+              }
+            >
+              {ANGLES[id].label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            value={aiInstructions}
+            onChange={(e) => setAiInstructions(e.target.value)}
+            placeholder="Indicaciones para la IA (opcional): «mencioná el 20%», «hablale de la familia»…"
+            className="min-w-0 flex-1 rounded-lg border bg-card px-3 py-2 text-[12.5px]"
+          />
+          <button
+            type="button"
+            onClick={() => void aiWrite()}
+            disabled={aiBusy !== null || !form.title.trim()}
+            className="flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[12.5px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {aiBusy === "pieza" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            Escribir con IA
+          </button>
+          {prevForm && (
+            <button
+              type="button"
+              onClick={() => {
+                setForm(prevForm);
+                setPrevForm(null);
+                setAiNotes(null);
+              }}
+              className="flex items-center justify-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-[12.5px] font-semibold text-text-2 hover:bg-subtle"
+            >
+              <RotateCcw size={13} /> Deshacer
+            </button>
+          )}
+        </div>
+        {aiNotes && <p className="text-[11.5px] text-text-3">💡 {aiNotes}</p>}
+      </div>
       <textarea
         value={form.body}
         onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
@@ -1086,6 +1484,13 @@ function ProposalFlow({
             />
           </label>
         </div>
+        <button
+          type="button"
+          onClick={() => setPickerTarget("assetId")}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed bg-subtle/40 px-3 py-2 text-[12px] font-semibold text-text-2 hover:bg-subtle"
+        >
+          <FolderOpen size={14} /> Elegir foto del contenedor del equipo
+        </button>
       </div>
 
       {(imagePreview || logoPreview) && (
@@ -1102,6 +1507,14 @@ function ProposalFlow({
       )}
 
       {error && <p className="text-[12px] font-semibold text-rose-600">{error}</p>}
+
+      {pickerTarget !== null && (
+        <LibraryPicker
+          title="Elegir del contenedor del equipo"
+          onPick={pickFromLibrary}
+          onClose={() => setPickerTarget(null)}
+        />
+      )}
 
       {!created ? (
         <button
@@ -1267,6 +1680,30 @@ function ProposalFlow({
                   />
                 )}
                 <div className="min-w-0 flex-1 space-y-1.5">
+                  {/* 041c — tocá un tono y el mensaje se reescribe; recién después va al chat */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="flex items-center gap-1 text-[11.5px] font-bold text-text-2">
+                      <Wand2 size={12} /> Tono
+                    </span>
+                    {TONE_IDS.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => void rewriteMessage(id)}
+                        disabled={aiBusy !== null}
+                        aria-pressed={msgTone === id}
+                        title={TONES[id].hint}
+                        className={
+                          msgTone === id
+                            ? "rounded-full border border-emerald-600 bg-emerald-600 px-2 py-0.5 text-[11.5px] font-semibold text-white disabled:opacity-60"
+                            : "rounded-full border bg-card px-2 py-0.5 text-[11.5px] font-semibold text-text-2 hover:bg-subtle disabled:opacity-60"
+                        }
+                      >
+                        {TONES[id].label}
+                      </button>
+                    ))}
+                    {aiBusy === "mensaje" && <Loader2 size={12} className="animate-spin text-text-3" />}
+                  </div>
                   <div className="rounded-2xl rounded-tr-sm border border-emerald-600/20 bg-[#dcf8c6] px-3 py-2 text-[12.5px] leading-snug text-emerald-950 shadow-sm">
                     <textarea
                       value={draftText}

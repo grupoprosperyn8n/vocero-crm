@@ -10,7 +10,8 @@
  * Pedido Diego (2026-09-18): «primero que tenga métricas y gráficas del
  * cliente 360 que potenciabilicen la mejora y entendimiento».
  */
-import { count, desc, eq, gte, inArray } from "drizzle-orm";
+import { count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { isAngleId, isToneId } from "@/lib/proposals/copy";
 import type {
   ClientFichaDto,
   FichaGestion,
@@ -579,7 +580,10 @@ async function crmSide(input: {
       scoped(
         schema.proposal.organizationId,
         input.organizationId,
-        eq(schema.proposal.clientRef, input.recordId)
+        eq(schema.proposal.clientRef, input.recordId),
+        // 041e — las eliminadas no se muestran; las archivadas sí (quedan
+        // marcadas como tales: la ficha es el archivo del cliente).
+        isNull(schema.proposal.deletedAt)
       )
     )
     .orderBy(desc(schema.proposal.createdAt))
@@ -637,6 +641,10 @@ export function proposalToDto(
     clientPhone: p.clientPhone,
     assigneeUserId: p.assigneeUserId,
     assigneeGroupId: p.assigneeGroupId ?? null,
+    tone: isToneId(p.tone) ? p.tone : null,
+    angle: isAngleId(p.angle) ? p.angle : null,
+    archivedAt: p.archivedAt ? p.archivedAt.toISOString() : null,
+    online: p.online,
     assigneeKind: p.assigneeGroupId
       ? "group"
       : p.assigneeUserId

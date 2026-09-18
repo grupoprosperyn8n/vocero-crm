@@ -20,12 +20,17 @@ export const GET = withAuth(async (session, req: Request) => {
   const assigneeGroup = url.searchParams.get("assigneeGroup")?.trim() || null;
   const status = url.searchParams.get("status")?.trim() || null;
   const clientRef = url.searchParams.get("clientRef")?.trim() || null;
+  // 041e — archivadas: "archived=1" (incluirlas) / "archivedOnly=1" (solo ellas).
+  const archived = url.searchParams.get("archived") === "1";
+  const archivedOnly = url.searchParams.get("archivedOnly") === "1";
   const { proposals, funnel } = await listProposals({
     organizationId: session.organizationId,
     assigneeUserId: assignee,
     assigneeGroupId: assigneeGroup,
     status,
     clientRef,
+    includeArchived: archived || archivedOnly,
+    archivedOnly,
     // 041b — gerente/propietario/administrador ven todo; un miembro, lo suyo.
     viewerUserId: session.userId,
     viewerRole: session.role,
@@ -58,6 +63,12 @@ const createSchema = z.object({
     .trim()
     .optional()
     .refine((v) => !v || isPriority(v), "prioridad inválida"),
+  // 041c — tono y concepto de venta del asistente de publicidad.
+  tone: z.enum(["cercana", "formal", "directa", "entusiasta"]).optional().nullable(),
+  angle: z
+    .enum(["beneficio", "ahorro", "proteccion", "urgencia", "familia", "confianza"])
+    .optional()
+    .nullable(),
 });
 
 export const POST = withAuth(async (session, req: Request) => {

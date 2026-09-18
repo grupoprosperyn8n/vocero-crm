@@ -11,7 +11,7 @@
  * propio del CRM.
  */
 import { randomBytes } from "node:crypto";
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -29,7 +29,9 @@ import { resolveOrLinkClient, ClientLinkError } from "@/server/clients/link";
 import { airtableList } from "@/server/clients/sgsa";
 import { createDmRoom, postChatMessage } from "@/server/internal/chat";
 import { sniffFaviconMime } from "@/lib/favicon";
+import { isAngleId, isToneId } from "@/lib/proposals/copy";
 import { normalizeAdImage } from "@/server/images/normalize";
+import { recordProposalEvent, resolveUserName } from "./events";
 
 export class ProposalError extends Error {
   constructor(
@@ -475,6 +477,9 @@ export async function createProposal(input: {
   logoAssetId?: string | null;
   assigneeUserId?: string | null;
   priority?: ProposalPriority;
+  /** 041c — tono y concepto de venta elegidos para escribir la publicidad. */
+  tone?: string | null;
+  angle?: string | null;
 }): Promise<ProposalDto> {
   if (!isProposalKind(input.kind)) {
     throw new ProposalError("Tipo de propuesta desconocido", 400, "bad_kind");
@@ -523,7 +528,19 @@ export async function createProposal(input: {
     assetId: input.assetId ?? tpl.assetId ?? null,
     assigneeUserId: input.assigneeUserId ?? null,
     priority: input.priority && isPriority(input.priority) ? input.priority : "media",
+    tone: isToneId(input.tone) ? input.tone : null,
+    angle: isAngleId(input.angle) ? input.angle : null,
     createdBy: input.userId,
+  });
+
+  // 041e — el historial arranca con quien la creó.
+  await recordProposalEvent({
+    organizationId: input.organizationId,
+    proposalId: id,
+    actorId: input.userId,
+    actorName: await resolveUserName(input.userId),
+    action: "creada",
+    detail: `Creó la publicidad «${cleanText(input.title, 120) ?? tpl.title}»`,
   });
 
   return getProposalById(input.organizationId, id);
@@ -542,7 +559,8 @@ export async function getProposalById(
       scoped(
         schema.proposal.organizationId,
         organizationId,
-        eq(schema.proposal.id, id)
+        eq(schema.proposal.id, id),
+        isNull(schema.proposal.deletedAt)
       )
     )
     .limit(1);
@@ -591,9 +609,22 @@ export async function listProposals(input: {
    */
   viewerUserId?: string;
   viewerRole?: string;
+  /** 041e — por defecto se ocultan las archivadas; el panel las pide aparte. */
+  includeArchived?: boolean;
+  /** 041e — solo las archivadas (el filtro «Archivadas» del panel). */
+  archivedOnly?: boolean;
 }): Promise<{ proposals: ProposalDto[]; funnel: ProposalFunnel }> {
   const db = getDb();
-  const conditions = [] as ReturnType<typeof eq>[];
+  const conditions: SQL[] = [];
+
+  // 041e — lo eliminado no se lista jamás.
+  conditions.push(isNull(schema.proposal.deletedAt));
+
+  if (input.archivedOnly) {
+    conditions.push(isNotNull(schema.proposal.archivedAt));
+  } else if (!input.includeArchived) {
+    conditions.push(isNull(schema.proposal.archivedAt));
+  }
   if (input.assigneeUserId) {
     conditions.push(eq(schema.proposal.assigneeUserId, input.assigneeUserId));
   }
@@ -729,10 +760,13 @@ export async function deriveProposal(input: {
   let assigneeGroupId: string | null = null;
   let avisoRoomId: string | null = null;
 
+  let assigneeName: string | null = null;
+  let assigneeGroupName: string | null = null;
+
   if (destinoEmpleado) {
     // Tiene que ser parte del equipo (mismo requisito que el DM).
     const memberRow = await db
-      .select({ userId: schema.member.userId })
+      .select({ userId: schema.member.userId, name: schema.user.name })
       .from(schema.member)
       .innerJoin(schema.user, eq(schema.member.userId, schema.user.id))
       .where(
@@ -747,9 +781,10 @@ export async function deriveProposal(input: {
       throw new ProposalError("Ese empleado no es parte del equipo", 404, "no_member");
     }
     assigneeUserId = memberRow[0].userId;
+    assigneeName = memberRow[0].name;
   } else {
     const groupRow = await db
-      .select({ id: schema.chatRoom.id })
+      .select({ id: schema.chatRoom.id, name: schema.chatRoom.name })
       .from(schema.chatRoom)
       .where(
         scoped(
@@ -764,6 +799,7 @@ export async function deriveProposal(input: {
       throw new ProposalError("Ese grupo no existe en el chat interno", 404, "no_group");
     }
     assigneeGroupId = groupRow[0].id;
+    assigneeGroupName = groupRow[0].name;
     avisoRoomId = groupRow[0].id;
   }
 
@@ -823,6 +859,18 @@ export async function deriveProposal(input: {
     // El aviso no puede tumbar la derivación: queda registrada igual.
     console.error("[proposals] no se pudo enviar el aviso al chat:", err);
   }
+
+  // 041e — al historial: quién la derivó y a quién.
+  await recordProposalEvent({
+    organizationId: input.organizationId,
+    proposalId: input.id,
+    actorId: input.userId,
+    actorName: await resolveUserName(input.userId),
+    action: "derivada",
+    detail: destinoEmpleado
+      ? `Derivada a ${assigneeName ?? "un empleado"} · prioridad ${input.priority}`
+      : `Derivada al grupo «${assigneeGroupName ?? "grupo"}» · prioridad ${input.priority}`,
+  });
 
   return getProposalById(input.organizationId, input.id);
 }
@@ -902,6 +950,18 @@ export async function markProposalSent(input: {
     });
   }
 
+  // 041e — al historial: el envío (primera vez o reenvío).
+  if (!p.sentAt) {
+    await recordProposalEvent({
+      organizationId: input.organizationId,
+      proposalId: input.id,
+      actorId: input.userId,
+      actorName: await resolveUserName(input.userId),
+      action: "enviada",
+      detail: `Enviada a ${p.clientName} por WhatsApp`,
+    });
+  }
+
   const dto = await getProposalById(input.organizationId, input.id);
   return { ...dto, conversationId, contactId };
 }
@@ -927,6 +987,8 @@ export type PublicProposal = {
   ctaKind: "link" | "pdf";
   clientName: string;
   kind: string;
+  /** 041e — la publicidad se puede pausar (online/offline) desde el panel. */
+  online: boolean;
 };
 
 /** Lectura pública por token + registro de vista (primera y última). */
@@ -944,8 +1006,10 @@ export async function loadPublicProposal(
     .limit(1);
   const p = rows[0];
   if (!p) return null;
+  // 041e — eliminada no existe para el mundo; pausada tampoco suma vistas.
+  if (p.deletedAt) return null;
 
-  if (opts.countView !== false) {
+  if (opts.countView !== false && p.online) {
     await db
       .update(schema.proposal)
       .set({
@@ -973,6 +1037,7 @@ export async function loadPublicProposal(
     ctaKind: p.ctaKind,
     clientName: p.clientName,
     kind: p.kind,
+    online: p.online,
   };
 }
 
@@ -1002,6 +1067,8 @@ export async function listCommercialFollowUp(input: {
   const tope = Math.min(input.limit ?? 250, 400);
 
   const { proposals } = await listProposals({
+    // 041e — el seguimiento es archivo histórico: muestra también archivadas.
+    includeArchived: true,
     organizationId: input.organizationId,
     clientRef: input.clientRef,
     assigneeUserId: input.assigneeUserId,
@@ -1051,6 +1118,25 @@ export async function listCommercialFollowUp(input: {
     }
     if (p.respondedAt) {
       items.push({ id: `${p.id}:r`, at: p.respondedAt, what: "respondio", detail: null, ...base });
+    }
+    // 041e — estado de gestión: archivada y online/offline también son hitos.
+    if (p.archivedAt) {
+      items.push({
+        id: `${p.id}:a`,
+        at: p.archivedAt,
+        what: "archivada",
+        detail: "fuera del trabajo activo (se puede desarchivar)",
+        ...base,
+      });
+    }
+    if (p.status === "enviada" && !p.online) {
+      items.push({
+        id: `${p.id}:o`,
+        at: p.sentAt ?? p.createdAt,
+        what: "pausada",
+        detail: "la publicidad está offline",
+        ...base,
+      });
     }
   }
 

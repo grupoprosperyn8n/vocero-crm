@@ -1656,6 +1656,71 @@ export const proposalAsset = pgTable("proposal_asset", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+/* ============================================================ *
+ * 041d/041e — CONTENEDOR UNIVERSAL DE ARCHIVOS y HISTORIAL de
+ * la propuesta (quién la editó, archivó, publicó o eliminó).
+ * ============================================================ */
+
+/**
+ * Archivo del contenedor universal (imágenes y videos): lo cargan los
+ * usuarios, se elige desde cualquier ficha para armar publicidades y lo que
+ * sube el dueño/administrador/gerente queda PROTEGIDO (no se puede quitar).
+ * Bytes en base64 en la DB (el disco del contenedor no persiste).
+ */
+export const libraryAsset = pgTable(
+  "library_asset",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: text("kind", { enum: ["image", "video"] }).notNull(),
+    mime: text("mime").notNull(),
+    byteSize: integer("byte_size").notNull().default(0),
+    /** Base64 (sin prefijo data:). */
+    data: text("data").notNull(),
+    uploadedBy: text("uploaded_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** Rol del que subió (protege lo de dueño/gerente aunque cambie de rol). */
+    uploadedByRole: text("uploaded_by_role").notNull().default("member"),
+    /** true = lo subió dueño/propietario/gerente: solo dueño/propietario lo quitan. */
+    protected: boolean("protected").notNull().default(false),
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("library_asset_org_idx").on(t.organizationId, t.createdAt),
+    index("library_asset_kind_idx").on(t.organizationId, t.kind),
+  ]
+);
+
+/** Historial de una propuesta: quién la editó y qué se hizo con ella. */
+export const proposalEvent = pgTable(
+  "proposal_event",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    proposalId: text("proposal_id")
+      .notNull()
+      .references(() => proposal.id, { onDelete: "cascade" }),
+    actorId: text("actor_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** Copia del nombre al momento (el usuario puede irse). */
+    actorName: text("actor_name"),
+    /** creada | editada | derivada | enviada | archivada | restaurada |
+     *  publicada | pausada | eliminada */
+    action: text("action").notNull(),
+    detail: text("detail"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("proposal_event_proposal_idx").on(t.proposalId, t.createdAt)]
+);
+
 /**
  * Plantilla por TIPO de sugerencia (retención, renovación, venta cruzada,
  * reactivación, fidelización): título, textos, CTA y la imagen que se
@@ -1754,6 +1819,14 @@ export const proposal = pgTable(
     priority: text("priority", { enum: ["alta", "media", "baja"] })
       .notNull()
       .default("media"),
+    /** 041c — cómo se escribió la publicidad (asistente de IA). */
+    tone: text("tone"),
+    angle: text("angle"),
+    /** 041e — publicada o pausada: la página pública respeta esta bandera. */
+    online: boolean("online").notNull().default(true),
+    /** 041e — archivar (gerente) y eliminar lógico (propietario/dueño). */
+    archivedAt: timestamp("archived_at"),
+    deletedAt: timestamp("deleted_at"),
     derivedAt: timestamp("derived_at"),
     derivedBy: text("derived_by").references(() => user.id, {
       onDelete: "set null",

@@ -59,6 +59,9 @@ const prefixes = {
   proposal: "prop",
   proposalTemplate: "ptpl",
   proposalAsset: "pass",
+  // 041d/041e — contenedor universal de archivos e historial de la propuesta
+  libraryAsset: "lib",
+  proposalEvent: "pev",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

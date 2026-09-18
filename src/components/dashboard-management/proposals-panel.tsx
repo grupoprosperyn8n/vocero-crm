@@ -8,15 +8,28 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import {
+  Archive,
+  ArchiveRestore,
   ClipboardCopy,
   ExternalLink,
+  History as HistoryIcon,
   Loader2,
+  PauseCircle,
+  Pencil,
+  PlayCircle,
   RefreshCcw,
+  Trash2,
   TrendingUp,
   UserRound,
 } from "lucide-react";
 import type { ProposalDto, TeamGroupLiteDto, TeamMemberLiteDto } from "@/lib/types";
 import { kindTag, priorityChip, proposalStatusChip, type PanelCustomer } from "./client-panel";
+import {
+  ProposalEditModal,
+  ProposalHistoryModal,
+  proposalLifecycle,
+  type LifecycleAction,
+} from "./proposal-actions";
 
 type Funnel = {
   total: number;
@@ -50,6 +63,11 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
   /** "u:<id>" = empleado, "g:<id>" = grupo, "" = todos (041b). */
   const [assignee, setAssignee] = useState("");
   const [status, setStatus] = useState("");
+  /** 041e — "" activas · "1" con archivadas · "only" solo archivadas. */
+  const [archived, setArchived] = useState<"" | "1" | "only">("");
+  const [viewerRole, setViewerRole] = useState("member");
+  const [editing, setEditing] = useState<ProposalDto | null>(null);
+  const [historyFor, setHistoryFor] = useState<ProposalDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -62,6 +80,8 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
       if (assignee.startsWith("g:")) qs.set("assigneeGroup", assignee.slice(2));
       else if (assignee.startsWith("u:")) qs.set("assignee", assignee.slice(2));
       if (status) qs.set("status", status);
+      if (archived === "1") qs.set("archived", "1");
+      if (archived === "only") qs.set("archivedOnly", "1");
       try {
         const [pRes, dRes] = await Promise.all([
           fetch(`/api/proposals?${qs.toString()}`, { cache: "no-store" }),
@@ -72,6 +92,7 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
         const pData = (await pRes.json().catch(() => ({}))) as {
           proposals?: ProposalDto[];
           funnel?: Funnel;
+          viewer?: { role?: string };
           message?: string;
         };
         if (!pRes.ok || !pData.proposals || !pData.funnel) {
@@ -79,6 +100,7 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
         }
         setProposals(pData.proposals);
         setFunnel(pData.funnel);
+        if (pData.viewer?.role) setViewerRole(pData.viewer.role);
         if (dRes) {
           const dData = (await dRes.json().catch(() => ({}))) as {
             members?: TeamMemberLiteDto[];
@@ -93,13 +115,31 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
         setLoading(false);
       }
     },
-    [assignee, status]
+    [assignee, status, archived]
   );
 
   useEffect(() => {
     void load(directory.length > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignee, status]);
+  }, [assignee, status, archived]);
+
+  const handleLifecycle = async (p: ProposalDto, action: LifecycleAction) => {
+    if (
+      action === "delete" &&
+      !window.confirm(`¿Eliminar «${p.title}»? No se puede deshacer.`)
+    ) {
+      return;
+    }
+
+    const r = await proposalLifecycle(p.id, action);
+
+    if (!r.ok) {
+      setError(r.message ?? "No se pudo completar la acción");
+      return;
+    }
+
+    await load(false);
+  };
 
   const copy = async (p: ProposalDto) => {
     try {
@@ -164,6 +204,16 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
           <option value="derivada">Derivada</option>
           <option value="enviada">Enviada</option>
         </select>
+        <select
+          value={archived}
+          onChange={(e) => setArchived(e.target.value as "" | "1" | "only")}
+          className="rounded-lg border bg-card px-2 py-1.5 text-[12.5px]"
+          title="041e — las archivadas salen del trabajo activo pero se pueden revisar siempre"
+        >
+          <option value="">Activas</option>
+          <option value="1">Activas + archivadas</option>
+          <option value="only">Solo archivadas</option>
+        </select>
         <button
           type="button"
           onClick={() => void load(false)}
@@ -216,11 +266,62 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
                     {p.respondedAt ? " · respondió ✓" : ""}
                   </p>
                 </div>
+                {p.archivedAt && (
+                  <span className="rounded-full border bg-subtle px-2 py-0.5 text-[10.5px] font-bold text-text-3">
+                    Archivada
+                  </span>
+                )}
                 <span className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold ${pr.className}`}>
                   {pr.label.replace("Prioridad ", "")}
                 </span>
                 <span className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold ${st.className}`}>{st.label}</span>
                 <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(p)}
+                    className="rounded-lg border bg-card p-1.5 text-text-3 hover:bg-subtle hover:text-text-1"
+                    title="Editar los textos (queda registrado quién)"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryFor(p)}
+                    className="rounded-lg border bg-card p-1.5 text-text-3 hover:bg-subtle hover:text-text-1"
+                    title="Historial de la gestión"
+                  >
+                    <HistoryIcon size={13} />
+                  </button>
+                  {(viewerRole === "owner" || viewerRole === "admin" || viewerRole === "manager") && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void handleLifecycle(p, p.archivedAt ? "restore" : "archive")}
+                        className="rounded-lg border bg-card p-1.5 text-text-3 hover:bg-subtle hover:text-text-1"
+                        title={p.archivedAt ? "Sacar del archivo" : "Archivar (gerente y arriba)"}
+                      >
+                        {p.archivedAt ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleLifecycle(p, p.online ? "offline" : "online")}
+                        className="rounded-lg border bg-card p-1.5 text-text-3 hover:bg-subtle hover:text-text-1"
+                        title={p.online ? "Pausar la publicidad (offline)" : "Volver a ponerla online"}
+                      >
+                        {p.online ? <PauseCircle size={13} /> : <PlayCircle size={13} />}
+                      </button>
+                    </>
+                  )}
+                  {(viewerRole === "owner" || viewerRole === "admin") && (
+                    <button
+                      type="button"
+                      onClick={() => void handleLifecycle(p, "delete")}
+                      className="rounded-lg border bg-card p-1.5 text-rose-500 hover:bg-rose-50"
+                      title="Eliminar (solo dueño/propietario)"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                   <a
                     href={p.publicUrl}
                     target="_blank"
@@ -243,6 +344,24 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
             );
           })}
         </div>
+      )}
+
+      {/* 041e — editar / historial */}
+      {editing && (
+        <ProposalEditModal
+          proposal={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void load(false);
+          }}
+        />
+      )}
+      {historyFor && (
+        <ProposalHistoryModal
+          proposal={historyFor}
+          onClose={() => setHistoryFor(null)}
+        />
       )}
     </div>
   );

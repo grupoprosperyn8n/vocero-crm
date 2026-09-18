@@ -30,6 +30,27 @@ export default async function ProposalPage({ params }: Props) {
   const proposal = await loadPublicProposal(token);
   if (!proposal) notFound();
   const branding = await getBranding().catch(() => null);
+
+  // 041e — publicidad PAUSADA desde el panel: el link sigue siendo válido pero
+  // no muestra la pieza (se puede volver a poner online cuando quieran).
+  if (!proposal.online) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-subtle/60 px-4 py-10">
+        <article className="w-full max-w-md space-y-2 rounded-2xl border bg-card p-6 text-center shadow-sm">
+          <p className="text-[30px]">⏸️</p>
+          <h1 className="text-[17px] font-bold">
+            Esta publicidad no está disponible por ahora
+          </h1>
+          <p className="text-[13px] text-text-3">
+            Consultá con tu asesor
+            {branding?.name ? ` de ${branding.name}` : ""}: se puede volver a
+            activar en un momento.
+          </p>
+        </article>
+      </main>
+    );
+  }
+
   const img = (id: string | null, label: string) =>
     id ? (
       // eslint-disable-next-line @next/next/no-img-element

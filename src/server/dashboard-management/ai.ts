@@ -9,9 +9,8 @@
  * diario (DASHBOARD_AI_DAILY_LIMIT, default 300).
  */
 
-import { chatJson, type AiCallConfig } from "@/lib/ai";
-import { getEnv, isAiConfigured } from "@/lib/env";
-import { getOrgAiConfig } from "@/server/ai/config";
+import { chatJson } from "@/lib/ai";
+import { resolveAi } from "@/server/ai/resolve";
 
 import type {
   ClientInsight,
@@ -68,65 +67,6 @@ function takeDailySlot(): boolean {
   dailyCount += 1;
 
   return true;
-}
-
-/* --------------------------------------------------------------------- *
- * Resolución de la conexión de IA (la del CRM)
- * --------------------------------------------------------------------- */
-
-type ResolvedAi = {
-  configured: boolean;
-  source: "org" | "env" | null;
-  provider: string | null;
-  model: string | null;
-  callConfig: AiCallConfig | null;
-};
-
-async function resolveAi(organizationId: string): Promise<ResolvedAi> {
-  let org: Awaited<ReturnType<typeof getOrgAiConfig>> = null;
-
-  try {
-    org = await getOrgAiConfig(organizationId);
-  } catch (err) {
-    console.error("[dashboard-ai] getOrgAiConfig falló:", err);
-  }
-
-  if (org) {
-    return {
-      configured: true,
-      source: "org",
-      provider: org.provider,
-      model: org.model,
-      callConfig: {
-        dialect: org.dialect,
-        baseUrl: org.baseUrl,
-        apiKey: org.apiKey,
-      },
-    };
-  }
-
-  if (isAiConfigured()) {
-    const env = getEnv();
-    const model = env.OPENROUTER_MODEL?.trim() || null;
-
-    if (model) {
-      return {
-        configured: true,
-        source: "env",
-        provider: "openrouter",
-        model,
-        callConfig: null,
-      };
-    }
-  }
-
-  return {
-    configured: false,
-    source: null,
-    provider: null,
-    model: null,
-    callConfig: null,
-  };
 }
 
 /** Estado de la conexión de IA para la UI (nunca expone la key). */

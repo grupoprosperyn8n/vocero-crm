@@ -1,5 +1,6 @@
 import { JUDGE_MARKER } from "@/server/ai/prompts";
 import { CABECERA_HUECOS } from "@/server/agenda/offers";
+import { COPY_MARKER } from "@/lib/proposals/copy";
 
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
@@ -10,10 +11,59 @@ import { CABECERA_HUECOS } from "@/server/agenda/offers";
 
 type InMessage = { role: string; content: string };
 
+/** 041c — El asistente de publicidad: devuelve el tono/ángulo pedidos. */
+function copyMock(system: string, lastUser: string): string | null {
+  if (!system.includes(COPY_MARKER)) {
+    return null;
+  }
+
+  let ctx: Record<string, unknown> = {};
+
+  try {
+    const segment = lastUser.split("DATOS:")[1] ?? "";
+    const jsonLine = segment.trim().split("\n")[0] ?? "";
+
+    ctx = JSON.parse(jsonLine) as Record<string, unknown>;
+  } catch {
+    ctx = {};
+  }
+
+  const tone = String(ctx.tone ?? "cercana");
+  const angle = String(ctx.angle ?? "beneficio");
+  const first = String(ctx.clientName ?? "")
+    .trim()
+    .split(/\s+/)[0] ?? "";
+
+  if (ctx.target === "mensaje") {
+    return JSON.stringify({
+      message: `[${tone}/${angle}] ¡Hola ${first}! Te escribo de la agencia con una propuesta pensada para vos. ¿Te parece si te cuento en dos minutos?`,
+      notes: `Mock determinista — tono ${tone}, ángulo ${angle}.`,
+    });
+  }
+
+  return JSON.stringify({
+    title: `[${tone}/${angle}] Tu cobertura con un beneficio concreto`,
+    subtitle: `Escrito para ${first || "el cliente"}`,
+    body: `Primer párrafo en tono ${tone.toLowerCase()}: el beneficio primero.\n\nSegundo párrafo con el concepto ${angle}.`,
+    offer: ctx.offer ? `Condición vigente: ${ctx.offer}` : "Consultá la condición vigente.",
+    benefit: `Beneficio principal (${angle})`,
+    ctaLabel: String(ctx.ctaLabel || "Quiero saber más"),
+    message: "",
+    notes: `Mock determinista — tono ${tone}, ángulo ${angle}.`,
+  });
+}
+
 export function aiMockCompletion(messages: InMessage[]): string {
   const system = messages.find((m) => m.role === "system")?.content ?? "";
   const lastUser =
     [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+
+  // 041c — Publicidad con tono y concepto (siempre, antes que el resto).
+  const copy = copyMock(system, lastUser);
+
+  if (copy) {
+    return copy;
+  }
 
   // Juez del Laboratorio: veredicto determinista por persona. Para cerrar el
   // loop del self-test, la persona fuera_de_kb pasa a verde si el CONOCIMIENTO
