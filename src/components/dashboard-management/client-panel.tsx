@@ -70,7 +70,6 @@ import {
   type ProposalAngleId,
   type ProposalToneId,
 } from "@/lib/proposals/copy";
-import { LibraryPanel } from "./library-panel";
 import { LibraryPicker, type PickerAsset } from "./library-picker";
 import {
   ProposalEditModal,
@@ -650,9 +649,6 @@ function PanelBody({
           </div>
         )}
       </section>
-
-      {/* 4b · 041d — Contenedor universal de archivos (imágenes y videos) */}
-      <LibraryPanel />
 
       {/* 5 · Historial de gestiones */}
       <section>

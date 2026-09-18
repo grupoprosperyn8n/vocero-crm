@@ -1143,7 +1143,12 @@ export async function getPublicWhatsappPhone(organizationId: string): Promise<st
     .where(eq(schema.metaCredentials.organizationId, organizationId))
     .limit(1);
   const digits = (rows[0]?.phone ?? "").replace(/\D/g, "");
-  return digits.length >= 8 ? digits : null;
+  if (digits.length >= 8) return digits;
+
+  // Sin conexión Meta cargada en la base (p. ej. producción, donde el WhatsApp
+  // lo lleva un bot externo): el número se configura por entorno.
+  const fromEnv = (getEnv().WA_PUBLIC_PHONE ?? "").replace(/\D/g, "");
+  return fromEnv.length >= 8 ? fromEnv : null;
 }
 
 /** Lectura pública por token + registro de vista (primera y última). */

@@ -53,6 +53,11 @@ const envSchema = z.object({
   ALLOW_SIGNUP: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
   WA_MOCK_ENABLED: z.string().optional(),
+  // 042 — WhatsApp público del negocio para el botón «Hablar por WhatsApp» de
+  // las páginas de publicidad (wa.me). Se usa cuando la conexión Meta no está
+  // cargada en la base (instalaciones donde el WhatsApp lo lleva un bot
+  // externo, como producción). Acepta «+54 9 341 …»: se normaliza a dígitos.
+  WA_PUBLIC_PHONE: z.string().optional(),
   // API key de un cerebro externo que conduzca la conversación por /api/bot/*.
   // Sin ella, toda esa superficie responde 401.
   BOT_API_KEY: z.string().optional(),

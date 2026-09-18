@@ -304,7 +304,8 @@ const archVisible = await archSelect
   .catch(() => false);
 check("22. pestaña Propuestas: filtro Activas / archivadas visible", archVisible);
 
-// En el panel del cliente: contenedor de archivos + acciones de la lista.
+// En el panel del cliente: la ficha YA NO lleva el contenedor (042b: es global)
+// + acciones de la lista de gestiones.
 await page.getByRole("button", { name: /^\s*Cliente 360/ }).first().click();
 const s = page.getByPlaceholder("Buscar cliente, DNI o póliza…");
 await s.waitFor({ timeout: 90_000 });
@@ -315,27 +316,18 @@ await pb.waitFor({ timeout: 240_000 });
 await pb.click();
 await page.getByText("Métricas del cliente").first().waitFor({ timeout: 60_000 });
 
-const contenedor = await page
+const enFicha = await page
   .getByText("Contenedor de archivos")
   .first()
-  .waitFor({ state: "visible", timeout: 90_000 })
-  .then(() => true)
+  .isVisible()
   .catch(() => false);
-check("23. la ficha tiene el CONTENEDOR DE ARCHIVOS", contenedor);
-
-const imagen = await page
-  .locator(`img[alt="prueba-e2e-${stamp}.png"]`)
-  .first()
-  .waitFor({ state: "visible", timeout: 90_000 })
-  .then(() => true)
-  .catch(() => false);
-check("24. la imagen subida se ve en el contenedor", imagen);
+check("23. la ficha ya NO muestra el contenedor universal (ahora es global)", !enFicha);
 
 // La fila de propuestas: botones de gestión (editar + historial).
 const editorBtn = page.getByTitle(/Editar los textos/).first();
 const histBtn = page.getByTitle(/Historial/).first();
 const rowActions = await editorBtn.isVisible().catch(() => false);
-check("25. las gestiones de la ficha tienen editar e historial", rowActions && (await histBtn.isVisible().catch(() => false)));
+check("24. las gestiones de la ficha tienen editar e historial", rowActions && (await histBtn.isVisible().catch(() => false)));
 
 // El botón «Elegir del contenedor (fotos o video)» abre el selector y deja elegir.
 await page.getByRole("button", { name: /Crear propuesta comercial/ }).first().click();
@@ -358,7 +350,24 @@ const previewOk = await page
   .waitFor({ state: "visible", timeout: 90_000 })
   .then(() => true)
   .catch(() => false);
-check("26. se elige la foto DESDE el contenedor y queda en los medios", pickerOk && previewOk);
+check("25. se elige la foto DESDE el contenedor y queda en los medios", pickerOk && previewOk);
+
+// 042b — el contenedor es GLOBAL: sección «Archivos» del menú del tablero.
+await page.goto(`${BASE}/dashboard-management`, { waitUntil: "domcontentloaded" });
+await page.getByRole("button", { name: /^\s*Archivos\s*$/ }).first().click();
+const contGlobal = await page
+  .getByText("Contenedor de archivos")
+  .first()
+  .waitFor({ state: "visible", timeout: 90_000 })
+  .then(() => true)
+  .catch(() => false);
+const imgGlobal = await page
+  .locator(`img[alt="prueba-e2e-${stamp}.png"]`)
+  .first()
+  .waitFor({ state: "visible", timeout: 90_000 })
+  .then(() => true)
+  .catch(() => false);
+check("26. el contenedor vive en la sección GLOBAL «Archivos» (con la imagen subida)", contGlobal && imgGlobal);
 
 const consoleErrors = errors.length;
 check("27. sin errores de página", consoleErrors === 0, errors[0]?.slice(0, 120) ?? "");

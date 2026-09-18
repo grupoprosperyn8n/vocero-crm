@@ -16,6 +16,7 @@ import {
   Clock3,
   Database,
   FileText,
+  FolderOpen,
   HeartHandshake,
   HelpCircle,
   History,
@@ -69,6 +70,7 @@ import { airtableTagStyle } from "@/lib/dashboard-management/airtable-colors";
 import { ClientPanel, type PanelCustomer } from "./client-panel";
 import { ProposalsPanel } from "./proposals-panel";
 import { CampaignsPanel } from "./campaigns-panel";
+import { LibraryPanel } from "./library-panel";
 import { FollowUpPanel } from "./followup-panel";
 import {
   MODULE_HELP,
@@ -900,6 +902,7 @@ const MODULE_TABS: { id: TabId; label: string; Icon: typeof TrendingUp }[] = [
   { id: "propuestas", label: "Propuestas", Icon: FileText },
   { id: "seguimiento", label: "Seguimiento", Icon: History },
   { id: "campanas", label: "Campañas 360", Icon: Megaphone },
+  { id: "archivos", label: "Archivos", Icon: FolderOpen },
   { id: "migracion", label: "Calidad de datos", Icon: Database },
 ];
 
@@ -923,6 +926,7 @@ const TAB_FILTERS: Record<
   propuestas: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   seguimiento: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   campanas: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
+  archivos: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   migracion: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
 };
 
@@ -938,6 +942,7 @@ const FILTER_SCOPE: Record<TabId, string> = {
   propuestas: "La pestaña tiene sus propios filtros: empleado asignado y estado del embudo.",
   seguimiento: "El archivo comercial tiene sus propios filtros: quién gestiona, origen (cola, ficha o propuesta) y búsqueda por cliente.",
   campanas: "El tablero de campañas tiene sus propios filtros: estado del embudo y búsqueda por cliente.",
+  archivos: "El contenedor de archivos es global (fotos y videos de todo el equipo): los filtros de cartera no lo afectan.",
   migracion: "Este módulo muestra la base completa: los filtros no lo afectan.",
 };
 
@@ -2670,6 +2675,18 @@ export function ExecDashboard() {
           />
 
           <CampaignsPanel onOpenPanel={(c) => setPanelClient(c)} />
+        </div>
+      )}
+
+      {tab === "archivos" && (
+        <div className="space-y-3">
+          <HelpZone
+            help={MODULE_HELP.archivos}
+            id="archivos"
+            onAction={applyHelpAction}
+          />
+
+          <LibraryPanel />
         </div>
       )}
 

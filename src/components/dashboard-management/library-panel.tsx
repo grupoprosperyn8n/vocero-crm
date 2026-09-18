@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * 041d — CONTENEDOR UNIVERSAL DE ARCHIVOS, dentro de la ficha 360.
+ * 041d — CONTENEDOR UNIVERSAL DE ARCHIVOS. Sección GLOBAL «Archivos» del
+ * tablero (042b: no va dentro de la ficha 360° de un cliente — es para todos).
  *
  * "Ese contenedor es para todos": un solo estante para todo el equipo. Las
  * imágenes se pueden elegir desde acá para armar una publicidad y los videos

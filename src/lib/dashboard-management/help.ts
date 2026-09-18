@@ -10,6 +10,7 @@ export type TabId =
   | "propuestas"
   | "seguimiento"
   | "campanas"
+  | "archivos"
   | "migracion";
 
 export type HelpAction =
@@ -344,6 +345,30 @@ export const MODULE_HELP: Record<
     ],
     suggestions: [
       { text: "Ver la cola de hoy", action: { kind: "goto", tab: "cola" } },
+      { text: "Ir a Propuestas", action: { kind: "goto", tab: "propuestas" } },
+    ],
+  },
+
+  archivos: {
+    title: "Archivos",
+    tagline:
+      "El contenedor universal del equipo: todas las fotos y videos en un solo estante.",
+    what: [
+      "Es GLOBAL: un único lugar para todo el equipo — no vive dentro de la ficha de un cliente.",
+      "Acá se suben las imágenes y los videos que después se eligen para armar una publicidad (carrusel de fotos + video MP4).",
+      "Lo que sube dueño, propietario o gerente queda fijo y protegido (no se puede quitar).",
+    ],
+    measures: [
+      "Cuántos archivos hay, de quién son y cuándo se subieron.",
+      "Qué es imagen y qué es video, con su tamaño.",
+    ],
+    usage: [
+      "Subí acá las fotos y los videos; después, al armar una publicidad, usá «Elegir del contenedor».",
+      "El video va en los medios de la publicidad (no como logo).",
+      "Si un archivo protegido te aparece con candado, solo dueño/propietario/gerente puede quitarlo.",
+    ],
+    suggestions: [
+      { text: "Ir a Campañas 360", action: { kind: "goto", tab: "campanas" } },
       { text: "Ir a Propuestas", action: { kind: "goto", tab: "propuestas" } },
     ],
   },
