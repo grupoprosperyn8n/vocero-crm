@@ -1,0 +1,2 @@
+ALTER TABLE "proposal" ADD COLUMN "assignee_group_id" text;--> statement-breakpoint
+ALTER TABLE "proposal" ADD CONSTRAINT "proposal_assignee_group_id_chat_room_id_fk" FOREIGN KEY ("assignee_group_id") REFERENCES "public"."chat_room"("id") ON DELETE set null ON UPDATE no action;

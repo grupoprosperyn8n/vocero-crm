@@ -103,8 +103,8 @@ export function ProposalsSettings() {
 
   const upload = (file: File, target: "assetId" | "logoAssetId") => {
     setError("");
-    if (file.size > 2_500_000) {
-      setError("La imagen supera los 2,5 MB");
+    if (file.size > 8_000_000) {
+      setError("La imagen no puede pasar de 8 MB");
       return;
     }
     const reader = new FileReader();

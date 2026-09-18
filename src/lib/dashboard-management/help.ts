@@ -8,6 +8,7 @@ export type TabId =
   | "clientes"
   | "crm"
   | "propuestas"
+  | "seguimiento"
   | "migracion";
 
 export type HelpAction =
@@ -292,6 +293,31 @@ export const MODULE_HELP: Record<
       {
         text: "Ir al panel de un cliente y crear una propuesta",
         action: { kind: "goto", tab: "clientes" },
+      },
+    ],
+  },
+
+  seguimiento: {
+    title: "Seguimiento comercial · Cliente 360°",
+    tagline:
+      "Todo lo que el sistema hizo, para revisarlo siempre: acciones ejecutadas y propuestas, por acción o por cliente.",
+    what: [
+      "Es el archivo comercial del Cliente 360°: cada propuesta con sus hitos (creada → derivada → enviada → vista → respondió) y cada acción ya ejecutada desde la Cola de hoy o desde la ficha.",
+      "Un cliente puede tener varias acciones y propuestas a lo largo del tiempo: la vista «Por cliente» las agrupa para ver a quién ya se tocó y con qué resultado.",
+    ],
+    measures: [
+      "Por acción: la línea de tiempo completa, lo más nuevo arriba.",
+      "Por cliente: cuántas propuestas y acciones tiene cada uno y cuándo fue la última.",
+    ],
+    usage: [
+      "Cambiá entre «Por acción» y «Por cliente» según la estrategia que estés armando.",
+      "Filtrá por quién gestiona, por origen (cola, ficha o propuesta) y buscá un cliente puntual.",
+      "El nombre del cliente abre su panel de control; «Abrir pieza» muestra la página pública de la propuesta.",
+    ],
+    suggestions: [
+      {
+        text: "Ver las propuestas y su embudo",
+        action: { kind: "goto", tab: "propuestas" },
       },
     ],
   },

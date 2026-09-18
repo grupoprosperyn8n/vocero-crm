@@ -7,12 +7,22 @@ export const dynamic = "force-dynamic";
 const schema = z.object({
   mime: z.string().trim().min(3).max(60),
   filename: z.string().trim().max(160).optional().nullable(),
-  /** Base64 sin prefijo data: (máx ~2,5 MB decodificado). */
+  /**
+   * Base64 sin prefijo `data:` (máx ~8 MB decodificado, antes de adaptar).
+   * El charset se verifica sobre los extremos y no con un regex sobre los
+   * ~9 MB completos: RegExp.test sobre una cadena de ese tamaño revienta la
+   * pila de V8 (Maximum call stack size exceeded, visto en producción).
+   */
   data: z
     .string()
     .min(16)
-    .max(4_000_000)
-    .regex(/^[A-Za-z0-9+/=\s]+$/, "base64 inválido"),
+    .max(12_000_000)
+    .refine(
+      (s) =>
+        /^[A-Za-z0-9+/\s]*$/.test(s.slice(0, 4096)) &&
+        /^[A-Za-z0-9+/=\s]*$/.test(s.slice(-4096)),
+      "base64 inválido"
+    ),
 });
 
 /**

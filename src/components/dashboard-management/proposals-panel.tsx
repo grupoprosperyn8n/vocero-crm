@@ -15,7 +15,7 @@ import {
   TrendingUp,
   UserRound,
 } from "lucide-react";
-import type { ProposalDto, TeamMemberLiteDto } from "@/lib/types";
+import type { ProposalDto, TeamGroupLiteDto, TeamMemberLiteDto } from "@/lib/types";
 import { kindTag, priorityChip, proposalStatusChip, type PanelCustomer } from "./client-panel";
 
 type Funnel = {
@@ -46,6 +46,8 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
   const [proposals, setProposals] = useState<ProposalDto[] | null>(null);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [directory, setDirectory] = useState<TeamMemberLiteDto[]>([]);
+  const [groups, setGroups] = useState<TeamGroupLiteDto[]>([]);
+  /** "u:<id>" = empleado, "g:<id>" = grupo, "" = todos (041b). */
   const [assignee, setAssignee] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
@@ -57,7 +59,8 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
       setLoading(true);
       setError("");
       const qs = new URLSearchParams();
-      if (assignee) qs.set("assignee", assignee);
+      if (assignee.startsWith("g:")) qs.set("assigneeGroup", assignee.slice(2));
+      else if (assignee.startsWith("u:")) qs.set("assignee", assignee.slice(2));
       if (status) qs.set("status", status);
       try {
         const [pRes, dRes] = await Promise.all([
@@ -77,8 +80,12 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
         setProposals(pData.proposals);
         setFunnel(pData.funnel);
         if (dRes) {
-          const dData = (await dRes.json().catch(() => ({}))) as { members?: TeamMemberLiteDto[] };
+          const dData = (await dRes.json().catch(() => ({}))) as {
+            members?: TeamMemberLiteDto[];
+            groups?: TeamGroupLiteDto[];
+          };
           setDirectory(dData.members ?? []);
+          setGroups(dData.groups ?? []);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "No se pudieron cargar las propuestas");
@@ -122,7 +129,7 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
       {/* Filtros */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="flex items-center gap-1.5 text-[12px] font-semibold text-text-2">
-          <UserRound size={13} /> Empleado:
+          <UserRound size={13} /> Gestiona:
         </span>
         <select
           value={assignee}
@@ -130,11 +137,22 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
           className="rounded-lg border bg-card px-2 py-1.5 text-[12.5px]"
         >
           <option value="">Todo el equipo</option>
-          {directory.map((m) => (
-            <option key={m.userId} value={m.userId}>
-              {m.name}
-            </option>
-          ))}
+          <optgroup label="Empleados">
+            {directory.map((m) => (
+              <option key={m.userId} value={`u:${m.userId}`}>
+                {m.name}
+              </option>
+            ))}
+          </optgroup>
+          {groups.length > 0 && (
+            <optgroup label="Grupos del chat">
+              {groups.map((g) => (
+                <option key={g.id} value={`g:${g.id}`}>
+                  {g.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         <select
           value={status}
@@ -189,7 +207,9 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
                     </button>
                     {" · "}
                     {k.label}
-                    {p.assigneeName ? ` · ${p.assigneeName}` : " · sin derivar"}
+                    {p.assigneeName
+                      ? ` · ${p.assigneeKind === "group" ? "👥 " : ""}${p.assigneeName}`
+                      : " · sin derivar"}
                     {" · "}
                     {new Date(p.createdAt).toLocaleDateString("es-AR")}
                     {p.views > 0 ? ` · ${p.views} vista${p.views === 1 ? "" : "s"}` : ""}

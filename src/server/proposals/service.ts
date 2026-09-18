@@ -11,21 +11,25 @@
  * propio del CRM.
  */
 import { randomBytes } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { getEnv } from "@/lib/env";
 import {
   PROPOSAL_KINDS,
+  type FollowUpItemDto,
   type ProposalDto,
   type ProposalPriority,
   type ProposalTemplateDto,
 } from "@/lib/types";
 import { proposalToDto } from "@/server/clients/ficha";
+import { canManageAlertAssignments } from "@/server/alerts/assignments";
 import { resolveOrLinkClient, ClientLinkError } from "@/server/clients/link";
 import { airtableList } from "@/server/clients/sgsa";
 import { createDmRoom, postChatMessage } from "@/server/internal/chat";
+import { sniffFaviconMime } from "@/lib/favicon";
+import { normalizeAdImage } from "@/server/images/normalize";
 
 export class ProposalError extends Error {
   constructor(
@@ -314,35 +318,61 @@ function sanitizeTemplateInput(input: {
 
 export const ASSET_MAX_BYTES = 2_500_000;
 
+/** 041b — Tope de la SUBIDA, antes de adaptar: las fotos reales pesan esto. */
+export const ASSET_UPLOAD_MAX_BYTES = 8_000_000;
+
 export async function storeAsset(input: {
   organizationId: string;
   mime: string;
   filename?: string | null;
   data: string; // base64 sin prefijo
 }): Promise<string> {
-  if (!/^image\/(png|jpe?g|webp|gif|avif)$/i.test(input.mime)) {
-    throw new ProposalError("Formato de imagen no soportado", 422, "bad_mime");
-  }
   const buf = Buffer.from(input.data, "base64");
   if (!buf.byteLength) {
     throw new ProposalError("La imagen llegó vacía", 422, "empty_asset");
   }
-  if (buf.byteLength > ASSET_MAX_BYTES) {
+  // 041b — El formato sale de los BYTES, no del mime declarado: la foto que
+  // sale del celular es HEIC y antes se rechazaba. Entra igual y se ADAPTA a
+  // WebP de hasta 1920 px (cientos de KB, que es lo que viaja bien por
+  // WhatsApp). El GIF animado pasa tal cual, sin rasterizar.
+  const sniff = sniffFaviconMime(new Uint8Array(buf));
+  const permitido =
+    sniff !== null && /^image\/(png|jpe?g|webp|gif|avif|heic|heif)$/.test(sniff);
+  if (!permitido) {
     throw new ProposalError(
-      "La imagen supera los 2,5 MB — probá con una más liviana",
+      "Formato de imagen no soportado. Probá con PNG, JPG, WebP, HEIC, AVIF o GIF",
+      422,
+      "bad_mime"
+    );
+  }
+  if (buf.byteLength > ASSET_UPLOAD_MAX_BYTES) {
+    throw new ProposalError(
+      `La imagen no puede pasar de ${Math.round(ASSET_UPLOAD_MAX_BYTES / (1024 * 1024))} MB`,
       422,
       "asset_too_big"
     );
+  }
+  let stored = buf;
+  let storedMime: string = sniff!;
+  if (sniff !== "image/gif") {
+    try {
+      const normalizada = await normalizeAdImage(new Uint8Array(buf));
+      stored = Buffer.from(normalizada.data);
+      storedMime = normalizada.mime;
+    } catch (err) {
+      console.error("[proposals] no se pudo adaptar la imagen:", err);
+      throw new ProposalError("No pude procesar esa imagen", 422, "unreadable_asset");
+    }
   }
   const id = newId("proposalAsset");
   const db = getDb();
   await db.insert(schema.proposalAsset).values({
     id,
     organizationId: input.organizationId,
-    mime: input.mime,
+    mime: storedMime,
     filename: cleanText(input.filename, 160),
-    byteSize: buf.byteLength,
-    data: buf.toString("base64"),
+    byteSize: stored.byteLength,
+    data: stored.toString("base64"),
   });
   return id;
 }
@@ -549,14 +579,26 @@ async function respondedAtFor(
 export async function listProposals(input: {
   organizationId: string;
   assigneeUserId?: string | null;
+  /** 041b — filtrar por grupo destino. */
+  assigneeGroupId?: string | null;
   status?: string | null;
   clientRef?: string | null;
   limit?: number;
+  /**
+   * 041b — alcance por rol, igual que la bandeja (026): gerente, propietario
+   * y administrador ven TODAS las gestiones; un miembro ve las suyas (las que
+   * gestiona, las de sus grupos y las que creó).
+   */
+  viewerUserId?: string;
+  viewerRole?: string;
 }): Promise<{ proposals: ProposalDto[]; funnel: ProposalFunnel }> {
   const db = getDb();
   const conditions = [] as ReturnType<typeof eq>[];
   if (input.assigneeUserId) {
     conditions.push(eq(schema.proposal.assigneeUserId, input.assigneeUserId));
+  }
+  if (input.assigneeGroupId) {
+    conditions.push(eq(schema.proposal.assigneeGroupId, input.assigneeGroupId));
   }
   if (input.status && ["borrador", "derivada", "enviada"].includes(input.status)) {
     conditions.push(
@@ -567,14 +609,42 @@ export async function listProposals(input: {
     conditions.push(eq(schema.proposal.clientRef, input.clientRef));
   }
 
+  if (
+    input.viewerUserId &&
+    input.viewerRole &&
+    !canManageAlertAssignments(input.viewerRole)
+  ) {
+    const misGrupos = await db
+      .select({ roomId: schema.chatRoomMember.roomId })
+      .from(schema.chatRoomMember)
+      .where(
+        and(
+          eq(schema.chatRoomMember.organizationId, input.organizationId),
+          eq(schema.chatRoomMember.userId, input.viewerUserId),
+          isNull(schema.chatRoomMember.pausedAt)
+        )
+      );
+    const grupoIds = misGrupos.map((g) => g.roomId);
+    const alcance = [
+      eq(schema.proposal.assigneeUserId, input.viewerUserId),
+      eq(schema.proposal.createdBy, input.viewerUserId),
+    ];
+    if (grupoIds.length) {
+      alcance.push(inArray(schema.proposal.assigneeGroupId, grupoIds));
+    }
+    conditions.push(or(...alcance)!);
+  }
+
   const rows = await db
     .select({
       p: schema.proposal,
       assigneeName: schema.user.name,
+      groupName: schema.chatRoom.name,
       lastInboundAt: schema.conversation.lastInboundAt,
     })
     .from(schema.proposal)
     .leftJoin(schema.user, eq(schema.proposal.assigneeUserId, schema.user.id))
+    .leftJoin(schema.chatRoom, eq(schema.proposal.assigneeGroupId, schema.chatRoom.id))
     .leftJoin(
       schema.conversation,
       eq(schema.proposal.conversationId, schema.conversation.id)
@@ -583,12 +653,15 @@ export async function listProposals(input: {
     .orderBy(desc(schema.proposal.createdAt))
     .limit(Math.min(input.limit ?? 120, 300));
 
-  const proposals = rows.map(({ p, assigneeName, lastInboundAt }) => {
+  const proposals = rows.map(({ p, assigneeName, groupName, lastInboundAt }) => {
     const respondedAt =
       p.sentAt && lastInboundAt && lastInboundAt.getTime() > p.sentAt.getTime()
         ? lastInboundAt.toISOString()
         : null;
-    return proposalToDto(p, { assigneeName, respondedAt });
+    const quien = p.assigneeGroupId
+      ? groupName?.trim() || "Grupo"
+      : assigneeName;
+    return proposalToDto(p, { assigneeName: quien, respondedAt });
   });
 
   const funnel: ProposalFunnel = {
@@ -620,7 +693,9 @@ export async function deriveProposal(input: {
   organizationId: string;
   userId: string;
   id: string;
-  assigneeUserId: string;
+  /** 041b — destino: empleado del CRM O grupo del chat interno (uno solo). */
+  assigneeUserId?: string | null;
+  assigneeGroupId?: string | null;
   priority: ProposalPriority;
   note?: string | null;
 }): Promise<ProposalDto> {
@@ -642,28 +717,61 @@ export async function deriveProposal(input: {
   const p = rows[0];
   if (!p) throw new ProposalError("Propuesta no encontrada", 404, "not_found");
 
-  // El destino tiene que ser parte del equipo (mismo requisito que el DM).
-  const memberRow = await db
-    .select({ userId: schema.member.userId, name: schema.user.name })
-    .from(schema.member)
-    .innerJoin(schema.user, eq(schema.member.userId, schema.user.id))
-    .where(
-      scoped(
-        schema.member.organizationId,
-        input.organizationId,
-        eq(schema.member.userId, input.assigneeUserId)
+  // El destino: un empleado del equipo (con su DM) o un grupo del chat
+  // interno (la sala ya existe) — la misma mecánica que las alertas.
+  const destinoEmpleado = input.assigneeUserId?.trim() || null;
+  const destinoGrupo = input.assigneeGroupId?.trim() || null;
+  if ((destinoEmpleado && destinoGrupo) || (!destinoEmpleado && !destinoGrupo)) {
+    throw new ProposalError("Elegí un empleado o un grupo (uno solo)", 422, "bad_target");
+  }
+
+  let assigneeUserId: string | null = null;
+  let assigneeGroupId: string | null = null;
+  let avisoRoomId: string | null = null;
+
+  if (destinoEmpleado) {
+    // Tiene que ser parte del equipo (mismo requisito que el DM).
+    const memberRow = await db
+      .select({ userId: schema.member.userId })
+      .from(schema.member)
+      .innerJoin(schema.user, eq(schema.member.userId, schema.user.id))
+      .where(
+        scoped(
+          schema.member.organizationId,
+          input.organizationId,
+          eq(schema.member.userId, destinoEmpleado)
+        )
       )
-    )
-    .limit(1);
-  const assignee = memberRow[0];
-  if (!assignee) {
-    throw new ProposalError("Ese empleado no es parte del equipo", 404, "no_member");
+      .limit(1);
+    if (!memberRow[0]) {
+      throw new ProposalError("Ese empleado no es parte del equipo", 404, "no_member");
+    }
+    assigneeUserId = memberRow[0].userId;
+  } else {
+    const groupRow = await db
+      .select({ id: schema.chatRoom.id })
+      .from(schema.chatRoom)
+      .where(
+        scoped(
+          schema.chatRoom.organizationId,
+          input.organizationId,
+          eq(schema.chatRoom.kind, "group"),
+          eq(schema.chatRoom.id, destinoGrupo!)
+        )
+      )
+      .limit(1);
+    if (!groupRow[0]) {
+      throw new ProposalError("Ese grupo no existe en el chat interno", 404, "no_group");
+    }
+    assigneeGroupId = groupRow[0].id;
+    avisoRoomId = groupRow[0].id;
   }
 
   await db
     .update(schema.proposal)
     .set({
-      assigneeUserId: assignee.userId,
+      assigneeUserId,
+      assigneeGroupId,
       priority: input.priority,
       status: p.status === "borrador" ? "derivada" : p.status,
       derivedAt: new Date(),
@@ -689,7 +797,8 @@ export async function deriveProposal(input: {
     userId: input.userId,
   });
 
-  // AVISO al empleado: mismo mecanismo que las alertas (DM del chat interno).
+  // AVISO: al empleado por DM; al grupo en su propia sala (no hace falta
+  // crearla). Mismo mecanismo que las alertas.
   const url = absoluteProposalUrl(p.token);
   const bodyLines = [
     `🎯 Propuesta de ${kindLabel(p.kind).toLowerCase()} para ${p.clientName}`,
@@ -701,14 +810,12 @@ export async function deriveProposal(input: {
     `Abrila y compartila desde acá: ${url}`,
   ].filter((l): l is string => l !== null);
   try {
-    const room = await createDmRoom(
-      input.organizationId,
-      input.userId,
-      assignee.userId
-    );
+    const roomId =
+      avisoRoomId ??
+      (await createDmRoom(input.organizationId, input.userId, assigneeUserId!)).id;
     await postChatMessage({
       organizationId: input.organizationId,
-      roomId: room.id,
+      roomId,
       senderId: input.userId,
       body: bodyLines.join("\n"),
     });
@@ -867,4 +974,133 @@ export async function loadPublicProposal(
     clientName: p.clientName,
     kind: p.kind,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* 041b — Seguimiento comercial                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Todo el seguimiento comercial de las acciones del Cliente 360: cada
+ * propuesta con sus hitos (creada → derivada → enviada → vista → respondió)
+ * más las acciones que el sistema registró (mensajes disparados desde la
+ * Cola de hoy y desde la ficha). Ordenado de lo más nuevo a lo más viejo.
+ *
+ * Alcance por rol (mismo criterio que la bandeja): gerente, propietario y
+ * administrador ven todo el equipo; un miembro ve lo suyo.
+ */
+export async function listCommercialFollowUp(input: {
+  organizationId: string;
+  viewerUserId: string;
+  viewerRole: string;
+  clientRef?: string | null;
+  assigneeUserId?: string | null;
+  limit?: number;
+}): Promise<{ items: FollowUpItemDto[] }> {
+  const db = getDb();
+  const restringido = !canManageAlertAssignments(input.viewerRole);
+  const tope = Math.min(input.limit ?? 250, 400);
+
+  const { proposals } = await listProposals({
+    organizationId: input.organizationId,
+    clientRef: input.clientRef,
+    assigneeUserId: input.assigneeUserId,
+    limit: 250,
+    viewerUserId: input.viewerUserId,
+    viewerRole: input.viewerRole,
+  });
+
+  const items: FollowUpItemDto[] = [];
+  for (const p of proposals) {
+    const base = {
+      type: "propuesta" as const,
+      source: "propuesta" as const,
+      clientRef: p.clientRef,
+      clientName: p.clientName,
+      userName: p.createdByName ?? p.assigneeName,
+      token: p.token,
+      status: p.statusLabel,
+    };
+    items.push({
+      id: `${p.id}:c`,
+      at: p.createdAt,
+      what: "creada",
+      detail: kindLabel(p.kind),
+      ...base,
+    });
+    if (p.derivedAt) {
+      items.push({
+        id: `${p.id}:d`,
+        at: p.derivedAt,
+        what: "derivada",
+        detail: p.assigneeName ? `gestiona: ${p.assigneeName}` : null,
+        ...base,
+      });
+    }
+    if (p.sentAt) {
+      items.push({ id: `${p.id}:s`, at: p.sentAt, what: "enviada", detail: null, ...base });
+    }
+    if (p.firstViewAt) {
+      items.push({
+        id: `${p.id}:v`,
+        at: p.firstViewAt,
+        what: "vista",
+        detail: `${p.views} vista${p.views === 1 ? "" : "s"}`,
+        ...base,
+      });
+    }
+    if (p.respondedAt) {
+      items.push({ id: `${p.id}:r`, at: p.respondedAt, what: "respondio", detail: null, ...base });
+    }
+  }
+
+  // Acciones que el sistema ya registraba en el tablero (040): los mensajes
+  // disparados desde la Cola de hoy y desde la ficha. Las de origen
+  // «propuesta» no se repiten: el hito «derivada» ya las cuenta arriba.
+  const condiciones = [eq(schema.dashboardAction.organizationId, input.organizationId)];
+  if (input.clientRef) {
+    condiciones.push(eq(schema.dashboardAction.clientRef, input.clientRef));
+  }
+  if (input.assigneeUserId) {
+    condiciones.push(eq(schema.dashboardAction.userId, input.assigneeUserId));
+  }
+  if (restringido) {
+    condiciones.push(eq(schema.dashboardAction.userId, input.viewerUserId));
+  }
+  const acciones = await db
+    .select({
+      id: schema.dashboardAction.id,
+      at: schema.dashboardAction.createdAt,
+      source: schema.dashboardAction.source,
+      module: schema.dashboardAction.module,
+      playId: schema.dashboardAction.playId,
+      clientRef: schema.dashboardAction.clientRef,
+      clientName: schema.dashboardAction.clientName,
+      userName: schema.user.name,
+    })
+    .from(schema.dashboardAction)
+    .leftJoin(schema.user, eq(schema.dashboardAction.userId, schema.user.id))
+    .where(and(...condiciones))
+    .orderBy(desc(schema.dashboardAction.createdAt))
+    .limit(tope);
+
+  for (const a of acciones) {
+    if (a.source === "propuesta") continue;
+    items.push({
+      id: a.id,
+      at: a.at.toISOString(),
+      type: "accion",
+      what: "accion",
+      source: a.source === "ficha" ? "ficha" : "cola",
+      clientRef: a.clientRef,
+      clientName: a.clientName,
+      userName: a.userName,
+      detail: [a.module, a.playId].filter(Boolean).join(" · ") || null,
+      token: null,
+      status: null,
+    });
+  }
+
+  items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  return { items: items.slice(0, tope) };
 }

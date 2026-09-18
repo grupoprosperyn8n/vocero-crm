@@ -67,6 +67,7 @@ import type { SystemClientSearchResultDto } from "@/lib/types";
 import { airtableTagStyle } from "@/lib/dashboard-management/airtable-colors";
 import { ClientPanel, type PanelCustomer } from "./client-panel";
 import { ProposalsPanel } from "./proposals-panel";
+import { FollowUpPanel } from "./followup-panel";
 import {
   MODULE_HELP,
   type HelpAction,
@@ -895,6 +896,7 @@ const MODULE_TABS: { id: TabId; label: string; Icon: typeof TrendingUp }[] = [
   { id: "clientes", label: "Cliente 360°", Icon: Users },
   { id: "crm", label: "CRM · Venta y gestión", Icon: MessageSquareText },
   { id: "propuestas", label: "Propuestas", Icon: FileText },
+  { id: "seguimiento", label: "Seguimiento", Icon: History },
   { id: "migracion", label: "Calidad de datos", Icon: Database },
 ];
 
@@ -916,6 +918,7 @@ const TAB_FILTERS: Record<
   clientes: { date: false, office: true, product: false, channel: false, employee: false, company: false, search: true },
   crm: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   propuestas: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
+  seguimiento: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   migracion: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
 };
 
@@ -929,6 +932,7 @@ const FILTER_SCOPE: Record<TabId, string> = {
   clientes: "Buscá por nombre, DNI o teléfono; la oficina acota el universo del cliente.",
   crm: "Este módulo muestra el CRM completo: los filtros de cartera y gestiones no lo afectan.",
   propuestas: "La pestaña tiene sus propios filtros: empleado asignado y estado del embudo.",
+  seguimiento: "El archivo comercial tiene sus propios filtros: quién gestiona, origen (cola, ficha o propuesta) y búsqueda por cliente.",
   migracion: "Este módulo muestra la base completa: los filtros no lo afectan.",
 };
 
@@ -2616,6 +2620,18 @@ export function ExecDashboard() {
         </div>
       )}
 
+      {tab === "seguimiento" && (
+        <div className="space-y-3">
+          <HelpZone
+            help={MODULE_HELP.seguimiento}
+            id="seguimiento"
+            onAction={applyHelpAction}
+          />
+
+          <FollowUpPanel onOpenPanel={(c) => setPanelClient(c)} />
+        </div>
+      )}
+
       {tab === "migracion" && (
         <div className="space-y-3">
           <HelpZone help={MODULE_HELP.migracion} id="migracion" onAction={applyHelpAction} />
@@ -3265,9 +3281,14 @@ export function ExecDashboard() {
           onMandarMensaje={() => sendPanelMessage(panelClient)}
           onOpenInbox={(input) => {
             if (input.contactId) {
-              router.push(
-                `/inbox?contact=${input.contactId}&draft=${encodeURIComponent(input.draft)}`
-              );
+              // 041b — el adjunto (imagen de la publicación) viaja por la URL
+              // y el compositor lo deja cargado junto al texto, sin enviar.
+              const params = new URLSearchParams({
+                contact: input.contactId,
+                draft: input.draft,
+              });
+              if (input.attach) params.set("attach", input.attach);
+              router.push(`/inbox?${params.toString()}`);
             } else {
               router.push("/inbox");
             }

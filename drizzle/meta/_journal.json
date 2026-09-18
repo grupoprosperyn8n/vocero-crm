@@ -253,6 +253,13 @@
       "when": 1789755425144,
       "tag": "0035_condemned_scarecrow",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1789758317933,
+      "tag": "0036_great_susan_delgado",
+      "breakpoints": true
     }
   ]
 }

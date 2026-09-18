@@ -7,7 +7,7 @@ import type { Branding } from "@/lib/branding";
 import {
   faviconHref,
   FAVICON_MIMES,
-  MAX_FAVICON_BYTES,
+  MAX_FAVICON_UPLOAD_BYTES,
 } from "@/lib/favicon";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,9 +32,9 @@ export function FaviconCard({ branding }: { branding: Branding }) {
 
   async function subir(file: File) {
     setError(null);
-    if (file.size > MAX_FAVICON_BYTES) {
+    if (file.size > MAX_FAVICON_UPLOAD_BYTES) {
       setError(
-        `El icono no puede pasar de ${Math.round(MAX_FAVICON_BYTES / 1024)} KB.`
+        `La imagen no puede pasar de ${Math.round(MAX_FAVICON_UPLOAD_BYTES / (1024 * 1024))} MB.`
       );
       return;
     }
@@ -98,8 +98,8 @@ export function FaviconCard({ branding }: { branding: Branding }) {
             </p>
             <p className="mt-0.5 text-xs text-text-3">
               {actual
-                ? "Reemplaza al generado. Puedes quitarlo para volver a él."
-                : "La inicial sobre tu color de acento. Sube un logo para reemplazarlo."}
+                ? "Reemplaza al generado. Podés quitarlo para volver a él."
+                : "La inicial sobre tu color de acento. Subí una foto o un logo y lo adapto solo."}
             </p>
           </div>
         </div>
@@ -135,8 +135,10 @@ export function FaviconCard({ branding }: { branding: Branding }) {
         </div>
 
         <p className="text-xs text-text-3">
-          PNG, SVG, ICO, JPEG o WebP, hasta{" "}
-          {Math.round(MAX_FAVICON_BYTES / 1024)} KB. Cuadrado se ve mejor.
+          PNG, JPG, WebP, HEIC, AVIF, GIF, SVG o ICO, hasta{" "}
+          {Math.round(MAX_FAVICON_UPLOAD_BYTES / (1024 * 1024))} MB. La adapto
+          sola a 512×512: cuadrada llena el recuadro, panorámica se ajusta sin
+          recortarse.
         </p>
 
         {error && <p className="text-sm text-destructive">{error}</p>}

@@ -1746,6 +1746,10 @@ export const proposal = pgTable(
     assigneeUserId: text("assignee_user_id").references(() => user.id, {
       onDelete: "set null",
     }),
+    /** Grupo del chat interno al que se deriva (alternativa al empleado). */
+    assigneeGroupId: text("assignee_group_id").references(() => chatRoom.id, {
+      onDelete: "set null",
+    }),
     /** alta | media | baja — se elige al derivar. */
     priority: text("priority", { enum: ["alta", "media", "baja"] })
       .notNull()

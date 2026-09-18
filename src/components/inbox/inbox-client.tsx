@@ -251,6 +251,9 @@ export function InboxClient({
   // 039e — Enlace desde el tablero: /inbox?contact=<id>&draft=<mensaje de la IA>.
   // El compositor lo carga una sola vez, listo para revisar y enviar.
   const draftParam = searchParams.get("draft");
+  // 041b — …y ?attach=<url de la imagen>: la publicación de la propuesta queda
+  // adjunta (con vista previa) para revisar y enviar sin salir del chat.
+  const attachParam = searchParams.get("attach");
   useEffect(() => {
     if (!contactParam || selectedIdRef.current) return;
     const match = conversations?.find((c) => c.contact.id === contactParam);
@@ -714,6 +717,7 @@ export function InboxClient({
               <Composer
                 conversation={selected}
                 initialDraft={draftParam}
+                initialAttach={attachParam}
                 onSend={sendText}
                 onSent={() => {
                   if (selectedIdRef.current)

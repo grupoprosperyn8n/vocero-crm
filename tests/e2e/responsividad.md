@@ -83,3 +83,21 @@ de detalles sigue siendo cajón.
 En 1440×900: lateral fijo de 224 px sin hamburguesa, Bandeja de tres columnas
 (lista 360 px + hilo + detalles 320 px) y la preferencia de "panel abierto"
 persistida como siempre.
+
+## AC-7 — El tablero y la publicación también entran en la ronda móvil (041b)
+
+1. Abre el tablero (`/dashboard-management`) en 390×844.
+
+Esperado: `main` y el documento no se recortan; la barra de módulos deja a mano
+la pestaña **Seguimiento** (con scroll propio si hace falta).
+
+2. Toca "Seguimiento".
+
+Esperado: abren sus dos vistas (Por acción / Por cliente) sin scroll
+horizontal; las filas apilan chip + texto + fecha y los filtros se acomodan en
+una columna.
+
+3. Abre la página pública de una propuesta (`/p/<token>`) en 390×844 y en 820×1180.
+
+Esperado: sin scroll horizontal en ninguno de los dos; el botón del CTA mide
+≥44 px de alto (tocable); foto, oferta y nota al pie se leen sin recortes.

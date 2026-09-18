@@ -623,8 +623,14 @@ export type ProposalDto = {
   clientDni: string | null;
   clientPhone: string | null;
   assigneeUserId: string | null;
+  /** 041b — derivada a un GRUPO del chat interno (alternativa al empleado). */
+  assigneeGroupId: string | null;
+  /** Quién la gestiona: empleado o grupo (null = sin derivar). */
+  assigneeKind: "employee" | "group" | null;
   assigneeName: string | null;
   createdByName: string | null;
+  /** URL pública de la imagen de la pieza (anexo al mandarla por WhatsApp). */
+  imageUrl: string | null;
   contactId: string | null;
   conversationId: string | null;
   statusLabel: string;
@@ -635,6 +641,28 @@ export type ProposalDto = {
   derivedAt: string | null;
   respondedAt: string | null;
   createdAt: string;
+};
+
+/** 041b — Ítem del seguimiento comercial (hito de propuesta o acción del sistema). */
+export type FollowUpItemDto = {
+  id: string;
+  at: string;
+  type: "propuesta" | "accion";
+  /** creada | derivada | enviada | vista | respondio | mensaje | derivacion. */
+  what: string;
+  source: "cola" | "ficha" | "propuesta";
+  clientRef: string | null;
+  clientName: string | null;
+  userName: string | null;
+  detail: string | null;
+  token: string | null;
+  status: string | null;
+};
+
+/** Grupo del chat interno (para derivar gestiones). */
+export type TeamGroupLiteDto = {
+  id: string;
+  name: string;
 };
 
 /** Plantilla por tipo de sugerencia (lo que se carga una vez por tipo). */

@@ -50,7 +50,7 @@ export default async function ProposalPage({ params }: Props) {
     <main className="min-h-screen bg-subtle/60 px-4 py-8 sm:py-12">
       <article className="mx-auto w-full max-w-xl overflow-hidden rounded-2xl border bg-card shadow-sm">
         {/* Emisor: logo cargado (Rafael Allende) o el nombre de la marca */}
-        <header className="flex items-center justify-between gap-3 border-b px-6 py-4">
+        <header className="flex items-center justify-between gap-3 border-b px-4 py-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             {proposal.logoAssetId ? (
               <div className="flex h-12 max-w-[180px] items-center">
@@ -79,14 +79,14 @@ export default async function ProposalPage({ params }: Props) {
 
         {/* Foto de la publicidad */}
         {proposal.assetId && (
-          <div className="flex max-h-[320px] min-h-[160px] items-center justify-center overflow-hidden bg-subtle">
+          <div className="flex max-h-[280px] min-h-[150px] items-center justify-center overflow-hidden bg-subtle sm:max-h-[360px]">
             {img(proposal.assetId, "Publicidad")}
           </div>
         )}
 
-        <div className="space-y-4 px-6 py-6">
+        <div className="space-y-4 px-4 py-5 sm:px-6 sm:py-6">
           <div>
-            <h1 className="font-serif text-[24px] leading-tight font-normal">
+            <h1 className="font-serif text-[21px] leading-tight font-normal sm:text-[24px]">
               {proposal.title}
             </h1>
             {proposal.subtitle && (
@@ -130,7 +130,7 @@ export default async function ProposalPage({ params }: Props) {
               href={ctaHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-5 py-3.5 text-center text-[15px] font-bold text-white transition-opacity hover:opacity-90"
+              className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-brand px-5 py-3.5 text-center text-[15px] font-bold text-white transition-opacity hover:opacity-90"
             >
               {proposal.ctaLabel ?? "Quiero más información"}
               <span aria-hidden>→</span>
@@ -156,7 +156,7 @@ export default async function ProposalPage({ params }: Props) {
           )}
         </div>
 
-        <footer className="flex items-center justify-between gap-3 border-t bg-subtle/40 px-6 py-3">
+        <footer className="flex flex-col gap-2 border-t bg-subtle/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p className="text-[11px] text-text-3">
             Propuesta para {proposal.clientName} · Hecha para vos 💙
           </p>

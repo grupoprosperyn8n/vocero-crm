@@ -636,8 +636,15 @@ export function proposalToDto(
     clientDni: p.clientDni,
     clientPhone: p.clientPhone,
     assigneeUserId: p.assigneeUserId,
+    assigneeGroupId: p.assigneeGroupId ?? null,
+    assigneeKind: p.assigneeGroupId
+      ? "group"
+      : p.assigneeUserId
+        ? "employee"
+        : null,
     assigneeName: extra.assigneeName ?? null,
     createdByName: extra.createdByName ?? null,
+    imageUrl: p.assetId ? `/api/public/propuesta/img/${p.assetId}` : null,
     contactId: p.contactId,
     conversationId: p.conversationId,
     statusLabel:

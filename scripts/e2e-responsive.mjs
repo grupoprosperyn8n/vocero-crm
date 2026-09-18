@@ -17,6 +17,9 @@ import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 
 const BASE = process.env.APP_BASE_URL ?? "http://localhost:3000";
+// El server valida el header `origin` contra su APP_BASE_URL (3000 por defecto),
+// aunque el puerto donde escuche sea otro. Se puede pisar con RESP_ORIGIN.
+const ORIGIN = process.env.RESP_ORIGIN ?? "http://localhost:3000";
 const PN = "PN-RESP-1";
 const S = Math.random().toString(36).slice(2, 6).toUpperCase();
 const SHOTS = "scratch/responsive";
@@ -52,6 +55,8 @@ const RUTAS = [
   "/agent",
   "/lab",
   "/settings/whatsapp",
+  // 041b — el tablero del sistema también entra en la ronda móvil.
+  "/dashboard-management",
 ];
 
 mkdirSync(SHOTS, { recursive: true });
@@ -66,7 +71,7 @@ await ctx.route("**/api/events*", (route) => route.abort());
 
 console.log("== Setup ==");
 let r = await req.post(`${BASE}/api/auth/sign-up/email`, {
-  headers: { origin: BASE },
+  headers: { origin: ORIGIN },
   data: {
     email: "e2e@vocero.test",
     password: "password-e2e-123",
@@ -75,7 +80,7 @@ let r = await req.post(`${BASE}/api/auth/sign-up/email`, {
 });
 if (!r.ok())
   r = await req.post(`${BASE}/api/auth/sign-in/email`, {
-    headers: { origin: BASE },
+    headers: { origin: ORIGIN },
     data: { email: "e2e@vocero.test", password: "password-e2e-123" },
   });
 ok("login", r.ok());
@@ -98,6 +103,26 @@ const listo = await until(async () => {
   return d.conversations.some((c) => c.contact.name === NAME);
 });
 ok("conversación de prueba creada", listo);
+
+// 041b — una propuesta de prueba (perfil TEST IA) para medir la publicación
+// pública en teléfono y tableta.
+const propRes = await req.post(`${BASE}/api/proposals`, {
+  data: {
+    kind: "renovacion",
+    clientRef: "rechYRnw7FzaGjfpA",
+    clientName: "TEST IA",
+    clientDni: "26322995",
+    clientPhone: "3417035515",
+    title: `Tu renovación ${S}`,
+    benefit: "15% OFF en tu renovación",
+    ctaLabel: "Quiero renovar",
+    ctaUrl: "https://vocero.sistemasagenticos.cloud",
+  },
+  headers: { origin: ORIGIN, "content-type": "application/json" },
+});
+const propJson = await propRes.json().catch(() => ({}));
+const publicUrl = propJson?.proposal?.publicUrl ?? "";
+ok("propuesta de prueba para la página pública", /^\/p\//.test(publicUrl), `${propRes.status()} ${publicUrl}`);
 
 // Calienta cada ruta: en `pnpm dev` la primera visita compila (3-4 s) y el
 // guion mediría la compilación, no el diseño.
@@ -263,6 +288,54 @@ await phone
   .catch(() => null);
 await sleep(400);
 
+console.log("\n== 4b. Teléfono: el tablero y la publicación (041b) ==");
+if (publicUrl) {
+  await phone.goto(`${BASE}${publicUrl}`, { waitUntil: "domcontentloaded" });
+  await phone.getByText("Quiero renovar").first().waitFor({ timeout: 30000 });
+  const dPub = await desborde(phone);
+  ok(
+    "la publicación del cliente no se recorta en el teléfono",
+    dPub.docOver <= 1,
+    `documento +${dPub.docOver}px`
+  );
+  const ctaBox = await phone.getByText("Quiero renovar").first().boundingBox();
+  ok(
+    "el botón de la publicación es tocable (≥44px de alto)",
+    ctaBox !== null && ctaBox.height >= 44,
+    ctaBox ? `${Math.round(ctaBox.height)}px` : "sin caja"
+  );
+  await phone.screenshot({ path: `${SHOTS}/phone-publicacion.png` });
+}
+await phone.goto(`${BASE}/dashboard-management`, { waitUntil: "domcontentloaded" });
+await phone.getByText("Pulso del negocio").first().waitFor({ timeout: 120000 });
+const dTab = await desborde(phone);
+ok(
+  "el tablero no se recorta en el teléfono",
+  dTab.mainOver <= 1 && dTab.docOver <= 1,
+  `main +${dTab.mainOver}px · documento +${dTab.docOver}px`
+);
+const skipTablero = phone.getByRole("button", { name: "Después" });
+if (await skipTablero.count()) await skipTablero.first().click().catch(() => null);
+const tabSeg = phone.getByRole("button", { name: /^\s*Seguimiento\s*$/ }).first();
+const tabSegVisible = await tabSeg.isVisible().catch(() => false);
+ok("la pestaña Seguimiento está a mano en el teléfono", tabSegVisible);
+if (tabSegVisible) {
+  await tabSeg.scrollIntoViewIfNeeded().catch(() => null);
+  await tabSeg.click().catch(() => null);
+  const vistas = await until(
+    async () => await phone.getByRole("button", { name: "Por cliente" }).first().isVisible(),
+    30000
+  );
+  ok("Seguimiento abre con sus dos vistas (por acción / por cliente)", vistas);
+  const dSeg = await desborde(phone);
+  ok(
+    "Seguimiento no se recorta en el teléfono",
+    dSeg.mainOver <= 1 && dSeg.docOver <= 1,
+    `main +${dSeg.mainOver}px · documento +${dSeg.docOver}px`
+  );
+  await phone.screenshot({ path: `${SHOTS}/phone-seguimiento.png` });
+}
+
 console.log("\n== 5. Tableta (820×1180) ==");
 const tablet = phone;
 await tablet.setViewportSize(TABLET);
@@ -280,6 +353,17 @@ ok(
   JSON.stringify(dosColumnas)
 );
 await tablet.screenshot({ path: `${SHOTS}/tablet-inbox.png` });
+if (publicUrl) {
+  await tablet.goto(`${BASE}${publicUrl}`, { waitUntil: "domcontentloaded" });
+  await tablet.getByText("Quiero renovar").first().waitFor({ timeout: 30000 });
+  const dPubT = await desborde(tablet);
+  ok(
+    "la publicación del cliente tampoco se recorta en la tableta",
+    dPubT.docOver <= 1,
+    `documento +${dPubT.docOver}px`
+  );
+  await tablet.screenshot({ path: `${SHOTS}/tablet-publicacion.png` });
+}
 
 console.log("\n== 6. Escritorio (1440×900): nada cambió ==");
 const desk = tablet;

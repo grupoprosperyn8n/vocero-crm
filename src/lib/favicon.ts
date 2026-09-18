@@ -28,7 +28,12 @@ import { resolveAccentSet, type Branding } from "./branding";
  */
 export const FAVICON_ASSET = "favicon";
 
-/** Lo que el navegador acepta como icono y nosotros sabemos verificar. */
+/**
+ * Lo que sabemos verificar y adaptar: los formatos de icono clásicos más los
+ * de foto que salen de cualquier cámara o editor (HEIC del iPhone, AVIF, GIF).
+ * Los raster se normalizan a PNG de 512×512 al guardar; SVG e ICO pasan
+ * tal cual porque ya son vectores/iconos.
+ */
 export const FAVICON_MIMES = [
   "image/png",
   "image/svg+xml",
@@ -36,15 +41,26 @@ export const FAVICON_MIMES = [
   "image/vnd.microsoft.icon",
   "image/jpeg",
   "image/webp",
+  "image/avif",
+  "image/heic",
+  "image/heif",
+  "image/gif",
 ] as const;
 
 export type FaviconMime = (typeof FAVICON_MIMES)[number];
 
 /**
- * 256 KB. Un favicon de más no existe; el tope está para que nadie use este
- * campo como almacén de archivos.
+ * 10 MB de SUBIDA: las fotos reales pesan eso. La imagen se adapta después
+ * (512×512 PNG), así que el tope alto no se guarda — solo da aire al subir.
+ * Antes eran 256 KB y una foto de celular ni entraba.
  */
-export const MAX_FAVICON_BYTES = 256 * 1024;
+export const MAX_FAVICON_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/**
+ * SVG e ICO van tal cual (no se rasterizan). Su propio tope, más chico: un
+ * icono vectorial de más de 512 KB es un archivo mal exportado.
+ */
+export const MAX_FAVICON_VECTOR_BYTES = 512 * 1024;
 
 export function isFaviconMime(value: string): value is FaviconMime {
   return (FAVICON_MIMES as readonly string[]).includes(value);
@@ -78,6 +94,21 @@ export function sniffFaviconMime(bytes: Uint8Array): FaviconMime | null {
   const ascii = (i: number, s: string) =>
     [...s].every((c, k) => bytes[i + k] === c.charCodeAt(0));
   if (ascii(0, "RIFF") && ascii(8, "WEBP")) return "image/webp";
+  // GIF: "GIF87a" / "GIF89a"
+  if (ascii(0, "GIF87a") || ascii(0, "GIF89a")) return "image/gif";
+  // HEIC/AVIF: caja ISO-BMFF — "ftyp" en [4,8) y la marca mayor en [8,12)
+  if (ascii(4, "ftyp")) {
+    const marca = String.fromCharCode(
+      at(8) ?? 0, at(9) ?? 0, at(10) ?? 0, at(11) ?? 0
+    );
+    if (marca === "avif" || marca === "avis") return "image/avif";
+    if (
+      ["heic", "heix", "hevc", "hevx", "heim", "heis", "hevm", "hevs", "mif1", "msf1"]
+        .includes(marca)
+    ) {
+      return "image/heic";
+    }
+  }
 
   // SVG: es texto. Se admite con o sin declaración XML o comentarios delante.
   const head = new TextDecoder("utf-8", { fatal: false })

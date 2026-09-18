@@ -343,7 +343,7 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* 037d — el mismo tablero, de dos maneras. */}
           <div className="flex rounded-md border border-border-strong bg-subtle p-0.5">
             <button

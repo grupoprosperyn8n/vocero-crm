@@ -17,13 +17,18 @@ export const dynamic = "force-dynamic";
 export const GET = withAuth(async (session, req: Request) => {
   const url = new URL(req.url);
   const assignee = url.searchParams.get("assignee")?.trim() || null;
+  const assigneeGroup = url.searchParams.get("assigneeGroup")?.trim() || null;
   const status = url.searchParams.get("status")?.trim() || null;
   const clientRef = url.searchParams.get("clientRef")?.trim() || null;
   const { proposals, funnel } = await listProposals({
     organizationId: session.organizationId,
     assigneeUserId: assignee,
+    assigneeGroupId: assigneeGroup,
     status,
     clientRef,
+    // 041b — gerente/propietario/administrador ven todo; un miembro, lo suyo.
+    viewerUserId: session.userId,
+    viewerRole: session.role,
   });
   return Response.json({ proposals, funnel, viewer: { userId: session.userId, role: session.role } });
 });

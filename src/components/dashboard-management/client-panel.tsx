@@ -49,6 +49,7 @@ import {
   type ProposalDto,
   type ProposalPriority,
   type ProposalTemplateDto,
+  type TeamGroupLiteDto,
   type TeamMemberLiteDto,
 } from "@/lib/types";
 
@@ -71,7 +72,12 @@ type Props = {
   /** Usa el flujo de IA del tablero para «Mandar mensaje» (devuelve el error, si hubo). */
   onMandarMensaje?: () => Promise<string | null> | void;
   /** Navega al inbox con el borrador cargado (como «Mandar mensaje»). */
-  onOpenInbox: (input: { contactId: string | null; draft: string }) => void;
+  onOpenInbox: (input: {
+    contactId: string | null;
+    draft: string;
+    /** 041b — imagen de la publicación para dejar adjunta en el chat. */
+    attach?: string | null;
+  }) => void;
 };
 
 const money = (n: number) =>
@@ -333,7 +339,12 @@ function PanelBody({
   ficha: ClientFichaDto;
   kindDefault: string;
   onMandarMensaje?: () => Promise<string | null> | void;
-  onOpenInbox: (input: { contactId: string | null; draft: string }) => void;
+  onOpenInbox: (input: {
+    contactId: string | null;
+    draft: string;
+    /** 041b — imagen de la publicación para dejar adjunta en el chat. */
+    attach?: string | null;
+  }) => void;
   onFichaChange: (f: ClientFichaDto) => void;
   copied: boolean;
   setCopied: (v: boolean) => void;
@@ -691,7 +702,12 @@ function ProposalFlow({
   customer: PanelCustomer;
   ficha: ClientFichaDto;
   kindDefault: string;
-  onOpenInbox: (input: { contactId: string | null; draft: string }) => void;
+  onOpenInbox: (input: {
+    contactId: string | null;
+    draft: string;
+    /** 041b — imagen de la publicación para dejar adjunta en el chat. */
+    attach?: string | null;
+  }) => void;
   onProposalChange: () => void;
   onRefreshFicha: () => Promise<void>;
 }) {
@@ -724,6 +740,16 @@ function ProposalFlow({
   const [priority, setPriority] = useState<ProposalPriority>("media");
   const [note, setNote] = useState("");
   const [stage, setStage] = useState<{ derived?: string; sent?: boolean }>({});
+  const [groups, setGroups] = useState<TeamGroupLiteDto[]>([]);
+  const [viewerRole, setViewerRole] = useState<string>("member");
+  const [targetKind, setTargetKind] = useState<"employee" | "group">("employee");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [draftText, setDraftText] = useState("");
+
+  // 041b — derivan (y ven todo el seguimiento) propietario, administrador y
+  // gerente, los mismos roles que en las alertas.
+  const canDerive =
+    viewerRole === "owner" || viewerRole === "admin" || viewerRole === "manager";
 
   const tpl = templates.find((t) => t.kind === kind);
 
@@ -774,10 +800,30 @@ function ProposalFlow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templates]);
 
+  // 041b — directorio (empleados), grupos del chat y mi rol: quién deriva.
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const res = await fetch("/api/staff/directory", { cache: "no-store" }).catch(() => null);
+      if (!alive || !res?.ok) return;
+      const data = (await res.json().catch(() => ({}))) as {
+        members?: TeamMemberLiteDto[];
+        groups?: TeamGroupLiteDto[];
+        viewer?: { role?: string };
+      };
+      setDirectory((prev) => prev ?? data.members ?? []);
+      setGroups(data.groups ?? []);
+      if (data.viewer?.role) setViewerRole(data.viewer.role);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const uploadImage = async (file: File, target: "assetId" | "logoAssetId") => {
     setError(null);
-    if (file.size > 2_500_000) {
-      setError("La imagen supera los 2,5 MB");
+    if (file.size > 8_000_000) {
+      setError("La imagen no puede pasar de 8 MB");
       return;
     }
     const reader = new FileReader();
@@ -841,8 +887,16 @@ function ProposalFlow({
     setDeriveOpen(true);
     if (!directory) {
       const res = await fetch("/api/staff/directory", { cache: "no-store" }).catch(() => null);
-      const data = res ? ((await res.json().catch(() => ({}))) as { members?: TeamMemberLiteDto[] }) : null;
+      const data = res
+        ? ((await res.json().catch(() => ({}))) as {
+            members?: TeamMemberLiteDto[];
+            groups?: TeamGroupLiteDto[];
+            viewer?: { role?: string };
+          })
+        : null;
       setDirectory(data?.members ?? []);
+      setGroups(data?.groups ?? []);
+      if (data?.viewer?.role) setViewerRole(data.viewer.role);
     }
   };
 
@@ -853,7 +907,11 @@ function ProposalFlow({
     const res = await fetch(`/api/proposals/${created.id}/derive`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ assigneeUserId: assignee, priority, note: note || null }),
+      body: JSON.stringify(
+        targetKind === "group"
+          ? { assigneeGroupId: assignee, priority, note: note || null }
+          : { assigneeUserId: assignee, priority, note: note || null }
+      ),
     }).catch(() => null);
     const data = res ? ((await res.json().catch(() => ({}))) as { proposal?: ProposalDto; message?: string }) : null;
     setBusy(null);
@@ -862,7 +920,10 @@ function ProposalFlow({
       return;
     }
     setCreated(data.proposal);
-    const who = directory?.find((m) => m.userId === assignee)?.name ?? "el empleado";
+    const who =
+      targetKind === "group"
+        ? groups.find((g) => g.id === assignee)?.name ?? "el grupo"
+        : directory?.find((m) => m.userId === assignee)?.name ?? "el empleado";
     setStage((s) => ({ ...s, derived: who }));
     setDeriveOpen(false);
     onProposalChange();
@@ -883,10 +944,12 @@ function ProposalFlow({
     }
     setCreated(data.proposal);
     setStage((s) => ({ ...s, sent: true }));
-    const absUrl = `${window.location.origin}${data.proposal.publicUrl}`;
-    const firstName = customer.name.split(" ")[0] ?? "";
-    const draft = `¡Hola ${firstName}! 👋 Te preparé una propuesta pensada para vos. Miralá acá 👉 ${absUrl}`;
-    onOpenInbox({ contactId: data.proposal.contactId ?? null, draft });
+    setPreviewOpen(false);
+    onOpenInbox({
+      contactId: data.proposal.contactId ?? null,
+      draft: draftText.trim(),
+      attach: data.proposal.imageUrl,
+    });
     void onRefreshFicha();
   };
 
@@ -1071,13 +1134,13 @@ function ProposalFlow({
             >
               <ClipboardCopy size={13} /> Copiar link
             </button>
-            {!stage.derived && (
+            {!stage.derived && canDerive && (
               <button
                 type="button"
                 onClick={() => void openDerive()}
                 className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-[12px] font-bold text-white hover:opacity-90"
               >
-                <UserCheck size={13} /> Derivar a un empleado
+                <UserCheck size={13} /> Derivar a un empleado o grupo
               </button>
             )}
             {stage.derived && (
@@ -1089,20 +1152,60 @@ function ProposalFlow({
 
           {deriveOpen && (
             <div className="space-y-2 rounded-lg border bg-card p-3">
+              <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+                <span className="font-bold text-text-2">Derivar a:</span>
+                {(
+                  [
+                    { k: "employee" as const, l: "👤 Empleado" },
+                    { k: "group" as const, l: "👥 Grupo" },
+                  ]
+                ).map(({ k, l }) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      setTargetKind(k);
+                      setAssignee("");
+                    }}
+                    className={
+                      targetKind === k
+                        ? "rounded-full border border-brand bg-brand-veil px-3 py-1 font-bold text-brand"
+                        : "rounded-full border border-border-strong px-3 py-1 font-semibold text-text-2 hover:bg-accent"
+                    }
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
               <div className="grid gap-2 md:grid-cols-3">
-                <select
-                  value={assignee}
-                  onChange={(e) => setAssignee(e.target.value)}
-                  className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
-                >
-                  <option value="">Elegí el empleado…</option>
-                  {(directory ?? []).map((m) => (
-                    <option key={m.userId} value={m.userId}>
-                      {m.name}
-                      {m.locality ? ` — ${m.locality}` : ""}
-                    </option>
-                  ))}
-                </select>
+                {targetKind === "employee" ? (
+                  <select
+                    value={assignee}
+                    onChange={(e) => setAssignee(e.target.value)}
+                    className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
+                  >
+                    <option value="">Elegí el empleado…</option>
+                    {(directory ?? []).map((m) => (
+                      <option key={m.userId} value={m.userId}>
+                        {m.name}
+                        {m.locality ? ` — ${m.locality}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    value={assignee}
+                    onChange={(e) => setAssignee(e.target.value)}
+                    className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
+                  >
+                    <option value="">Elegí el grupo del chat…</option>
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value as ProposalPriority)}
@@ -1126,23 +1229,92 @@ function ProposalFlow({
                 className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[12.5px] font-bold text-white hover:opacity-90 disabled:opacity-50"
               >
                 {busy === "derive" ? <Loader2 size={14} className="animate-spin" /> : <UserCheck size={14} />}
-                Derivar y avisar por el chat
+                {targetKind === "group" ? "Derivar al grupo y avisar" : "Derivar y avisar por el chat"}
               </button>
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={() => void sendNow()}
-            disabled={busy === "send"}
-            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-[13px] font-bold text-white hover:opacity-90 disabled:opacity-50"
-          >
-            {busy === "send" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-            Enviar por WhatsApp (abre el chat con el mensaje y el link)
-          </button>
+          {!previewOpen && (
+            <button
+              type="button"
+              onClick={() => {
+                const firstName = customer.name.split(" ")[0] ?? "";
+                const absUrl = `${window.location.origin}${created.publicUrl}`;
+                setDraftText(
+                  `¡Hola ${firstName}! 👋 Te preparé una propuesta pensada para vos${form.benefit ? `: ${form.benefit}` : ""}. Miralá acá 👉 ${absUrl}`
+                );
+                setPreviewOpen(true);
+              }}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-[13px] font-bold text-white hover:opacity-90"
+            >
+              <Send size={14} />
+              Enviar por WhatsApp — con vista previa
+            </button>
+          )}
+
+          {previewOpen && (
+            <div className="space-y-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3">
+              <p className="text-[12.5px] font-bold text-text-1">
+                Así le llega por WhatsApp — revisalo antes de abrir el chat
+              </p>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                {(imagePreview ?? created.imageUrl) && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={imagePreview ?? created.imageUrl ?? ""}
+                    alt="Imagen de la propuesta"
+                    className="h-32 w-32 shrink-0 self-start rounded-lg border object-cover"
+                  />
+                )}
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="rounded-2xl rounded-tr-sm border border-emerald-600/20 bg-[#dcf8c6] px-3 py-2 text-[12.5px] leading-snug text-emerald-950 shadow-sm">
+                    <textarea
+                      value={draftText}
+                      onChange={(e) => setDraftText(e.target.value)}
+                      rows={4}
+                      aria-label="Mensaje para WhatsApp"
+                      className="w-full resize-none bg-transparent text-[12.5px] leading-snug text-emerald-950 outline-none"
+                    />
+                    <span className="block text-right text-[10px] text-emerald-950/60">
+                      ahora ✓
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-text-3">
+                    {created.imageUrl
+                      ? "Va con la imagen de la publicación adjunta y el link a la página. Queda cargado en el chat sin enviar."
+                      : "Queda cargado en el chat sin enviar: lo revisás y lo mandás desde ahí."}
+                  </p>
+                  {!stage.derived && canDerive && (
+                    <p className="text-[11px] text-text-3">
+                      Podés derivarla (arriba) a un empleado o a un grupo para
+                      que la envíe y la gestione.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void sendNow()}
+                  disabled={busy === "send" || !draftText.trim()}
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-[13px] font-bold text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  {busy === "send" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                  Abrir el chat con esto listo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen(false)}
+                  className="rounded-lg border bg-card px-3 py-2 text-[12.5px] font-semibold text-text-2 hover:bg-subtle"
+                >
+                  Volver
+                </button>
+              </div>
+            </div>
+          )}
           {stage.sent && (
             <p className="text-[12px] font-semibold text-emerald-700">
-              ✓ Marcada como enviada — el chat quedó abierto con el borrador.
+              ✓ Marcada como enviada — el chat quedó abierto con el borrador y la imagen listos.
             </p>
           )}
         </div>

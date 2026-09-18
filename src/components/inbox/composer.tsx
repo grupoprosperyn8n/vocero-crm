@@ -34,12 +34,15 @@ function parseCoords(raw: string): { latitude: number; longitude: number } | nul
 export function Composer({
   conversation,
   initialDraft,
+  initialAttach,
   onSend,
   onSent,
 }: {
   conversation: ConversationDto;
   /** 039e — texto precargado (mensaje sugerido por la IA desde el tablero). */
   initialDraft?: string | null;
+  /** 041b — adjunto precargado (imagen de la publicación de la propuesta). */
+  initialAttach?: string | null;
   onSend: (text: string) => Promise<string | null>;
   onSent: () => void;
 }) {
@@ -63,6 +66,33 @@ export function Composer({
     if (!initialDraft) return;
     setText((t) => (t ? t : initialDraft));
   }, [initialDraft, conversation.id]);
+
+  // 041b — precarga del adjunto: baja la imagen de la publicación desde la
+  // ruta pública y la deja como archivo pendiente (con su vista previa), a
+  // punto de enviar. Si falla, se sigue solo con el texto.
+  useEffect(() => {
+    if (!initialAttach) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(initialAttach, { cache: "no-store" });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        if (cancelled || !blob.size) return;
+        const ext = (blob.type.split("/")[1] || "png").replace("jpeg", "jpg");
+        const f = new File([blob], `publicacion.${ext}`, {
+          type: blob.type || "image/png",
+        });
+        pickFile(f);
+      } catch {
+        // Sin adjunto se sigue con el texto.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialAttach, conversation.id]);
 
   useEffect(() => {
     let cancelled = false;
