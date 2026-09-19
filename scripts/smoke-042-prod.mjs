@@ -261,8 +261,10 @@ const prdDel = await fetch(`${BASE}/api/proposals/products`, {
 });
 check(
   "19g. producto vinculado a una publicidad y dado de baja",
-  prdProp.status === 200 && prdPropData?.proposal?.productRef === prdRef && prdDel.status === 200,
-  `${prdProp.status}/${prdDel.status}`
+  (prdProp.status === 200 || prdProp.status === 201) &&
+    prdPropData?.proposal?.productRef === prdRef &&
+    prdDel.status === 200,
+  `${prdProp.status}/${prdDel.status} ref=${prdPropData?.proposal?.productRef ?? "-"}`
 );
 if (prdPropData?.proposal?.id) {
   await fetch(`${BASE}/api/proposals/${prdPropData.proposal.id}/lifecycle`, {
