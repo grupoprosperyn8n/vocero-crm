@@ -57,6 +57,7 @@ import {
 import {
   PROPOSAL_KINDS,
   type ClientFichaDto,
+  type ProductOptionDto,
   type ProposalDto,
   type ProposalPriority,
   type ProposalTemplateDto,
@@ -881,6 +882,9 @@ function ProposalFlow({
 }) {
   const [templates, setTemplates] = useState<ProposalTemplateDto[]>([]);
   const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
+  // 042f — «Tipo de producto»: del sistema (Airtable) + los propios del CRM.
+  const [products, setProducts] = useState<ProductOptionDto[]>([]);
+  const [productsOk, setProductsOk] = useState(true);
   const [directory, setDirectory] = useState<TeamMemberLiteDto[] | null>(null);
 
   const [kind, setKind] = useState(kindDefault);
@@ -889,6 +893,7 @@ function ProposalFlow({
     subtitle: "",
     body: "",
     productName: "",
+    productRef: "",
     offer: "",
     benefit: "",
     ctaLabel: "",
@@ -945,6 +950,7 @@ function ProposalFlow({
         subtitle: t.subtitle ?? "",
         body: t.body,
         productName: t.productName ?? "",
+        productRef: t.productRef ?? "",
         offer: t.offer ?? "",
         benefit: t.benefit ?? "",
         ctaLabel: t.ctaLabel ?? "",
@@ -963,18 +969,34 @@ function ProposalFlow({
     []
   );
 
+  // 042f — al elegir del menú de productos queda el vínculo al sistema/CRM;
+  // texto libre sigue permitido (sin vínculo).
+  const syncProductName = useCallback(
+    (value: string) => {
+      const match = products.find((p) => p.name === value.trim());
+      setForm((f) => ({ ...f, productName: value, productRef: match ? match.ref : "" }));
+    },
+    [products]
+  );
+
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const [tRes, cRes] = await Promise.all([
+      const [tRes, cRes, pRes] = await Promise.all([
         fetch("/api/proposals/templates", { cache: "no-store" }).catch(() => null),
         fetch("/api/proposals/companies", { cache: "no-store" }).catch(() => null),
+        fetch("/api/proposals/products", { cache: "no-store" }).catch(() => null),
       ]);
       if (!alive) return;
       const tData = tRes ? ((await tRes.json().catch(() => ({}))) as { templates?: ProposalTemplateDto[] }) : {};
       const cData = cRes ? ((await cRes.json().catch(() => ({}))) as { companies?: { id: string; name: string }[] }) : {};
+      const pData = pRes
+        ? ((await pRes.json().catch(() => ({}))) as { products?: ProductOptionDto[]; systemOk?: boolean })
+        : {};
       setTemplates(tData.templates ?? []);
       setCompanies(cData.companies ?? []);
+      setProducts(pData.products ?? []);
+      setProductsOk(pData.systemOk !== false);
     })();
     return () => {
       alive = false;
@@ -1267,6 +1289,7 @@ function ProposalFlow({
         subtitle: form.subtitle || null,
         body: form.body,
         productName: form.productName || null,
+        productRef: form.productRef || null,
         offer: form.offer || null,
         benefit: form.benefit || null,
         ctaLabel: form.ctaLabel || null,
@@ -1498,12 +1521,35 @@ function ProposalFlow({
         className="w-full rounded-lg border bg-card px-3 py-2 text-[13px]"
       />
       <div className="grid gap-2 md:grid-cols-3">
-        <input
-          value={form.productName}
-          onChange={(e) => setForm((f) => ({ ...f, productName: e.target.value }))}
-          placeholder="Tipo de producto"
-          className="rounded-lg border bg-card px-3 py-2 text-[12.5px]"
-        />
+        <div className="min-w-0">
+          <input
+            value={form.productName}
+            onChange={(e) => syncProductName(e.target.value)}
+            placeholder="Tipo de producto"
+            list="publicidad-productos"
+            className="w-full rounded-lg border bg-card px-3 py-2 text-[12.5px]"
+          />
+          <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+            {(() => {
+              const sel = products.find((p) => p.ref === form.productRef);
+              if (sel) {
+                return `${sel.icon ? sel.icon + " " : ""}${
+                  sel.source === "crm" ? "Producto del CRM" : "Producto del sistema"
+                }`;
+              }
+              return productsOk
+                ? `${products.length} productos: sistema + CRM`
+                : "El sistema no respondió: se muestran solo los del CRM";
+            })()}
+          </p>
+          <datalist id="publicidad-productos">
+            {products.map((p) => (
+              <option key={p.ref} value={p.name}>
+                {p.source === "crm" ? "CRM" : "Sistema"}
+              </option>
+            ))}
+          </datalist>
+        </div>
         <input
           value={form.offer}
           onChange={(e) => setForm((f) => ({ ...f, offer: e.target.value }))}

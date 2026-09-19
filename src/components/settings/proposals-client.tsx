@@ -10,10 +10,12 @@
  * (con nombre visible) y cargarle a cada uno su GUÍA del asistente (system
  * prompt de la acción comercial: renovación, captación, lanzamiento…).
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Image as ImageIcon,
   Loader2,
+  Package,
+  Pencil,
   Plus,
   Save,
   Sparkles,
@@ -21,6 +23,7 @@ import {
 } from "lucide-react";
 import {
   PROPOSAL_KINDS,
+  type ProductOptionDto,
   type ProposalTemplateDto,
 } from "@/lib/types";
 import {
@@ -35,6 +38,7 @@ type Draft = {
   subtitle: string;
   body: string;
   productName: string;
+  productRef: string;
   offer: string;
   benefit: string;
   ctaLabel: string;
@@ -51,6 +55,7 @@ const EMPTY: Draft = {
   subtitle: "",
   body: "",
   productName: "",
+  productRef: "",
   offer: "",
   benefit: "",
   ctaLabel: "",
@@ -68,6 +73,7 @@ function toDraft(t: ProposalTemplateDto): Draft {
     subtitle: t.subtitle ?? "",
     body: t.body,
     productName: t.productName ?? "",
+    productRef: t.productRef ?? "",
     offer: t.offer ?? "",
     benefit: t.benefit ?? "",
     ctaLabel: t.ctaLabel ?? "",
@@ -110,6 +116,22 @@ export function ProposalsSettings() {
   // 042e — creación de tipos propios
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  // 042f — productos: catálogo para el selector (sistema + mini tabla del CRM)
+  const [products, setProducts] = useState<ProductOptionDto[]>([]);
+  const [productsOk, setProductsOk] = useState(true);
+
+  const loadProducts = useCallback(async () => {
+    const res = await fetch("/api/proposals/products", { cache: "no-store" }).catch(() => null);
+    const data = res
+      ? ((await res.json().catch(() => ({}))) as { products?: ProductOptionDto[]; systemOk?: boolean })
+      : {};
+    setProducts(data.products ?? []);
+    setProductsOk(data.systemOk !== false);
+  }, []);
+
+  useEffect(() => {
+    void loadProducts();
+  }, [loadProducts]);
 
   useEffect(() => {
     void (async () => {
@@ -168,6 +190,7 @@ export function ProposalsSettings() {
       kind: slug,
       label: name,
       aiPrompt: null,
+      productRef: null,
       title: "",
       subtitle: null,
       body: "",
@@ -256,6 +279,7 @@ export function ProposalsSettings() {
         kind,
         label: current.label.trim() || null,
         aiPrompt: current.aiPrompt.trim() || null,
+        productRef: current.productRef || null,
         title: current.title,
         subtitle: current.subtitle || null,
         body: current.body,
@@ -397,13 +421,28 @@ export function ProposalsSettings() {
             className="w-full rounded-lg border bg-card px-3 py-2 text-[13px]"
           />
           <div className="grid gap-2 sm:grid-cols-3">
-            <input
-              value={current.productName}
-              onChange={(e) => set("productName", e.target.value)}
-              placeholder="Tipo de producto"
-              disabled={!canEdit}
-              className="rounded-lg border bg-card px-3 py-2 text-[12.5px]"
-            />
+            <div className="min-w-0">
+              <input
+                value={current.productName}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const m = products.find((p) => p.name === v.trim());
+                  set("productName", v);
+                  set("productRef", m ? m.ref : "");
+                }}
+                placeholder="Tipo de producto"
+                list="ajustes-productos"
+                disabled={!canEdit}
+                className="w-full rounded-lg border bg-card px-3 py-2 text-[12.5px]"
+              />
+              <datalist id="ajustes-productos">
+                {products.map((p) => (
+                  <option key={p.ref} value={p.name}>
+                    {p.source === "crm" ? "CRM" : "Sistema"}
+                  </option>
+                ))}
+              </datalist>
+            </div>
             <input
               value={current.offer}
               onChange={(e) => set("offer", e.target.value)}
@@ -558,6 +597,246 @@ export function ProposalsSettings() {
           «{face.label}» es un tipo propio: se elimina solo si ninguna publicidad lo está usando.
         </p>
       )}
+
+      <ProductsMiniTable
+        products={products}
+        productsOk={productsOk}
+        canEdit={canEdit}
+        reload={loadProducts}
+      />
+    </div>
+  );
+}
+
+/**
+ * 042f — Mini tabla de productos: el menú de «Tipo de producto» de la
+ * publicidad. Arriba los del SISTEMA (tabla PRODUCTOS de Airtable, solo
+ * lectura: acá no se tocan) y abajo los propios del CRM, editables.
+ */
+function ProductsMiniTable({
+  products,
+  productsOk,
+  canEdit,
+  reload,
+}: {
+  products: ProductOptionDto[];
+  productsOk: boolean;
+  canEdit: boolean;
+  reload: () => Promise<void>;
+}) {
+  const system = products.filter((p) => p.source === "sistema");
+  const local = products.filter((p) => p.source === "crm");
+  const [newIcon, setNewIcon] = useState("");
+  const [newName, setNewName] = useState("");
+  const [edits, setEdits] = useState<Record<string, { icon: string; name: string }>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  const add = async () => {
+    const name = newName.trim();
+    if (name.length < 2) {
+      setErr("Poné un nombre de producto de al menos 2 letras.");
+      return;
+    }
+    setBusy("new");
+    setErr("");
+    const res = await fetch("/api/proposals/products", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, icon: newIcon.trim() || null }),
+    }).catch(() => null);
+    const data = res ? ((await res.json().catch(() => ({}))) as { message?: string }) : null;
+    setBusy(null);
+    if (!res?.ok) {
+      setErr(data?.message ?? "No se pudo crear el producto");
+      return;
+    }
+    setNewIcon("");
+    setNewName("");
+    await reload();
+  };
+
+  const saveRow = async (p: ProductOptionDto) => {
+    const d = edits[p.ref];
+    if (!d) return;
+    setBusy(p.ref);
+    setErr("");
+    const res = await fetch("/api/proposals/products", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: p.ref, name: d.name.trim(), icon: d.icon.trim() || null }),
+    }).catch(() => null);
+    const data = res ? ((await res.json().catch(() => ({}))) as { message?: string }) : null;
+    setBusy(null);
+    if (!res?.ok) {
+      setErr(data?.message ?? "No se pudo guardar el producto");
+      return;
+    }
+    setEdits((prev) => {
+      const next = { ...prev };
+      delete next[p.ref];
+      return next;
+    });
+    await reload();
+  };
+
+  const remove = async (p: ProductOptionDto) => {
+    if (!window.confirm(`¿Eliminar «${p.name}» de los productos del CRM?`)) return;
+    setBusy(p.ref);
+    setErr("");
+    const res = await fetch("/api/proposals/products", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: p.ref }),
+    }).catch(() => null);
+    const data = res ? ((await res.json().catch(() => ({}))) as { message?: string }) : null;
+    setBusy(null);
+    if (!res?.ok) {
+      setErr(data?.message ?? "No se pudo eliminar el producto");
+      return;
+    }
+    await reload();
+  };
+
+  const rowEdit = (p: ProductOptionDto) =>
+    edits[p.ref] ?? { icon: p.icon ?? "", name: p.name };
+
+  const setRowEdit = (p: ProductOptionDto, patch: Partial<{ icon: string; name: string }>) =>
+    setEdits((prev) => ({ ...prev, [p.ref]: { ...rowEdit(p), ...patch } }));
+
+  return (
+    <div className="space-y-2 rounded-xl border bg-card p-3">
+      <div className="flex items-center gap-2">
+        <Package size={15} className="text-brand-text" />
+        <h3 className="text-[13px] font-bold">Productos (mini tabla)</h3>
+        <span className="text-[11.5px] text-text-3">
+          De acá sale el menú de «Tipo de producto» de la publicidad.
+        </span>
+      </div>
+
+      {!productsOk && (
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] font-semibold text-amber-700">
+          El sistema (Airtable) no respondió: se muestran solo los productos del CRM.
+        </p>
+      )}
+
+      {system.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {system.map((p) => (
+            <span
+              key={p.ref}
+              className="flex items-center gap-1 rounded-lg border bg-subtle/40 px-2 py-1 text-[12px]"
+              title="Producto del sistema (Airtable) — solo lectura"
+            >
+              {p.icon && <span>{p.icon}</span>}
+              <span className="font-semibold text-text-2">{p.name}</span>
+              <span className="rounded bg-subtle px-1 py-px text-[9.5px] font-bold uppercase text-text-3">
+                Sistema
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+      {system.length === 0 && productsOk && (
+        <p className="text-[11.5px] text-text-3">El sistema no tiene productos cargados.</p>
+      )}
+
+      {local.length > 0 ? (
+        <div className="divide-y rounded-lg border">
+          {local.map((p) => {
+            const d = rowEdit(p);
+            const dirty = d.name !== p.name || d.icon !== (p.icon ?? "");
+            return (
+              <div key={p.ref} className="flex items-center gap-1.5 p-1.5">
+                <input
+                  value={d.icon}
+                  onChange={(e) => setRowEdit(p, { icon: e.target.value })}
+                  placeholder="🙂"
+                  disabled={!canEdit}
+                  className="w-11 rounded border bg-subtle/40 px-1.5 py-1 text-center text-[13px]"
+                  aria-label="Emoji"
+                />
+                <input
+                  value={d.name}
+                  onChange={(e) => setRowEdit(p, { name: e.target.value })}
+                  disabled={!canEdit}
+                  className="min-w-0 flex-1 rounded border bg-subtle/40 px-2 py-1 text-[12.5px] font-semibold"
+                  aria-label="Nombre del producto"
+                />
+                <span className="rounded bg-subtle px-1 py-px text-[9.5px] font-bold uppercase text-text-3">
+                  CRM
+                </span>
+                {canEdit && dirty && (
+                  <button
+                    type="button"
+                    onClick={() => void saveRow(p)}
+                    disabled={busy === p.ref}
+                    className="flex items-center gap-1 rounded bg-brand px-2 py-1 text-[11.5px] font-bold text-white hover:opacity-90 disabled:opacity-50"
+                  >
+                    {busy === p.ref ? <Loader2 size={12} className="animate-spin" /> : <Pencil size={12} />}
+                    Guardar
+                  </button>
+                )}
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => void remove(p)}
+                    disabled={busy === p.ref}
+                    className="rounded border border-danger-text/30 p-1.5 text-danger-text hover:bg-danger-text/10 disabled:opacity-50"
+                    title="Eliminar producto del CRM"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-[11.5px] text-text-3">
+          Todavía no hay productos propios del CRM. Creá el primero acá abajo.
+        </p>
+      )}
+
+      {canEdit && (
+        <div className="flex items-center gap-1.5">
+          <input
+            value={newIcon}
+            onChange={(e) => setNewIcon(e.target.value)}
+            placeholder="🙂"
+            className="w-11 rounded-lg border bg-subtle/40 px-1.5 py-1.5 text-center text-[13px]"
+            aria-label="Emoji del producto nuevo"
+          />
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void add();
+            }}
+            placeholder="Producto nuevo (ej.: Cobertura de viaje)"
+            className="min-w-0 flex-1 rounded-lg border bg-subtle/40 px-2 py-1.5 text-[12.5px]"
+          />
+          <button
+            type="button"
+            onClick={() => void add()}
+            disabled={busy === "new"}
+            className="flex items-center gap-1 rounded-lg border border-dashed border-brand-soft px-3 py-1.5 text-[12px] font-bold text-brand-text hover:bg-brand-tint disabled:opacity-50"
+          >
+            {busy === "new" ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+            Agregar
+          </button>
+        </div>
+      )}
+      {!canEdit && (
+        <p className="text-[11.5px] text-text-3">
+          Para crear o editar productos del CRM necesitás ser propietario o administrador.
+        </p>
+      )}
+      {err && <p className="text-[12px] font-semibold text-danger-text">{err}</p>}
+      <p className="text-[11px] text-text-3">
+        Los productos del <b>Sistema</b> vienen de la tabla PRODUCTOS de Airtable y acá son solo lectura;
+        los del <b>CRM</b> se crean, editan y eliminan desde esta mini tabla. El CRM nunca escribe en Airtable.
+      </p>
     </div>
   );
 }

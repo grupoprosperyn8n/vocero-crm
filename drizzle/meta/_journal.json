@@ -288,6 +288,13 @@
       "when": 1789774337405,
       "tag": "0040_narrow_skrulls",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1789776176072,
+      "tag": "0041_strange_hercules",
+      "breakpoints": true
     }
   ]
 }

@@ -48,6 +48,7 @@ const createSchema = z.object({
   subtitle: z.string().trim().max(160).optional().nullable(),
   body: z.string().trim().max(1600).optional().nullable(),
   productName: z.string().trim().max(120).optional().nullable(),
+  productRef: z.string().trim().max(64).optional().nullable(),
   offer: z.string().trim().max(400).optional().nullable(),
   benefit: z.string().trim().max(200).optional().nullable(),
   companyRef: z.string().trim().max(40).optional().nullable(),

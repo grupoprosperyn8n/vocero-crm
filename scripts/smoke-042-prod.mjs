@@ -219,6 +219,59 @@ const tplDel = await fetch(`${BASE}/api/proposals/templates`, {
 });
 check("19e. tipo propio eliminado (limpieza)", tplDel.status === 200, String(tplDel.status));
 
+// ---- 042f: productos (menú del sistema + mini tabla del CRM) ---------------
+const PRD_SMOKE = `Producto humo ${stamp}`;
+const prdList0 = await (await fetch(`${BASE}/api/proposals/products`, { headers: H })).json().catch(() => ({}));
+const prdSys = (prdList0?.products ?? []).filter((p) => p.source === "sistema");
+const prdNew = await fetch(`${BASE}/api/proposals/products`, {
+  method: "POST",
+  headers: { ...H, "content-type": "application/json" },
+  body: JSON.stringify({ name: PRD_SMOKE, icon: "🧪" }),
+});
+const prdNewData = await prdNew.json().catch(() => ({}));
+const prdRef = prdNewData?.product?.id ?? "";
+const prdList1 = await (await fetch(`${BASE}/api/proposals/products`, { headers: H })).json().catch(() => ({}));
+const prdEnMenu = (prdList1?.products ?? []).some((p) => p.ref === prdRef && p.source === "crm");
+check(
+  "19f. productos: el menú trae el sistema (solo lectura) + el producto nuevo del CRM",
+  typeof prdList0?.systemOk === "boolean" &&
+    prdSys.every((p) => /^rec/.test(p.ref)) &&
+    prdNew.status === 201 &&
+    prdEnMenu,
+  `sistema=${prdSys.length} systemOk=${prdList0?.systemOk} nuevo=${prdNew.status}`
+);
+const prdProp = await fetch(`${BASE}/api/proposals`, {
+  method: "POST",
+  headers: { ...H, "content-type": "application/json" },
+  body: JSON.stringify({
+    kind: "renovacion",
+    clientRef: TEST_CLIENT,
+    clientName: "TEST IA",
+    title: "Producto de humo",
+    body: "Prueba de vínculo de producto (042f).",
+    productName: PRD_SMOKE,
+    productRef: prdRef,
+  }),
+});
+const prdPropData = await prdProp.json().catch(() => ({}));
+const prdDel = await fetch(`${BASE}/api/proposals/products`, {
+  method: "DELETE",
+  headers: { ...H, "content-type": "application/json" },
+  body: JSON.stringify({ id: prdRef }),
+});
+check(
+  "19g. producto vinculado a una publicidad y dado de baja",
+  prdProp.status === 200 && prdPropData?.proposal?.productRef === prdRef && prdDel.status === 200,
+  `${prdProp.status}/${prdDel.status}`
+);
+if (prdPropData?.proposal?.id) {
+  await fetch(`${BASE}/api/proposals/${prdPropData.proposal.id}/lifecycle`, {
+    method: "POST",
+    headers: { ...H, "content-type": "application/json" },
+    body: JSON.stringify({ action: "delete" }),
+  });
+}
+
 // ---- baja: las piezas se eliminan y las páginas dejan de existir -----------
 const del = await fetch(`${BASE}/api/proposals/${prop?.id}/lifecycle`, {
   method: "POST",

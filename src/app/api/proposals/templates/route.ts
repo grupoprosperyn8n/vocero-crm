@@ -33,6 +33,7 @@ const putSchema = z.object({
   kind: z.string().trim().min(1).max(40),
   label: z.string().trim().max(60).optional().nullable(),
   aiPrompt: z.string().trim().max(2000).optional().nullable(),
+  productRef: z.string().trim().max(64).optional().nullable(),
   title: z.string().trim().max(120).optional(),
   subtitle: z.string().trim().max(160).optional().nullable(),
   body: z.string().trim().max(1600).optional(),

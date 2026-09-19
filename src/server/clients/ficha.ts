@@ -628,6 +628,7 @@ export function proposalToDto(
     subtitle: p.subtitle,
     body: p.body,
     productName: p.productName,
+    productRef: p.productRef,
     offer: p.offer,
     benefit: p.benefit,
     companyName: p.companyName,

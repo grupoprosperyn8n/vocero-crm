@@ -1662,6 +1662,28 @@ export const proposalAsset = pgTable("proposal_asset", {
  * ============================================================ */
 
 /**
+ * 042f — Productos propios del CRM (mini tabla de Diego): los que hacen falta
+ * para armar una publicidad y NO están en la tabla PRODUCTOS del sistema
+ * (Airtable, solo lectura). El selector «Tipo de producto» muestra ambos.
+ */
+export const crmProduct = pgTable(
+  "crm_product",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** Emoji o ícono corto (espejo del campo ICONO del sistema). */
+    icon: text("icon"),
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("crm_product_org_idx").on(t.organizationId)]
+);
+
+/**
  * Archivo del contenedor universal (imágenes y videos): lo cargan los
  * usuarios, se elige desde cualquier ficha para armar publicidades y lo que
  * sube el dueño/administrador/gerente queda PROTEGIDO (no se puede quitar).
@@ -1743,6 +1765,9 @@ export const proposalTemplate = pgTable(
     body: text("body").notNull().default(""),
     /** Tipo de producto / oferta / descuento o beneficio (040b — Diego). */
     productName: text("product_name"),
+    /** 042f — referencia al producto elegido: rec del sistema (Airtable
+     * PRODUCTOS) o id de crm_product. Null = texto libre. */
+    productRef: text("product_ref"),
     offer: text("offer"),
     benefit: text("benefit"),
     /** Logo del emisor (Rafael Allende) que va arriba de la pieza. */
@@ -1792,6 +1817,8 @@ export const proposal = pgTable(
     body: text("body").notNull().default(""),
     /** Tipo de producto / oferta / descuento o beneficio. */
     productName: text("product_name"),
+    /** 042f — referencia al producto (rec del sistema o id de crm_product). */
+    productRef: text("product_ref"),
     offer: text("offer"),
     benefit: text("benefit"),
     /** Compañía de seguro auspiciada (logo descargado a proposal_asset). */

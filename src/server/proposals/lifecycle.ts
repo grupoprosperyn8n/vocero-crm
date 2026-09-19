@@ -187,6 +187,7 @@ const EDITABLE_FIELDS = [
   "benefit",
   "ctaLabel",
   "productName",
+  "productRef",
   "priority",
 ] as const;
 
@@ -200,6 +201,7 @@ const FIELD_LABELS: Record<EditableField, string> = {
   benefit: "beneficio",
   ctaLabel: "botón",
   productName: "producto",
+  productRef: "vínculo de producto",
   priority: "prioridad",
 };
 

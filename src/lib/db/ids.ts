@@ -62,6 +62,8 @@ const prefixes = {
   // 041d/041e — contenedor universal de archivos e historial de la propuesta
   libraryAsset: "lib",
   proposalEvent: "pev",
+  // 042f — productos propios del CRM (mini tabla, selector de «tipo de producto»)
+  crmProduct: "prd",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

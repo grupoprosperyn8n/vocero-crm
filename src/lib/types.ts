@@ -610,6 +610,8 @@ export type ProposalDto = {
   subtitle: string | null;
   body: string;
   productName: string | null;
+  /** 042f — ref del producto elegido (sistema o crm_product). */
+  productRef: string | null;
   offer: string | null;
   benefit: string | null;
   companyName: string | null;
@@ -684,6 +686,8 @@ export type ProposalTemplateDto = {
   label: string | null;
   /** 042e — guía (system prompt) del asistente para esta acción comercial. */
   aiPrompt: string | null;
+  /** 042f — ref del producto por defecto del tipo (opcional). */
+  productRef: string | null;
   title: string;
   subtitle: string | null;
   body: string;
@@ -712,6 +716,24 @@ export const PROPOSAL_KINDS = [
 ] as const;
 
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number]["id"];
+
+/** 042f — producto propio del CRM (mini tabla del selector de producto). */
+export type CrmProductDto = {
+  id: string;
+  name: string;
+  icon: string | null;
+  note: string | null;
+  updatedAt: string;
+};
+
+/** 042f — opción del selector «Tipo de producto» (sistema o CRM). */
+export type ProductOptionDto = {
+  ref: string;
+  name: string;
+  icon: string | null;
+  note: string | null;
+  source: "sistema" | "crm";
+};
 
 export type ProposalPriority = "alta" | "media" | "baja";
 

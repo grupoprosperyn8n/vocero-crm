@@ -70,6 +70,7 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
     kind: "renovacion",
     label: null,
     aiPrompt: null,
+    productRef: null,
     title: "Tu póliza está por renovarse",
     subtitle: "Renovación acompañada, sin sorpresas",
     body: "Faltan pocos días para el vencimiento de tu póliza. Renová con nosotros y seguís con la misma cobertura y atención de siempre.",
@@ -90,6 +91,7 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
     kind: "retencion",
     label: null,
     aiPrompt: null,
+    productRef: null,
     title: "Cuidamos lo que más te importa",
     subtitle: "Tu cobertura, siempre a mano",
     body: "Queremos que sigas protegido sin interrupciones. Revisemos juntos tu cobertura actual y ajustemos lo que haga falta.",
@@ -110,6 +112,7 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
     kind: "venta_cruzada",
     label: null,
     aiPrompt: null,
+    productRef: null,
     title: "Sumá una cobertura a tu medida",
     subtitle: "¿Sabías que podés ampliar tu protección?",
     body: "Ya tenés una cobertura con nosotros. Sumá la que te falta y protegé todo lo que construiste, con la comodidad de un solo lugar.",
@@ -130,6 +133,7 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
     kind: "reactivacion",
     label: null,
     aiPrompt: null,
+    productRef: null,
     title: "Volvé a estar protegido",
     subtitle: "Tu cobertura te está esperando",
     body: "Hace un tiempo no tenemos novedades tuyas. Las condiciones cambiaron y hoy podés retomar tu cobertura con beneficios pensados para vos.",
@@ -150,6 +154,7 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
     kind: "fidelizacion",
     label: null,
     aiPrompt: null,
+    productRef: null,
     title: "Gracias por confiar en nosotros",
     subtitle: "Beneficios por ser cliente",
     body: "Cuidar lo tuyo es nuestro trabajo. Te dejamos beneficios pensados para clientes que, como vos, eligen estar cubiertos.",
@@ -170,6 +175,7 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
     kind: "captacion",
     label: null,
     aiPrompt: null,
+    productRef: null,
     title: "Tu primera cobertura, fácil y clara",
     subtitle: "Cotizá en 2 minutos, sin compromiso",
     body: "Si todavía no tenés tu seguro, te ayudamos a encontrar la cobertura que necesitás según lo que querés proteger y tu presupuesto. Un asesor te responde y te explica todo en simple.",
@@ -190,6 +196,7 @@ export const DEFAULT_TEMPLATES: ProposalTemplateDto[] = [
     kind: "lanzamiento",
     label: null,
     aiPrompt: null,
+    productRef: null,
     title: "Nuevo producto que te conviene",
     subtitle: "Recién llegado a nuestro catálogo",
     body: "Sumamos un nuevo producto pensado para protegerte mejor. Queremos que seas de los primeros en conocerlo: te contamos qué cubre, para quién es y cómo acceder.",
@@ -229,6 +236,7 @@ export async function listTemplates(
       // 042e — nombre visible y guía del asistente viajan siempre.
       label: row.label,
       aiPrompt: row.aiPrompt,
+      productRef: row.productRef,
       title: row.title || base.title,
       subtitle: row.subtitle ?? base.subtitle,
       body: row.body || base.body,
@@ -254,6 +262,7 @@ export async function listTemplates(
       kind: row.kind,
       label: row.label,
       aiPrompt: row.aiPrompt,
+      productRef: row.productRef,
       title: row.title,
       subtitle: row.subtitle,
       body: row.body,
@@ -375,6 +384,7 @@ export async function upsertTemplate(input: {
   /** 042e — nombre visible (tipos propios) y guía del asistente. */
   label?: string | null;
   aiPrompt?: string | null;
+  productRef?: string | null;
   title?: string;
   subtitle?: string | null;
   body?: string;
@@ -459,6 +469,7 @@ function cleanUrl(v: unknown): string | null {
 function sanitizeTemplateInput(input: {
   label?: string | null;
   aiPrompt?: string | null;
+  productRef?: string | null;
   title?: string;
   subtitle?: string | null;
   body?: string;
@@ -474,6 +485,7 @@ function sanitizeTemplateInput(input: {
   const out: Record<string, unknown> = {};
   if (input.label !== undefined) out.label = cleanText(input.label, 60);
   if (input.aiPrompt !== undefined) out.aiPrompt = cleanText(input.aiPrompt, 2000);
+  if (input.productRef !== undefined) out.productRef = cleanText(input.productRef, 64);
   if (input.title !== undefined) out.title = cleanText(input.title, 120) ?? "";
   if (input.subtitle !== undefined)
     out.subtitle = cleanText(input.subtitle, 160);
@@ -747,6 +759,8 @@ export async function createProposal(input: {
   subtitle?: string | null;
   body?: string | null;
   productName?: string | null;
+  /** 042f — producto elegido del catálogo (sistema o CRM). */
+  productRef?: string | null;
   offer?: string | null;
   benefit?: string | null;
   companyRef?: string | null;
@@ -823,6 +837,7 @@ export async function createProposal(input: {
     subtitle: cleanText(input.subtitle, 160) ?? tpl.subtitle,
     body: cleanText(input.body, 1600) ?? tpl.body,
     productName: cleanText(input.productName, 120) ?? tpl.productName,
+    productRef: cleanText(input.productRef, 64) ?? tpl.productRef,
     offer: cleanText(input.offer, 400) ?? tpl.offer,
     benefit: cleanText(input.benefit, 200) ?? tpl.benefit,
     companyRef: input.companyRef ?? null,

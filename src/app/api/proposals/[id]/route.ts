@@ -16,6 +16,7 @@ const patchSchema = z.object({
   benefit: z.string().trim().max(200).optional().nullable(),
   ctaLabel: z.string().trim().max(40).optional().nullable(),
   productName: z.string().trim().max(120).optional().nullable(),
+  productRef: z.string().trim().max(64).optional().nullable(),
   priority: z.enum(["alta", "media", "baja"]).optional(),
 });
 
