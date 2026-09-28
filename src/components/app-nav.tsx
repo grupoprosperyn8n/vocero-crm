@@ -13,6 +13,8 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquareText,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   Sparkles,
   Users,
@@ -24,7 +26,7 @@ import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
 import { useEvents } from "@/components/use-events";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { BrandLogo } from "@/components/brand-mark";
+import { BrandLogo, BrandTile } from "@/components/brand-mark";
 import { APP_VERSION, BUILD_COMMIT, versionLabel } from "@/lib/version";
 
 type NavItem = {
@@ -59,6 +61,9 @@ const AGENDA_ITEM: NavItem = {
   label: "Citas",
   icon: CalendarDays,
 };
+
+/** Preferencia del toolbar colapsable (escritorio) — se recuerda en el navegador. */
+const NAV_COLLAPSED_KEY = "vocero.navCollapsed";
 
 /**
  * Un renglón del menú, como el `side-item` del mockup de la landing: texto
@@ -113,6 +118,24 @@ export function AppNav({
   const [unread, setUnread] = useState(0);
   const [internalUnread, setInternalUnread] = useState(0);
   const [alertsPending, setAlertsPending] = useState(0);
+
+  // Toolbar colapsable (solo escritorio): el cajón móvil no cambia. La
+  // preferencia queda en localStorage, así la elección sobrevive al refresh.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem(NAV_COLLAPSED_KEY) === "1");
+    } catch {}
+  }, []);
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem(NAV_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {}
+      return next;
+    });
+  }
 
   async function refetchUnread() {
     const res = await fetch("/api/conversations").catch(() => null);
@@ -189,12 +212,19 @@ export function AppNav({
       // lo que lo saca del orden de tabulación en móvil.
       className={cn(
         "fixed inset-y-0 left-0 z-50 flex w-[17rem] shrink-0 flex-col overflow-y-auto border-r bg-subtle px-3 pb-3.5 pt-4 transition-[transform,visibility] duration-200",
-        "lg:static lg:visible lg:z-auto lg:w-56 lg:translate-x-0 lg:overflow-visible lg:transition-none",
+        "lg:static lg:visible lg:z-auto lg:translate-x-0 lg:overflow-visible lg:transition-[width,padding] lg:duration-200",
+        collapsed ? "lg:w-[64px] lg:px-1.5" : "lg:w-56",
         open ? "visible translate-x-0 shadow-pop" : "invisible -translate-x-full"
       )}
     >
-      {/* Marca: el logo de Vocero o, white-label, la inicial y el nombre */}
-      <div className="mb-5 flex items-start gap-1.5 px-2 pt-0.5">
+      {/* Marca: el logo de Vocero o, white-label, la inicial y el nombre.
+          Colapsado (escritorio) queda el mosaico, con el botón para volver. */}
+      <div
+        className={cn(
+          "mb-5 flex items-start gap-1.5 px-2 pt-0.5",
+          collapsed && "lg:mb-4 lg:flex-col-reverse lg:items-center lg:gap-2 lg:px-0"
+        )}
+      >
         {/* En móvil el cajón necesita su propio cierre: el velo no siempre es
             alcanzable con el pulgar. */}
         <button
@@ -204,36 +234,91 @@ export function AppNav({
         >
           <X className="h-[18px] w-[18px]" strokeWidth={1.8} />
         </button>
-        <div className="min-w-0">
-          <BrandLogo branding={branding} />
-          <span className="kicker mt-2 block">CRM · WhatsApp</span>
+        <div className={cn("min-w-0", collapsed && "lg:flex lg:justify-center")}>
+          {collapsed && (
+            <span className="hidden lg:inline-flex">
+              <BrandTile
+                branding={branding}
+                className="h-[30px] w-[30px] rounded-[9px] text-[15px]"
+              />
+            </span>
+          )}
+          <span className={cn("block", collapsed && "lg:hidden")}>
+            <BrandLogo branding={branding} />
+            <span className="kicker mt-2 block">CRM · WhatsApp</span>
+          </span>
         </div>
+        {/* Colapsar/expandir el toolbar (escritorio). */}
+        <button
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Expandir el menú lateral" : "Colapsar el menú lateral"}
+          aria-expanded={!collapsed}
+          title={collapsed ? "Expandir el menú lateral" : "Colapsar el menú lateral"}
+          className={cn(
+            "ml-auto hidden rounded-md p-1.5 text-text-3 hover:bg-accent hover:text-foreground lg:inline-flex",
+            collapsed && "lg:ml-0"
+          )}
+        >
+          {collapsed ? (
+            <PanelLeftOpen className="h-[18px] w-[18px]" strokeWidth={1.8} />
+          ) : (
+            <PanelLeftClose className="h-[18px] w-[18px]" strokeWidth={1.8} />
+          )}
+        </button>
       </div>
 
       <nav className="flex flex-col gap-0.5">
         {items.map((item) => {
           const active =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
+          // Un solo contador por ítem: inline cuando hay texto, sobre el
+          // ícono cuando el toolbar está colapsado (solo escritorio).
+          const count =
+            item.badge === "crm"
+              ? unread
+              : item.badge === "internal"
+                ? internalUnread
+                : item.badge === "alerts"
+                  ? alertsPending
+                  : 0;
           return (
-            <Link key={item.href} href={item.href} className={navItemClass(active)}>
-              <item.icon
-                className={cn("h-[17px] w-[17px]", active ? "text-brand" : "text-text-3")}
-                strokeWidth={1.8}
-              />
-              <span className="flex-1">{item.label}</span>
-              {item.badge === "crm" && unread > 0 && (
-                <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-bold text-brand-fg">
-                  {unread}
-                </span>
+            <Link
+              key={item.href}
+              href={item.href}
+              title={collapsed ? item.label : undefined}
+              aria-label={collapsed ? item.label : undefined}
+              className={cn(
+                navItemClass(active),
+                collapsed && "lg:justify-center lg:gap-0 lg:px-0"
               )}
-              {item.badge === "internal" && internalUnread > 0 && (
-                <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-bold text-brand-fg">
-                  {internalUnread}
-                </span>
-              )}
-              {item.badge === "alerts" && alertsPending > 0 && (
-                <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-bold text-brand-fg">
-                  {alertsPending}
+            >
+              <span className="relative shrink-0">
+                <item.icon
+                  className={cn("h-[17px] w-[17px]", active ? "text-brand" : "text-text-3")}
+                  strokeWidth={1.8}
+                />
+                {count > 0 && (
+                  <span
+                    className={cn(
+                      "absolute -right-2 -top-1.5 hidden h-[15px] min-w-[15px] items-center justify-center rounded-full bg-brand px-1 text-[9.5px] font-bold text-brand-fg",
+                      collapsed && "lg:flex"
+                    )}
+                  >
+                    {count > 99 ? "99+" : count}
+                  </span>
+                )}
+              </span>
+              <span className={cn("flex-1", collapsed && "lg:hidden")}>
+                {item.label}
+              </span>
+              {count > 0 && (
+                <span
+                  className={cn(
+                    "flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-bold text-brand-fg",
+                    collapsed && "lg:hidden"
+                  )}
+                >
+                  {count}
                 </span>
               )}
             </Link>
@@ -244,24 +329,46 @@ export function AppNav({
       <div className="flex-1" />
 
       {/* 023 — Sucursal del día: dónde trabaja hoy (rota entre oficinas). */}
-      <OfficeTodayPicker />
+      <OfficeTodayPicker compact={collapsed} />
 
       {/* 021 — Ajustes: el administrador entra solo por Equipo; el miembro no lo ve. */}
       {role !== "member" && (
-        <Link href="/settings" className={navItemClass(settingsActive)}>
+        <Link
+          href="/settings"
+          title={collapsed ? "Ajustes" : undefined}
+          aria-label={collapsed ? "Ajustes" : undefined}
+          className={cn(
+            navItemClass(settingsActive),
+            collapsed && "lg:justify-center lg:gap-0 lg:px-0"
+          )}
+        >
           <Settings
             className={cn("h-[17px] w-[17px]", settingsActive ? "text-brand" : "text-text-3")}
             strokeWidth={1.8}
           />
-          Ajustes
+          <span className={cn(collapsed && "lg:hidden")}>Ajustes</span>
         </Link>
       )}
 
-      <div className="mt-1 flex items-center gap-2.5 rounded-sm px-2.5 py-2 hover:bg-accent">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-bold text-brand-text">
+      <div
+        className={cn(
+          "mt-1 flex items-center gap-2.5 rounded-sm px-2.5 py-2 hover:bg-accent",
+          collapsed && "lg:flex-col lg:gap-1.5 lg:px-1"
+        )}
+      >
+        <span
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-bold text-brand-text"
+          title={`${userName} · ${
+            role === "owner"
+              ? "Propietario"
+              : role === "admin"
+                ? "Administrador"
+                : "Miembro"
+          }`}
+        >
           {initials(userName)}
         </span>
-        <span className="min-w-0 flex-1">
+        <span className={cn("min-w-0 flex-1", collapsed && "lg:hidden")}>
           <span className="block truncate text-[13px] font-semibold">{userName}</span>
           <span className="block truncate text-[11px] text-text-3">
             {role === "owner"
@@ -296,7 +403,10 @@ export function AppNav({
           y una instancia rebautizada que dice "Vocero" en el tooltip delata el
           producto de debajo justo donde el operador la mira todos los días. */}
       <p
-        className="mt-2 px-2.5 font-mono text-[10.5px] tracking-[0.06em] text-text-2"
+        className={cn(
+          "mt-2 px-2.5 font-mono text-[10.5px] tracking-[0.06em] text-text-2",
+          collapsed && "lg:hidden"
+        )}
         title={
           sha
             ? `${branding.name} ${APP_VERSION}, construido del commit ${sha}`

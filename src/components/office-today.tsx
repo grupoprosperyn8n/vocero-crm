@@ -21,7 +21,12 @@ type OfficeRow = { id: string; displayName: string; locality?: string | null };
  * diario empleado | fecha | oficina. El botón del nav muestra la sucursal
  * actual y permite cambiarla durante el día.
  */
-export function OfficeTodayPicker() {
+export function OfficeTodayPicker({
+  compact = false,
+}: {
+  /** Toolbar colapsado (escritorio): el botón queda solo con el ícono. */
+  compact?: boolean;
+} = {}) {
   const [today, setToday] = useState<TodayOffice | null | undefined>(undefined);
   const [open, setOpen] = useState(false);
   const [offices, setOffices] = useState<OfficeRow[]>([]);
@@ -106,10 +111,15 @@ export function OfficeTodayPicker() {
     <>
       <button
         onClick={openPicker}
-        title="Sucursal de hoy — clic para cambiar"
+        title={
+          today
+            ? `Sucursal: ${today.displayName} — clic para cambiar`
+            : "Elegir sucursal de hoy — clic para cambiar"
+        }
         className={cn(
           "flex items-center gap-[10px] rounded-sm px-2.5 py-2 text-left text-[13px] font-semibold hover:bg-accent",
-          today ? "text-text-2" : "text-brand-text"
+          today ? "text-text-2" : "text-brand-text",
+          compact && "lg:justify-center lg:gap-0 lg:px-0"
         )}
       >
         <Building2
@@ -119,7 +129,7 @@ export function OfficeTodayPicker() {
           )}
           strokeWidth={1.8}
         />
-        <span className="min-w-0 flex-1 truncate">
+        <span className={cn("min-w-0 flex-1 truncate", compact && "lg:hidden")}>
           {today === undefined
             ? "Sucursal…"
             : today
