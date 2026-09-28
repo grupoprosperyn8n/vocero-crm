@@ -32,7 +32,8 @@
    ```
 
 3. La conexión de WhatsApp NO es parte del despliegue: al terminar, dile al
-   usuario que se hace desde la app.
+   usuario que se hace desde la app — Configuración → WhatsApp lo lleva paso a
+   paso con el asistente.
 
 ## Variables de entorno (ambas rutas)
 
@@ -90,7 +91,8 @@ docker compose up -d --build
 > 2. Pulsa **"Cargar datos de demostración"** si quieres explorar con la
 >    Ferretería El Martillo.
 > 3. Para conectar tu WhatsApp entra a **Configuración → WhatsApp**: ahí está
->    el wizard y la URL exacta del webhook para el panel de Meta o para tu
+>    el **asistente paso a paso** (te lleva por el alta completa en Meta, con
+>    los enlaces exactos) y la URL del webhook para el panel de Meta o para tu
 >    backend de agencia. La conexión del número NO es parte de esta
 >    instalación.
 
