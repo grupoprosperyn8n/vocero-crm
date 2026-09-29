@@ -1,5 +1,7 @@
 import { and, eq, ne } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { randomBytes } from "node:crypto";
+import { hashPassword } from "better-auth/crypto";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getAuth, runInternalSignup } from "@/lib/auth";
@@ -86,8 +88,12 @@ const createSchema = z.object({
 
 /** Alta de cuenta de equipo (owner only): email + contraseña temporal (FR-061). */
 export const POST = withAuth(async (session, req: Request) => {
-  if (session.role !== "owner") {
-    return apiError(403, "forbidden", "Solo el propietario puede crear cuentas");
+  if (session.role !== "owner" && session.role !== "admin") {
+    return apiError(
+      403,
+      "forbidden",
+      "Solo el propietario o un administrador pueden crear cuentas"
+    );
   }
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
@@ -134,6 +140,10 @@ const offlineSchema = z.object({
   offline: z.boolean().optional(),
   /** 026 — cambiar el rol: Gerente (ve toda la bandeja), Miembro o Admin. */
   role: z.enum(["admin", "manager", "member"]).optional(),
+  /** 044b-B10 — editar una cuenta MANUAL del CRM: nombre, correo y/o clave. */
+  name: z.string().trim().min(1).max(120).optional(),
+  email: z.string().trim().toLowerCase().email().max(254).optional(),
+  password: z.string().min(6).max(128).optional(),
 });
 
 /**
@@ -160,7 +170,16 @@ export const PATCH = withAuth(async (session, req: Request) => {
   }
   const body = await parseBody(req, offlineSchema);
   if (!body.ok) return body.response;
-  if (body.data.offline === undefined && body.data.role === undefined) {
+  // 044b-B10 — editar una cuenta MANUAL del CRM (nombre, correo, contraseña).
+  const editRequested =
+    body.data.name !== undefined ||
+    body.data.email !== undefined ||
+    body.data.password !== undefined;
+  if (
+    body.data.offline === undefined &&
+    body.data.role === undefined &&
+    !editRequested
+  ) {
     return apiError(422, "invalid", "No hay nada para cambiar");
   }
 
@@ -188,7 +207,9 @@ export const PATCH = withAuth(async (session, req: Request) => {
       "self",
       body.data.role !== undefined
         ? "No podés cambiar tu propio rol"
-        : "No podés cambiar tu propio estado"
+        : editRequested
+          ? "No podés editar tu propia cuenta desde acá"
+          : "No podés cambiar tu propio estado"
     );
   }
   if (target.role === "owner") {
@@ -208,6 +229,88 @@ export const PATCH = withAuth(async (session, req: Request) => {
       "forbidden",
       "Un administrador no puede tocar a un administrador"
     );
+  }
+
+  // 044b-B10 — cuentas MANUALES (creadas y cargadas desde el CRM): editar
+  // nombre, correo o contraseña desde Ajustes → Equipo. Las cuentas con ficha
+  // del sistema (staffProfile) no se tocan acá: las administra el sync.
+  if (editRequested) {
+    const staffRows = await db
+      .select({ id: schema.staffProfile.id })
+      .from(schema.staffProfile)
+      .where(
+        and(
+          scoped(schema.staffProfile.organizationId, session.organizationId),
+          eq(schema.staffProfile.userId, target.userId)
+        )
+      )
+      .limit(1);
+    if (staffRows[0]) {
+      return apiError(
+        409,
+        "system_account",
+        "Esta cuenta viene del sistema (ficha de empleado): se administra desde el sistema."
+      );
+    }
+    const changes: string[] = [];
+    if (body.data.name !== undefined) {
+      await db
+        .update(schema.user)
+        .set({ name: body.data.name, updatedAt: new Date() })
+        .where(eq(schema.user.id, target.userId));
+      changes.push("name");
+    }
+    if (body.data.email !== undefined) {
+      const dup = await db
+        .select({ id: schema.user.id })
+        .from(schema.user)
+        .where(eq(schema.user.email, body.data.email))
+        .limit(1);
+      if (dup[0] && dup[0].id !== target.userId) {
+        return apiError(409, "duplicate", "Ya existe otra cuenta con ese correo");
+      }
+      await db
+        .update(schema.user)
+        .set({ email: body.data.email, updatedAt: new Date() })
+        .where(eq(schema.user.id, target.userId));
+      changes.push("email");
+    }
+    if (body.data.password !== undefined) {
+      const hash = await hashPassword(body.data.password);
+      const accounts = await db
+        .select({ id: schema.account.id })
+        .from(schema.account)
+        .where(
+          and(
+            eq(schema.account.userId, target.userId),
+            eq(schema.account.providerId, "credential")
+          )
+        )
+        .limit(1);
+      if (accounts[0]) {
+        await db
+          .update(schema.account)
+          .set({ password: hash, updatedAt: new Date() })
+          .where(eq(schema.account.id, accounts[0].id));
+      } else {
+        await db.insert(schema.account).values({
+          id: `account_${randomBytes(16).toString("hex")}`,
+          accountId: target.userId,
+          providerId: "credential",
+          userId: target.userId,
+          password: hash,
+        });
+      }
+      changes.push("password");
+    }
+    // Al cambiar clave o correo se cortan las sesiones vivas de esa cuenta:
+    // vuelve a entrar con los datos nuevos.
+    if (body.data.password !== undefined || body.data.email !== undefined) {
+      await db
+        .delete(schema.session)
+        .where(eq(schema.session.userId, target.userId));
+    }
+    return Response.json({ ok: true, memberId: target.id, changes });
   }
 
   // 026 — cambio de rol (Gerente/Miembro/Administrador según quién manda).
@@ -237,4 +340,82 @@ export const PATCH = withAuth(async (session, req: Request) => {
   }
 
   return Response.json({ ok: true, memberId: target.id, offline });
+});
+
+const deleteSchema = z.object({ memberId: z.string().trim().min(1) });
+
+/**
+ * 044b-B10 — eliminar una cuenta MANUAL del CRM (pedido de Diego): las
+ * cuentas que se crean y cargan desde el CRM se eliminan desde Ajustes →
+ * Equipo. Las cuentas con ficha del sistema no se tocan (las administra el
+ * sync). Mismas reglas de quién maneja a quién que el PATCH; se elimina la
+ * cuenta COMPLETA (sesiones y membresías caen en cascada; el historial —chat,
+ * conversaciones, gestiones— queda sin asignar) y no se puede deshacer.
+ */
+export const DELETE = withAuth(async (session, req: Request) => {
+  if (session.role !== "owner" && session.role !== "admin") {
+    return apiError(
+      403,
+      "forbidden",
+      "Solo el propietario o un administrador pueden eliminar cuentas"
+    );
+  }
+  const body = await parseBody(req, deleteSchema);
+  if (!body.ok) return body.response;
+
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: schema.member.id,
+      userId: schema.member.userId,
+      role: schema.member.role,
+      email: schema.user.email,
+    })
+    .from(schema.member)
+    .innerJoin(schema.user, eq(schema.member.userId, schema.user.id))
+    .where(
+      and(
+        eq(schema.member.id, body.data.memberId),
+        scoped(schema.member.organizationId, session.organizationId)
+      )
+    )
+    .limit(1);
+  const target = rows[0];
+  if (!target) return apiError(404, "not_found", "Ese miembro no existe");
+  if (target.userId === session.userId) {
+    return apiError(409, "self", "No podés eliminar tu propia cuenta");
+  }
+  if (target.role === "owner") {
+    return apiError(409, "owner", "Al propietario no se lo puede eliminar");
+  }
+  if (session.role === "admin" && target.role === "admin") {
+    return apiError(
+      403,
+      "forbidden",
+      "Un administrador no puede eliminar a un administrador"
+    );
+  }
+  if (target.email === SISTEMA_SGSA_EMAIL) {
+    return apiError(409, "system_user", "Esa cuenta es del sistema y no se elimina");
+  }
+  const staffRows = await db
+    .select({ id: schema.staffProfile.id })
+    .from(schema.staffProfile)
+    .where(
+      and(
+        scoped(schema.staffProfile.organizationId, session.organizationId),
+        eq(schema.staffProfile.userId, target.userId)
+      )
+    )
+    .limit(1);
+  if (staffRows[0]) {
+    return apiError(
+      409,
+      "system_account",
+      "Esta cuenta viene del sistema (ficha de empleado): se administra desde el sistema."
+    );
+  }
+
+  await db.delete(schema.user).where(eq(schema.user.id, target.userId));
+  return Response.json({ ok: true, memberId: target.id, deleted: true });
 });

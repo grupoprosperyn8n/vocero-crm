@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { UserPlus } from "lucide-react";
+import { Pencil, Trash2, UserPlus, X } from "lucide-react";
 import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -55,6 +55,16 @@ export function TeamClient() {
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // 044b-B10 — editar / eliminar cuentas MANUALES del CRM (sin ficha).
+  const [editing, setEditing] = useState<Member | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [deleting, setDeleting] = useState<Member | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/settings/team").catch(() => null);
@@ -68,14 +78,16 @@ export function TeamClient() {
     void refetch();
   }, [refetch]);
 
-  function generatePassword() {
+  function genPass(): string {
     const alphabet =
       "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     const bytes = new Uint32Array(14);
     crypto.getRandomValues(bytes);
-    setTempPassword(
-      Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("")
-    );
+    return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+  }
+
+  function generatePassword() {
+    setTempPassword(genPass());
   }
 
   async function create() {
@@ -141,12 +153,76 @@ export function TeamClient() {
     void refetch();
   }
 
+  /** 044b-B10 — editar una cuenta MANUAL del CRM (nombre, correo, clave). */
+  function openEdit(m: Member) {
+    setEditing(m);
+    setEditName(m.name);
+    setEditEmail(m.email);
+    setEditPassword("");
+    setEditError(null);
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    const patch: Record<string, string> = { memberId: editing.id };
+    if (editName.trim() && editName.trim() !== editing.name) {
+      patch.name = editName.trim();
+    }
+    if (editEmail.trim() && editEmail.trim() !== editing.email) {
+      patch.email = editEmail.trim();
+    }
+    if (editPassword.length >= 8) patch.password = editPassword;
+    if (Object.keys(patch).length === 1) {
+      setEditing(null);
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    const res = await fetch("/api/settings/team", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    }).catch(() => null);
+    setEditSaving(false);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setEditError(data?.error?.message ?? "No se pudo guardar la cuenta");
+      return;
+    }
+    setEditing(null);
+    void refetch();
+  }
+
+  async function removeMember() {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    const res = await fetch("/api/settings/team", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ memberId: deleting.id }),
+    }).catch(() => null);
+    setDeleteBusy(false);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setDeleteError(data?.error?.message ?? "No se pudo eliminar la cuenta");
+      return;
+    }
+    setDeleting(null);
+    void refetch();
+  }
+
   const canManage = viewer?.role === "owner" || viewer?.role === "admin";
 
   return (
     <div className="max-w-2xl space-y-6">
-      {/* 021 — Alta de cuentas: solo el propietario (el server lo re-valida). */}
-      {viewer?.role === "owner" && (
+      {/* 021 — Alta de cuentas: propietario y administrador (el server lo
+          re-valida). */}
+      {(viewer?.role === "owner" || viewer?.role === "admin") && (
       <Card>
         <CardHeader>
           <CardTitle>Crear cuenta de equipo</CardTitle>
@@ -258,6 +334,14 @@ export function TeamClient() {
             </div>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
               {m.offlineAt && <Badge variant="warning">Offline</Badge>}
+              {m.employeeCode && (
+                <Badge
+                  variant="secondary"
+                  title="Cuenta del sistema (ficha de empleado): se edita o elimina desde el sistema"
+                >
+                  Sistema
+                </Badge>
+              )}
               {/* 026 — el rol se elige en el lugar (espejo de las reglas del
                   server): Gerente ve toda la bandeja; Administrador solo lo
                   reparte el propietario. */}
@@ -294,10 +378,157 @@ export function TeamClient() {
                       : "Dejar offline"}
                 </Button>
               )}
+              {/* 044b-B10 — las cuentas del CRM (manuales) se editan y
+                  eliminan desde acá; las del sistema no se tocan. */}
+              {canManageMember(viewer, m) && !m.employeeCode && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busyId === m.id}
+                    onClick={() => openEdit(m)}
+                    title="Editar la cuenta (nombre, correo, contraseña)"
+                    aria-label={`Editar ${m.name}`}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busyId === m.id}
+                    onClick={() => {
+                      setDeleting(m);
+                      setDeleteError(null);
+                    }}
+                    title="Eliminar la cuenta"
+                    aria-label={`Eliminar ${m.name}`}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         ))}
       </div>
+
+      {editing && (
+        <div
+          role="dialog"
+          aria-label="Editar cuenta"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+        >
+          <div className="w-full max-w-md rounded-t-2xl border bg-card p-4 shadow-2xl sm:rounded-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">
+                Editar cuenta de {editing.name}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                aria-label="Cerrar"
+                className="rounded-md p-1 text-muted-foreground hover:bg-accent"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-3 space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-name">Nombre</Label>
+                <Input
+                  id="edit-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-email">Correo</Label>
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-pass">
+                  Nueva contraseña (dejala vacía para no cambiarla)
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="edit-pass"
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                    placeholder="mínimo 8 caracteres"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditPassword(genPass())}
+                  >
+                    Generar
+                  </Button>
+                </div>
+              </div>
+              {editError && (
+                <p className="text-sm text-destructive">{editError}</p>
+              )}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditing(null)}>
+                Cancelar
+              </Button>
+              <Button disabled={editSaving} onClick={() => void saveEdit()}>
+                {editSaving ? "Guardando…" : "Guardar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleting && (
+        <div
+          role="dialog"
+          aria-label="Eliminar cuenta"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+        >
+          <div className="w-full max-w-md rounded-t-2xl border bg-card p-4 shadow-2xl sm:rounded-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">
+                Eliminar la cuenta de {deleting.name}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setDeleting(null)}
+                aria-label="Cerrar"
+                className="rounded-md p-1 text-muted-foreground hover:bg-accent"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Se borra la cuenta y su acceso al CRM (no se puede deshacer). El
+              historial de conversaciones, gestiones y tareas queda sin
+              asignar; nada se pierde.
+            </p>
+            {deleteError && (
+              <p className="mt-2 text-sm text-destructive">{deleteError}</p>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleting(null)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={deleteBusy}
+                onClick={() => void removeMember()}
+              >
+                {deleteBusy ? "Eliminando…" : "Eliminar cuenta"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

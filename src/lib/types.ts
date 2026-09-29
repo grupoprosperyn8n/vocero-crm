@@ -468,6 +468,16 @@ export type ChatTaskShareDto = {
   rejectedAt: string | null;
   /** Motivo del rechazo. */
   reason: string | null;
+  /** 044b-B10 — contactos del pedido (CRM o clientes del sistema). */
+  contacts: TaskContactRef[];
+};
+
+/** 044b-B10 — contacto incluido en un pedido de tarea. */
+export type TaskContactRef = {
+  /** contact = contacto del CRM · sgsa_client = cliente del sistema (rec…). */
+  kind: "contact" | "sgsa_client";
+  id: string;
+  label: string;
 };
 
 /**

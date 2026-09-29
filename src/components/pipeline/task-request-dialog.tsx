@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, Send, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { TaskContactRef } from "@/lib/types";
 
 /**
  * 037b — «Pedir tarea»: el cajón de escritura del gerente/dueño/propietario
@@ -37,6 +38,12 @@ export function TaskRequestDialog({
   const [prioridad, setPrioridad] = useState<"" | "alta" | "media" | "baja">("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* 044b-B10 — contactos del pedido (CRM o del sistema), uno o varios. */
+  const [contactos, setContactos] = useState<TaskContactRef[]>([]);
+  const [buscaC, setBuscaC] = useState("");
+  const [fuenteC, setFuenteC] = useState<"crm" | "sgsa">("crm");
+  const [resC, setResC] = useState<TaskContactRef[]>([]);
+  const [buscandoC, setBuscandoC] = useState(false);
 
   useEffect(() => {
     if (lockedAssignee) return;
@@ -52,6 +59,91 @@ export function TaskRequestDialog({
       vivo = false;
     };
   }, [lockedAssignee]);
+
+  /* 044b-B10 — buscar contactos (CRM) o clientes (sistema) para el pedido. */
+  useEffect(() => {
+    const term = buscaC.trim();
+    if (term.length < 2) {
+      setResC([]);
+      setBuscandoC(false);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setBuscandoC(true);
+      const url =
+        fuenteC === "crm"
+          ? `/api/contacts?q=${encodeURIComponent(term)}`
+          : `/api/clients/search?q=${encodeURIComponent(term)}`;
+      const res = await fetch(url).catch(() => null);
+      const data = res?.ok
+        ? await res.json().catch(() => null)
+        : null;
+      setBuscandoC(false);
+      if (fuenteC === "crm") {
+        const rows =
+          (
+            data as {
+              contacts?: Array<{
+                id: string;
+                name: string;
+                phone?: string | null;
+              }>;
+            } | null
+          )?.contacts ?? [];
+        setResC(
+          rows
+            .slice(0, 6)
+            .map((r) => ({
+              kind: "contact" as const,
+              id: r.id,
+              label: r.phone ? `${r.name} · ${r.phone}` : r.name,
+            }))
+        );
+      } else {
+        const rows =
+          (
+            data as {
+              results?: Array<{
+                client?: {
+                  recordId?: string;
+                  nombre?: string;
+                  apellido?: string;
+                  dni?: string | null;
+                };
+              }>;
+            } | null
+          )?.results ?? [];
+        setResC(
+          rows
+            .map((r) => {
+              const c = r.client;
+              if (!c?.recordId) return null;
+              const base =
+                [c.nombre, c.apellido].filter(Boolean).join(" ").trim() ||
+                c.recordId;
+              return {
+                kind: "sgsa_client" as const,
+                id: c.recordId,
+                label: c.dni ? `${base} · DNI ${c.dni}` : base,
+              };
+            })
+            .filter((x): x is NonNullable<typeof x> => x !== null)
+            .slice(0, 6)
+        );
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [buscaC, fuenteC]);
+
+  function agregarContacto(c: TaskContactRef) {
+    setContactos((prev) =>
+      prev.some((x) => x.kind === c.kind && x.id === c.id)
+        ? prev
+        : [...prev, c].slice(0, 12)
+    );
+    setBuscaC("");
+    setResC([]);
+  }
 
   async function enviar() {
     const title = titulo.trim();
@@ -74,6 +166,7 @@ export function TaskRequestDialog({
         notes: nota.trim() || undefined,
         dueAt,
         priority: prioridad || undefined,
+        contacts: contactos.length > 0 ? contactos : undefined,
       }),
     }).catch(() => null);
     setEnviando(false);
@@ -198,6 +291,100 @@ export function TaskRequestDialog({
               <option value="baja">Baja</option>
             </select>
           </label>
+          {/* 044b-B10 — contactos del pedido: uno o varios, del CRM o del sistema. */}
+          <div className="rounded-md border bg-subtle/40 p-2.5">
+            <span className="mb-1 block text-[12px] font-semibold text-text-2">
+              Contactos del pedido (opcional)
+            </span>
+            {contactos.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {contactos.map((c) => (
+                  <span
+                    key={`${c.kind}:${c.id}`}
+                    className="flex items-center gap-1 rounded-full border bg-card px-2 py-[3px] text-[11.5px] font-medium text-text-2"
+                  >
+                    {c.kind === "sgsa_client" ? "👤" : "📇"} {c.label}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setContactos((prev) =>
+                          prev.filter(
+                            (x) => !(x.kind === c.kind && x.id === c.id)
+                          )
+                        )
+                      }
+                      className="rounded-full p-[2px] hover:bg-subtle"
+                      aria-label={`Quitar ${c.label}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setFuenteC("crm")}
+                className={cn(
+                  "rounded-full border px-2 py-[3px] text-[11px] font-semibold",
+                  fuenteC === "crm"
+                    ? "border-brand bg-brand text-white"
+                    : "bg-card text-text-2 hover:bg-subtle"
+                )}
+              >
+                📇 Del CRM
+              </button>
+              <button
+                type="button"
+                onClick={() => setFuenteC("sgsa")}
+                className={cn(
+                  "rounded-full border px-2 py-[3px] text-[11px] font-semibold",
+                  fuenteC === "sgsa"
+                    ? "border-brand bg-brand text-white"
+                    : "bg-card text-text-2 hover:bg-subtle"
+                )}
+              >
+                👤 Del sistema
+              </button>
+              <input
+                value={buscaC}
+                onChange={(e) => setBuscaC(e.target.value)}
+                placeholder={
+                  fuenteC === "crm"
+                    ? "Buscar contacto del CRM…"
+                    : "Buscar cliente del sistema…"
+                }
+                className="min-w-0 flex-1 rounded-md border bg-background px-3 py-1.5 text-[12.5px] outline-none placeholder:text-text-3 focus:border-brand"
+              />
+            </div>
+            {buscandoC && (
+              <p className="mt-1.5 flex items-center gap-1 text-[11.5px] text-text-3">
+                <Loader2 className="h-3 w-3 animate-spin" /> Buscando…
+              </p>
+            )}
+            {!buscandoC && resC.length > 0 && (
+              <div className="mt-1.5 flex flex-col gap-1">
+                {resC.map((r) => (
+                  <button
+                    key={`${r.kind}:${r.id}`}
+                    type="button"
+                    onClick={() => agregarContacto(r)}
+                    className="flex items-center justify-between gap-2 rounded-md border bg-card px-2.5 py-1.5 text-left text-[12px] font-medium text-text-1 hover:bg-subtle"
+                  >
+                    <span className="min-w-0 truncate">{r.label}</span>
+                    <span className="shrink-0 text-[11px] font-semibold text-brand">
+                      + Agregar
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="mt-1.5 text-[11px] text-text-3">
+              El empleado los ve en la tarjeta del pedido y quedan en la tarea
+              al aceptarla.
+            </p>
+          </div>
           <p className="rounded-md border bg-subtle px-3 py-2 text-[11.5px] text-text-2">
             Le llega como tarjeta a su chat interno. Cuando la <b>acepta</b>, se suma
             sola a su tablero de Tareas; si la rechaza, te queda el motivo.

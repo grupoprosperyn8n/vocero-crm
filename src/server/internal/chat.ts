@@ -239,6 +239,23 @@ export function sanitizeTaskShare(raw: unknown): ChatTaskShareDto | null {
     return Number.isNaN(d.getTime()) ? null : d.toISOString();
   };
   const notesRaw = String(o.notes ?? "").trim();
+  // 044b-B10 — contactos del pedido (uno o varios, CRM o sistema).
+  const contacts = (Array.isArray(o.contacts) ? o.contacts : [])
+    .map((c) => {
+      const cc = (c ?? {}) as Record<string, unknown>;
+      const kind =
+        cc.kind === "sgsa_client"
+          ? ("sgsa_client" as const)
+          : cc.kind === "contact"
+            ? ("contact" as const)
+            : null;
+      const id = cleanStr(cc.id, 64);
+      const label = cleanStr(cc.label, CHAT_CONTACT_NAME_MAX);
+      if (!kind || !id || !label) return null;
+      return { kind, id, label };
+    })
+    .filter((c): c is NonNullable<typeof c> => c !== null)
+    .slice(0, 12);
   return {
     title,
     notes: notesRaw ? notesRaw.slice(0, 2000) : null,
@@ -251,6 +268,7 @@ export function sanitizeTaskShare(raw: unknown): ChatTaskShareDto | null {
     acceptedAt: iso(o.acceptedAt),
     rejectedAt: iso(o.rejectedAt),
     reason: cleanStr(o.reason, CHAT_TASK_REASON_MAX),
+    contacts,
   };
 }
 
@@ -942,7 +960,14 @@ export async function respondTaskRequest(input: {
       notes: payload.notes,
       dueAt: payload.dueAt ? new Date(payload.dueAt) : null,
       priority: payload.priority,
-      meta: { originKind: "task_request", originRef: input.messageId },
+      meta: {
+        originKind: "task_request",
+        originRef: input.messageId,
+        // 044b-B10 — los contactos del pedido quedan en la tarea aceptada.
+        ...(payload.contacts.length > 0
+          ? { contacts: payload.contacts }
+          : {}),
+      },
     });
     if (!created.ok) {
       throw new ChatError(500, "task_create_failed", "No se pudo sumar la tarea al tablero");

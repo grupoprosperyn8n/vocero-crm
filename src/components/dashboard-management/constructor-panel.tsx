@@ -170,6 +170,9 @@ export function ConstructorPanel({
   const [aiBusy, setAiBusy] = useState<null | "pieza" | "mensaje">(null);
   const [aiNotas, setAiNotas] = useState<string | null>(null);
   const [prevForm, setPrevForm] = useState<typeof form | null>(null);
+  /* 044b-B10 — la construcción se divide: todo a mano · a mano con textos de
+     IA · todo con IA (un clic y la IA escribe la pieza completa). */
+  const [modoIA, setModoIA] = useState<"manual" | "textos" | "todo">("textos");
 
   /* Menús reales de productos y compañías + textos base (best-effort). */
   useEffect(() => {
@@ -302,10 +305,27 @@ export function ConstructorPanel({
   /* 041c — la IA escribe la pieza con el tono y el concepto elegidos. Nunca
      pisa el texto sin vuelta atrás: guarda el anterior para «Deshacer». */
   const aiWrite = async () => {
-    if (!cliente) return;
+    // 044b-B10 — la IA necesita saber a quién le habla: con cliente del
+    // sistema, contacto del CRM o el nombre libre alcanza; si no hay nada,
+    // lo decimos (antes el botón no hacía NADA sin cliente y parecía roto).
+    const hablaA = cliente
+      ? systemClientName(cliente)
+      : modo === "libre"
+        ? libreNombre.trim()
+        : "";
+    if (!hablaA) {
+      setError(
+        "Para escribir con IA primero decile a quién le hablás: elegí el destinatario o completá el nombre."
+      );
+      return;
+    }
     setAiBusy("pieza");
     setError(null);
     const companyName = companias.find((c) => c.id === form.companyRef)?.name ?? "";
+    // 044b-B10 — «Todo con IA» escribe la pieza DE CERO: no se le pasan los
+    // textos base de la plantilla como punto de partida. En «A mano + textos
+    // con IA» la IA parte de lo que ya hay y lo mejora.
+    const generarDeCero = modoIA === "todo";
     const res = await fetch("/api/proposals/copy", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -314,15 +334,15 @@ export function ConstructorPanel({
         tone,
         angle,
         instructions: aiInstructions.trim() || null,
-        clientName: systemClientName(cliente),
+        clientName: hablaA,
         kind,
         productName: form.productName,
         companyName,
-        title: form.title,
-        subtitle: form.subtitle,
-        body: form.body,
-        offer: form.offer,
-        benefit: form.benefit,
+        title: generarDeCero ? undefined : form.title,
+        subtitle: generarDeCero ? undefined : form.subtitle,
+        body: generarDeCero ? undefined : form.body,
+        offer: generarDeCero ? undefined : form.offer,
+        benefit: generarDeCero ? undefined : form.benefit,
       }),
     }).catch(() => null);
     const data = res
@@ -333,6 +353,7 @@ export function ConstructorPanel({
             body?: string;
             offer?: string;
             benefit?: string;
+            ctaLabel?: string;
             notes?: string;
           };
           error?: { message?: string };
@@ -353,6 +374,7 @@ export function ConstructorPanel({
       body: copy.body ?? f.body,
       offer: copy.offer ?? f.offer,
       benefit: copy.benefit ?? f.benefit,
+      ...(copy.ctaLabel ? { ctaLabel: copy.ctaLabel } : {}),
     }));
     setAiNotas(copy.notes ?? null);
   };
@@ -1065,8 +1087,50 @@ export function ConstructorPanel({
                 />
               </label>
 
+              {/* 044b-B10 — ¿Cómo la construimos? Todo a mano, a mano con
+                  textos de IA, o todo con IA (la IA escribe la pieza). */}
+              <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border-strong bg-card p-2">
+                <span className="text-[12px] font-bold text-text-2">
+                  ¿Cómo la construimos?
+                </span>
+                {(
+                  [
+                    ["manual", "🖐 Todo a mano"],
+                    ["textos", "✨ A mano + textos con IA"],
+                    ["todo", "🚀 Todo con IA"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={modoIA === id}
+                    onClick={() => setModoIA(id)}
+                    className={
+                      modoIA === id
+                        ? "rounded-full border border-brand bg-brand px-2.5 py-1 text-[12px] font-semibold text-white"
+                        : "rounded-full border bg-card px-2.5 py-1 text-[12px] font-semibold text-text-2 hover:bg-subtle"
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+                <span className="text-[11.5px] text-text-3">
+                  {modoIA === "manual"
+                    ? "Sin IA: los textos los escribís vos."
+                    : modoIA === "textos"
+                      ? "La IA escribe los textos con tu tono y concepto; el resto lo completás vos."
+                      : "Un clic: la IA escribe la pieza completa (textos y botón). Después revisás y creás."}
+                </span>
+              </div>
+
               {/* 041c — Escribir con IA: tono (cercana ↔ formal…) + concepto de venta */}
-              <div className="space-y-2 rounded-xl border border-border-strong bg-subtle/60 p-2.5">
+              <div
+                className={
+                  modoIA === "manual"
+                    ? "hidden"
+                    : "space-y-2 rounded-xl border border-border-strong bg-subtle/60 p-2.5"
+                }
+              >
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="flex items-center gap-1 text-[12px] font-bold text-text-2">
                     <Wand2 size={13} /> Tono
@@ -1119,7 +1183,7 @@ export function ConstructorPanel({
                   <button
                     type="button"
                     onClick={() => void aiWrite()}
-                    disabled={aiBusy !== null || !form.title.trim()}
+                    disabled={aiBusy !== null}
                     className="flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[12.5px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
                     {aiBusy === "pieza" ? (
@@ -1127,7 +1191,7 @@ export function ConstructorPanel({
                     ) : (
                       <Sparkles size={14} />
                     )}
-                    Escribir con IA
+                    {modoIA === "todo" ? "Generar todo con IA" : "Escribir con IA"}
                   </button>
                   {prevForm && (
                     <button

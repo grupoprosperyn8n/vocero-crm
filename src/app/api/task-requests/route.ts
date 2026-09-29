@@ -1,4 +1,7 @@
+import { and, inArray } from "drizzle-orm";
 import { apiError, withAuth } from "@/lib/api";
+import { getDb, schema } from "@/lib/db";
+import { scoped } from "@/lib/db/tenant";
 import { seesWholeTeam } from "@/lib/pipeline";
 import { ChatError, createDmRoom, postChatMessage } from "@/server/internal/chat";
 
@@ -31,6 +34,58 @@ export const POST = withAuth(async (session, req: Request) => {
   if (!toUserId || !title) {
     return apiError(422, "missing_fields", "Elegí al empleado y poné un título");
   }
+
+  // 044b-B10 — contactos del pedido: uno o varios, del CRM o del sistema.
+  // Los del CRM se validan contra la organización; los del sistema viajan
+  // con su recordId (rec…).
+  const rawContacts = Array.isArray(o.contacts) ? o.contacts : [];
+  const taskContacts = rawContacts
+    .slice(0, 12)
+    .map((c) => {
+      const cc = (c ?? {}) as Record<string, unknown>;
+      const kind =
+        cc.kind === "sgsa_client"
+          ? ("sgsa_client" as const)
+          : cc.kind === "contact"
+            ? ("contact" as const)
+            : null;
+      const id = String(cc.id ?? "").trim().slice(0, 64);
+      const label = String(cc.label ?? "").trim().slice(0, 120);
+      if (!kind || !id || !label) return null;
+      return { kind, id, label };
+    })
+    .filter(
+      (c): c is { kind: "contact" | "sgsa_client"; id: string; label: string } =>
+        c !== null
+    );
+  if (taskContacts.length > 0) {
+    const crmIds = taskContacts
+      .filter((c) => c.kind === "contact")
+      .map((c) => c.id);
+    if (crmIds.length > 0) {
+      const db = getDb();
+      const valid = await db
+        .select({ id: schema.contact.id })
+        .from(schema.contact)
+        .where(
+          and(
+            scoped(schema.contact.organizationId, session.organizationId),
+            inArray(schema.contact.id, crmIds)
+          )
+        );
+      const ok = new Set(valid.map((v) => v.id));
+      for (const c of taskContacts) {
+        if (c.kind === "contact" && !ok.has(c.id)) {
+          return apiError(
+            422,
+            "invalid_contact",
+            "Uno de los contactos del CRM no existe en este CRM"
+          );
+        }
+      }
+    }
+  }
+
   try {
     const room = await createDmRoom(session.organizationId, session.userId, toUserId);
     const assigneeName =
@@ -47,6 +102,7 @@ export const POST = withAuth(async (session, req: Request) => {
         priority: o.priority,
         assigneeId: toUserId,
         assigneeName,
+        contacts: taskContacts,
       },
     });
     return Response.json({ roomId: room.id, message }, { status: 201 });

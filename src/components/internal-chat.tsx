@@ -851,6 +851,18 @@ function TaskRequestCard({
           {payload.notes}
         </p>
       )}
+      {(payload.contacts ?? []).length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {(payload.contacts ?? []).map((c) => (
+            <span
+              key={`${c.kind}:${c.id}`}
+              className="rounded-full border bg-subtle px-2 py-[2px] text-[10.5px] font-medium text-text-2"
+            >
+              {c.kind === "sgsa_client" ? "👤" : "📇"} {c.label}
+            </span>
+          ))}
+        </div>
+      )}
       {pending ? (
         mine ? (
           <div className="mt-2">
