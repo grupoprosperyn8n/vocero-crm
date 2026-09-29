@@ -17,6 +17,7 @@ import {
   Clock3,
   Database,
   FileText,
+  GripVertical,
   FolderOpen,
   HeartHandshake,
   HelpCircle,
@@ -269,6 +270,46 @@ function Kpi({
 
 /* ———————————————————————— Secciones ———————————————————————— */
 
+/*
+ * 044b Bloque 5 — Bloques plegables y arrastrables (estilo maqueta 044).
+ * El chevron pliega la sección; el asa la arrastra para reordenar dentro de su grupo.
+ * Todo se recuerda por navegador (localStorage) y no cambia ningún dato del negocio.
+ */
+const BLOCKS_KEY = "dm-blocks:v1";
+
+type BloquesPrefs = { collapsed: Record<string, boolean>; orders: Record<string, string[]> };
+
+function leerBloques(): BloquesPrefs {
+  try {
+    const raw = localStorage.getItem(BLOCKS_KEY);
+    if (!raw) return { collapsed: {}, orders: {} };
+    const parsed = JSON.parse(raw) as Partial<BloquesPrefs>;
+    return { collapsed: parsed.collapsed ?? {}, orders: parsed.orders ?? {} };
+  } catch {
+    return { collapsed: {}, orders: {} };
+  }
+}
+
+function guardarBloques(prefs: BloquesPrefs) {
+  try {
+    localStorage.setItem(BLOCKS_KEY, JSON.stringify(prefs));
+  } catch {
+    /* sin almacenamiento: vale solo para esta vista */
+  }
+}
+
+function bloquesDelParent(parent: HTMLElement): HTMLElement[] {
+  return Array.from(parent.querySelectorAll("[data-block]")) as HTMLElement[];
+}
+
+function stackKeyDe(parent: HTMLElement): string {
+  return bloquesDelParent(parent)
+    .map((el) => el.dataset.block ?? "")
+    .filter(Boolean)
+    .sort()
+    .join("|");
+}
+
 function Section({
   title,
   subtitle,
@@ -278,13 +319,122 @@ function Section({
   subtitle?: string;
   children: React.ReactNode;
 }) {
+  const ref = useRef<HTMLElement | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const key = title;
+
+  /* Estado guardado + reposición según el último orden elegido por el usuario. */
+  useEffect(() => {
+    const root = ref.current;
+    const parent = root?.parentElement;
+    if (!root || !parent) return;
+    root.dataset.block = key;
+    const prefs = leerBloques();
+    if (prefs.collapsed[key]) setCollapsed(true);
+    const saved = prefs.orders[stackKeyDe(parent)];
+    if (!saved || saved.length === 0) return;
+    const actuales = bloquesDelParent(parent);
+    const keys = actuales.map((el) => el.dataset.block ?? "");
+    if (keys.length !== saved.length || !saved.every((k) => keys.includes(k))) return;
+    const ref0 = actuales[0];
+    if (!ref0) return;
+    /* Marcador fijo en la posición del grupo: cada bloque se inserta justo antes,
+       en el orden guardado; al quitarlo, la secuencia queda exactamente así. */
+    const parentNode = ref0.parentNode;
+    if (!parentNode) return;
+    const marcador = document.createComment("dm-bloques");
+    parentNode.insertBefore(marcador, ref0);
+    for (const k of saved) {
+      const el = actuales.find((x) => x.dataset.block === k);
+      if (el) parentNode.insertBefore(el, marcador);
+    }
+    marcador.remove();
+  }, [key]);
+
+  const toggle = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      const prefs = leerBloques();
+      prefs.collapsed[key] = next;
+      guardarBloques(prefs);
+      return next;
+    });
+  };
+
+  const onDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", key);
+    ref.current?.classList.add("dm-dragging");
+  };
+  const onDragEnd = () => {
+    ref.current?.classList.remove("dm-dragging");
+  };
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    ref.current?.classList.add("dm-drop");
+  };
+  const onDragLeave = () => {
+    ref.current?.classList.remove("dm-drop");
+  };
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const target = ref.current;
+    const parent = target?.parentElement;
+    if (!target || !parent) return;
+    target.classList.remove("dm-drop");
+    const srcKey = e.dataTransfer.getData("text/plain");
+    const src = bloquesDelParent(parent).find((el) => el.dataset.block === srcKey);
+    if (!src || src === target) return;
+    const rect = target.getBoundingClientRect();
+    const antes = e.clientY < rect.top + rect.height / 2;
+    if (antes) parent.insertBefore(src, target);
+    else parent.insertBefore(src, target.nextSibling);
+    const prefs = leerBloques();
+    prefs.orders[stackKeyDe(parent)] = bloquesDelParent(parent)
+      .map((el) => el.dataset.block ?? "")
+      .filter(Boolean);
+    guardarBloques(prefs);
+  };
+
   return (
-    <section className="rounded-lg border bg-card p-4">
-      <header>
-        <h2 className="text-[13px] font-bold">{title}</h2>
-        {subtitle && <p className="mt-0.5 text-[11.5px] text-text-3">{subtitle}</p>}
+    <section
+      ref={ref}
+      className="rounded-lg border bg-card p-4"
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      <header className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-[13px] font-bold">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-[11.5px] text-text-3">{subtitle}</p>}
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            draggable
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            className="inline-flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-text-3 transition-colors hover:bg-accent hover:text-text-2 active:cursor-grabbing"
+            title="Arrastrar para reordenar"
+            aria-label={`Mover «${title}»`}
+          >
+            <GripVertical size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={!collapsed}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-text-3 transition-colors hover:bg-accent hover:text-text-2"
+            title={collapsed ? "Mostrar bloque" : "Ocultar bloque"}
+            aria-label={collapsed ? `Mostrar «${title}»` : `Ocultar «${title}»`}
+          >
+            <ChevronDown size={14} className={cn("transition-transform", collapsed && "-rotate-90")} />
+          </button>
+        </div>
       </header>
-      <div className="mt-3">{children}</div>
+      <div className={cn("mt-3", collapsed && "hidden")}>{children}</div>
     </section>
   );
 }

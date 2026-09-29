@@ -273,3 +273,12 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+/* 044b Bloque 5 — bloques plegables y arrastrables del dashboard. */
+.dm-dragging {
+  opacity: 0.55;
+}
+.dm-drop {
+  outline: 2px dashed rgba(13, 91, 255, 0.55);
+  outline-offset: 2px;
+}
