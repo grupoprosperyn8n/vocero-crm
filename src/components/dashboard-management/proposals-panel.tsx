@@ -14,9 +14,11 @@ import {
   ExternalLink,
   History as HistoryIcon,
   Loader2,
+  ListChecks,
   PauseCircle,
   Pencil,
   PlayCircle,
+  Ticket,
   RefreshCcw,
   Trash2,
   TrendingUp,
@@ -24,6 +26,7 @@ import {
 } from "lucide-react";
 import type { ProposalDto, TeamGroupLiteDto, TeamMemberLiteDto } from "@/lib/types";
 import { kindTag, priorityChip, proposalStatusChip, type PanelCustomer } from "./client-panel";
+import { WidgetResultsModal } from "./widget-results";
 import {
   ProposalEditModal,
   ProposalHistoryModal,
@@ -68,6 +71,8 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
   const [viewerRole, setViewerRole] = useState("member");
   const [editing, setEditing] = useState<ProposalDto | null>(null);
   const [historyFor, setHistoryFor] = useState<ProposalDto | null>(null);
+  /* 044b-B11 — respuestas/tokens de la pieza. */
+  const [resultsFor, setResultsFor] = useState<ProposalDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -272,6 +277,15 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
                     </button>
                     {" · "}
                     {k.label}
+                    {p.widget
+                      ? ` · ${
+                          p.widget.type === "form"
+                            ? "📝 Formulario"
+                            : p.widget.type === "survey"
+                              ? "📊 Encuesta"
+                              : "🎟️ Cupón"
+                        }`
+                      : ""}
                     {p.assigneeName
                       ? ` · ${p.assigneeKind === "group" ? "👥 " : ""}${p.assigneeName}`
                       : " · sin derivar"}
@@ -317,6 +331,20 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
                   >
                     <Pencil size={13} />
                   </button>
+                  {p.widget && (
+                    <button
+                      type="button"
+                      onClick={() => setResultsFor(p)}
+                      className="rounded-lg border bg-card p-1.5 text-text-3 hover:bg-subtle hover:text-text-1"
+                      title={
+                        p.widget.type === "coupon"
+                          ? "Tokens del cupón: emitir, canjear y copiar links"
+                          : "Respuestas recibidas"
+                      }
+                    >
+                      {p.widget.type === "coupon" ? <Ticket size={13} /> : <ListChecks size={13} />}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setHistoryFor(p)}
@@ -395,6 +423,9 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
           proposal={historyFor}
           onClose={() => setHistoryFor(null)}
         />
+      )}
+      {resultsFor && (
+        <WidgetResultsModal proposal={resultsFor} onClose={() => setResultsFor(null)} />
       )}
     </div>
   );

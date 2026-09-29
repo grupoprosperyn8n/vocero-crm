@@ -654,6 +654,8 @@ export type ProposalDto = {
   mediaIds: string[] | null;
   /** 042 — mimes alineados con mediaIds (para saber cuál es el video). */
   mediaTypes: ("image" | "video")[] | null;
+  /** 044b-B11 — pieza especial del Constructor (formulario, encuesta o cupón). */
+  widget: ProposalWidget | null;
   contactId: string | null;
   conversationId: string | null;
   statusLabel: string;
@@ -730,6 +732,51 @@ export const PROPOSAL_KINDS = [
 ] as const;
 
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number]["id"];
+
+/** 044b-B11 — campo de un formulario o pregunta de una encuesta. */
+export type ProposalWidgetField = {
+  id: string;
+  label: string;
+  /** texto · parrafo · email · telefono · numero · seleccion · si_no · escala */
+  tipo: string;
+  requerido: boolean;
+  opciones: string[];
+};
+
+/** 044b-B11 — la pieza del Constructor: publicación clásica (null), formulario,
+ * encuesta o cupón/voucher. */
+export type ProposalWidget =
+  | { type: "form"; fields: ProposalWidgetField[] }
+  | { type: "survey"; questions: ProposalWidgetField[] }
+  | {
+      type: "coupon";
+      beneficio: string;
+      condiciones: string;
+      desde: string | null;
+      hasta: string | null;
+      prefijo: string;
+    };
+
+/** 044b-B11 — respuesta recibida por un formulario o encuesta. */
+export type ProposalResponseDto = {
+  id: string;
+  kind: string;
+  data: Array<{ label: string; value: string }>;
+  clientName: string | null;
+  clientPhone: string | null;
+  clientEmail: string | null;
+  createdAt: string;
+};
+
+/** 044b-B11 — token de un cupón/voucher. */
+export type CouponTokenDto = {
+  id: string;
+  token: string;
+  status: "emitido" | "canjeado";
+  issuedToName: string | null;
+  redeemedAt: string | null;
+  createdAt: string;
+};
 
 /** 042f — producto propio del CRM (mini tabla del selector de producto). */
 export type CrmProductDto = {

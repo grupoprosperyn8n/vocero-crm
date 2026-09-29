@@ -10,7 +10,12 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { ChatMessagePayloadDto, ChatReviewShareDto, ReviewDelivery } from "@/lib/types";
+import type {
+  ChatMessagePayloadDto,
+  ChatReviewShareDto,
+  ProposalWidget,
+  ReviewDelivery,
+} from "@/lib/types";
 
 /* ============================================================
  * Auth (Better Auth + plugin organization)
@@ -1841,6 +1846,9 @@ export const proposal = pgTable(
     }),
     /** 042 — medios de la publicidad en orden (carrusel de fotos + video). */
     mediaIds: jsonb("media_ids").$type<string[]>(),
+    /** 044b-B11 — la pieza del Constructor: formulario, encuesta o cupón.
+     * null = publicación clásica (las de siempre). */
+    widget: jsonb("widget").$type<ProposalWidget | null>(),
     /** Empleado del CRM que la trabaja (derivación, como las alertas). */
     assigneeUserId: text("assignee_user_id").references(() => user.id, {
       onDelete: "set null",
@@ -1895,5 +1903,68 @@ export const proposal = pgTable(
     index("proposal_org_created_idx").on(t.organizationId, t.createdAt),
     index("proposal_assignee_idx").on(t.assigneeUserId, t.createdAt),
     index("proposal_client_idx").on(t.clientRef),
+  ]
+);
+
+/* ============================================================
+ * 044b-B11 — respuestas y vouchers de las piezas del Constructor
+ * ============================================================ */
+
+/** Una respuesta enviada desde la página pública (formulario o encuesta). */
+export const proposalResponse = pgTable(
+  "proposal_response",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    proposalId: text("proposal_id")
+      .notNull()
+      .references(() => proposal.id, { onDelete: "cascade" }),
+    /** form | survey — para separar en la vista del negocio. */
+    kind: text("kind").notNull(),
+    /** [{label, value}] en el orden del formulario/encuesta. */
+    data: jsonb("data").$type<Array<{ label: string; value: string }>>(),
+    clientName: text("client_name"),
+    clientPhone: text("client_phone"),
+    clientEmail: text("client_email"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("proposal_response_proposal_idx").on(t.proposalId, t.createdAt),
+    index("proposal_response_org_idx").on(t.organizationId, t.createdAt),
+  ]
+);
+
+/** Token único de un cupón/voucher (una unidad canjeable). */
+export const couponToken = pgTable(
+  "coupon_token",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    proposalId: text("proposal_id")
+      .notNull()
+      .references(() => proposal.id, { onDelete: "cascade" }),
+    /** Código visible (VCH-XXXX-XXXX): único en todo el sistema. */
+    token: text("token").notNull().unique(),
+    /** emitido (entregado, sin canjear) | canjeado (usado en el negocio). */
+    status: text("status", { enum: ["emitido", "canjeado"] })
+      .notNull()
+      .default("emitido"),
+    /** A quién se le entregó (opcional, para trazar). */
+    issuedToName: text("issued_to_name"),
+    /** Contacto del CRM asociado (opcional). */
+    contactId: text("contact_id").references(() => contact.id, {
+      onDelete: "set null",
+    }),
+    redeemedAt: timestamp("redeemed_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("coupon_token_proposal_idx").on(t.proposalId, t.createdAt),
+    index("coupon_token_org_idx").on(t.organizationId, t.createdAt),
+    index("coupon_token_status_idx").on(t.organizationId, t.status),
   ]
 );

@@ -36,6 +36,14 @@ import { LibraryPicker } from "./library-picker";
 import { ANGLE_IDS, ANGLES, TONE_IDS, TONES, type ProposalAngleId, type ProposalToneId } from "@/lib/proposals/copy";
 import { PROPOSAL_KINDS, type SystemClientSearchResultDto } from "@/lib/types";
 import { cn, systemClientName } from "@/lib/utils";
+import {
+  CamposBuilder,
+  CuponBuilder,
+  TipoSelector,
+  type BuilderCampo,
+  type BuilderCupon,
+  type WidgetTipo,
+} from "./constructor-widgets";
 import { ProposalPostPanel } from "./proposal-post";
 
 type ClienteSistema = SystemClientSearchResultDto["client"];
@@ -173,6 +181,37 @@ export function ConstructorPanel({
   /* 044b-B10 — la construcción se divide: todo a mano · a mano con textos de
      IA · todo con IA (un clic y la IA escribe la pieza completa). */
   const [modoIA, setModoIA] = useState<"manual" | "textos" | "todo">("textos");
+
+  /* 044b-B11 — QUÉ se construye: publicación clásica, formulario, encuesta o
+     cupón/voucher con tokens. El paso 2 cambia según la elección. */
+  const [tipoCreacion, setTipoCreacion] = useState<WidgetTipo>("publicacion");
+  const [campos, setCampos] = useState<BuilderCampo[]>([
+    { id: "f-nombre", label: "Nombre y apellido", tipo: "texto", requerido: true, opciones: [] },
+    { id: "f-telefono", label: "Teléfono", tipo: "telefono", requerido: true, opciones: [] },
+  ]);
+  const [preguntas, setPreguntas] = useState<BuilderCampo[]>([
+    { id: "p-mejora", label: "¿Qué podríamos mejorar?", tipo: "parrafo", requerido: false, opciones: [] },
+  ]);
+  const [cupon, setCupon] = useState<BuilderCupon>({
+    beneficio: "",
+    condiciones: "",
+    desde: "",
+    hasta: "",
+    prefijo: "VCH",
+    emitir: 0,
+  });
+  const pasosActuales = [
+    PASOS[0],
+    tipoCreacion === "formulario"
+      ? "Formulario"
+      : tipoCreacion === "encuesta"
+        ? "Encuesta"
+        : tipoCreacion === "cupon"
+          ? "Cupón"
+          : PASOS[1],
+    PASOS[2],
+    PASOS[3],
+  ];
 
   /* Menús reales de productos y compañías + textos base (best-effort). */
   useEffect(() => {
@@ -446,6 +485,45 @@ export function ConstructorPanel({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         kind,
+        /* 044b-B11 — la pieza especial (null = publicación clásica). */
+        widget:
+          tipoCreacion === "formulario"
+            ? {
+                type: "form",
+                fields: campos
+                  .filter((c) => c.label.trim().length > 0)
+                  .map((c) => ({
+                    id: c.id,
+                    label: c.label.trim(),
+                    tipo: c.tipo,
+                    requerido: c.requerido,
+                    opciones: c.opciones.map((o) => o.trim()).filter(Boolean),
+                  })),
+              }
+            : tipoCreacion === "encuesta"
+              ? {
+                  type: "survey",
+                  questions: preguntas
+                    .filter((p) => p.label.trim().length > 0)
+                    .map((p) => ({
+                      id: p.id,
+                      label: p.label.trim(),
+                      tipo: p.tipo,
+                      requerido: p.requerido,
+                      opciones: p.opciones.map((o) => o.trim()).filter(Boolean),
+                    })),
+                }
+              : tipoCreacion === "cupon"
+                ? {
+                    type: "coupon",
+                    beneficio: cupon.beneficio.trim(),
+                    condiciones: cupon.condiciones.trim(),
+                    desde: cupon.desde || null,
+                    hasta: cupon.hasta || null,
+                    prefijo: cupon.prefijo.trim() || "VCH",
+                  }
+                : null,
+        emitirTokens: tipoCreacion === "cupon" ? cupon.emitir : undefined,
         clientRef: cliente.recordId,
         contactId: crmContactId ?? undefined,
         clientName: systemClientName(cliente),
@@ -528,6 +606,11 @@ export function ConstructorPanel({
     setAiInstructions("");
     setAiNotas(null);
     setPrevForm(null);
+    /* 044b-B11 — volver a publicación clásica y limpiar los builders. */
+    setTipoCreacion("publicacion");
+    setCampos([]);
+    setPreguntas([]);
+    setCupon({ beneficio: "", condiciones: "", desde: "", hasta: "", prefijo: "VCH", emitir: 0 });
     setLogoAssetId(null);
     setLogoPreview(null);
     setPickerTarget(null);
@@ -652,10 +735,17 @@ export function ConstructorPanel({
 
   const puedeAvanzar = useMemo(() => {
     if (paso === 0) return Boolean(cliente);
-    if (paso === 1) return form.title.trim().length >= 3;
+    if (paso === 1) {
+      if (form.title.trim().length < 3) return false;
+      /* 044b-B11 — cada pieza pide lo suyo antes de avanzar. */
+      if (tipoCreacion === "formulario") return campos.some((c) => c.label.trim().length > 0);
+      if (tipoCreacion === "encuesta") return preguntas.some((p) => p.label.trim().length > 0);
+      if (tipoCreacion === "cupon") return cupon.beneficio.trim().length > 0;
+      return true;
+    }
     if (paso === 2) return true;
     return true;
-  }, [paso, cliente, form.title]);
+  }, [paso, cliente, form.title, tipoCreacion, campos, preguntas, cupon.beneficio]);
 
   const publicUrlAbs = creada ? `${typeof window !== "undefined" ? window.location.origin : ""}${creada.publicUrl}` : "";
   const portada = media[0];
@@ -693,6 +783,9 @@ export function ConstructorPanel({
   return (
     <div className="space-y-3">
       {/* Pasos */}
+      {/* 044b-B11 — qué se construye: se elige acá y cambia el paso 2. */}
+      <TipoSelector value={tipoCreacion} onChange={setTipoCreacion} />
+
       <ol className="flex flex-wrap items-center gap-1.5">
         {clienteFijo && (
           <li>
@@ -715,7 +808,7 @@ export function ConstructorPanel({
             </span>
           </li>
         )}
-        {PASOS.map((nombre, i) => {
+        {pasosActuales.map((nombre, i) => {
           if (clienteFijo && i === 0) return null;
           const activo = i === paso;
           const hecho = i < paso;
@@ -1005,6 +1098,15 @@ export function ConstructorPanel({
 
           {paso === 1 && (
             <section aria-label="Contenido de la publicación" className="space-y-3">
+              {/* 044b-B11 — la pieza especial: campos del formulario, preguntas
+                  de la encuesta o la configuración del cupón. */}
+              {tipoCreacion === "formulario" && (
+                <CamposBuilder tipo="formulario" campos={campos} onChange={setCampos} />
+              )}
+              {tipoCreacion === "encuesta" && (
+                <CamposBuilder tipo="encuesta" campos={preguntas} onChange={setPreguntas} />
+              )}
+              {tipoCreacion === "cupon" && <CuponBuilder cupon={cupon} onChange={setCupon} />}
               <div>
                 <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
                   <Wand2 size={14} /> ¿Qué ofrecemos?
@@ -1556,7 +1658,15 @@ export function ConstructorPanel({
                 disabled={creando}
               >
                 {creando ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                {creando ? "Creando…" : "Crear publicación"}
+                {creando
+                  ? "Creando…"
+                  : tipoCreacion === "formulario"
+                    ? "Crear formulario"
+                    : tipoCreacion === "encuesta"
+                      ? "Crear encuesta"
+                      : tipoCreacion === "cupon"
+                        ? "Crear cupón"
+                        : "Crear publicación"}
               </button>
             </section>
           )}

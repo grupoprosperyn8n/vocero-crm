@@ -64,6 +64,10 @@ const prefixes = {
   proposalEvent: "pev",
   // 042f — productos propios del CRM (mini tabla, selector de «tipo de producto»)
   crmProduct: "prd",
+  // 044b-B11 — piezas del Constructor: campo de widget, respuesta y token
+  widgetField: "fwf",
+  proposalResponse: "presp",
+  couponToken: "cptok",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

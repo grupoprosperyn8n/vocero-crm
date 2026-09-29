@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import type { ProposalWidget } from "@/lib/types";
 import {
   createProposal,
   isPriority,
@@ -75,6 +76,15 @@ const createSchema = z.object({
     .enum(["beneficio", "ahorro", "proteccion", "urgencia", "familia", "confianza"])
     .optional()
     .nullable(),
+  // 044b-B11 — la pieza especial: formulario, encuesta o cupón/voucher. El
+  // detalle interno lo valida y normaliza el servicio (sanitizeWidget).
+  widget: z
+    .object({ type: z.enum(["form", "survey", "coupon"]) })
+    .passthrough()
+    .optional()
+    .nullable(),
+  // 044b-B11 — cupón: cuántos tokens emitir al crearla (0-200).
+  emitirTokens: z.number().int().min(0).max(200).optional().nullable(),
 });
 
 export const POST = withAuth(async (session, req: Request) => {
@@ -85,6 +95,7 @@ export const POST = withAuth(async (session, req: Request) => {
       organizationId: session.organizationId,
       userId: session.userId,
       ...body.data,
+      widget: (body.data.widget ?? null) as unknown as ProposalWidget | null,
       priority: body.data.priority && isPriority(body.data.priority) ? body.data.priority : "media",
     });
     return Response.json({ proposal }, { status: 201 });

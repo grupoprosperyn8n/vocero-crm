@@ -19,10 +19,13 @@ import { scoped } from "@/lib/db/tenant";
 import { getEnv } from "@/lib/env";
 import {
   PROPOSAL_KINDS,
+  type CouponTokenDto,
   type FollowUpItemDto,
   type ProposalDto,
   type ProposalPriority,
+  type ProposalResponseDto,
   type ProposalTemplateDto,
+  type ProposalWidget,
 } from "@/lib/types";
 import { proposalToDto } from "@/server/clients/ficha";
 import { canManageAlertAssignments } from "@/server/alerts/assignments";
@@ -31,6 +34,7 @@ import { airtableList } from "@/server/clients/sgsa";
 import { createDmRoom, postChatMessage } from "@/server/internal/chat";
 import { sniffFaviconMime } from "@/lib/favicon";
 import { isAngleId, isToneId } from "@/lib/proposals/copy";
+import { couponCode, sanitizeWidget, WIDGET_MAX_FIELDS } from "@/lib/proposals/widget";
 import { defaultKindPrompt } from "@/lib/proposals/kind-prompts";
 import { normalizeAdImage } from "@/server/images/normalize";
 import { recordProposalEvent, resolveUserName } from "./events";
@@ -782,6 +786,10 @@ export async function createProposal(input: {
   /** 041c — tono y concepto de venta elegidos para escribir la publicidad. */
   tone?: string | null;
   angle?: string | null;
+  /** 044b-B11 — la pieza especial: formulario, encuesta o cupón/voucher. */
+  widget?: ProposalWidget | null;
+  /** 044b-B11 — cupón: cuántos tokens emitir al crearla (0-200). */
+  emitirTokens?: number | null;
 }): Promise<ProposalDto> {
   // 042e — vale el catálogo o un TIPO PROPIO ya configurado por el negocio.
   if (
@@ -846,6 +854,10 @@ export async function createProposal(input: {
     firstImageId = mediaIds.find((mid) => (mimeById.get(mid) ?? "").startsWith("image/")) ?? null;
   }
 
+  // 044b-B11 — la pieza especial (formulario, encuesta o cupón/voucher).
+  const widget = sanitizeWidget(input.widget);
+  const emitirTokens = Math.max(0, Math.min(200, Math.floor(input.emitirTokens ?? 0)));
+
   await db.insert(schema.proposal).values({
     id,
     organizationId: input.organizationId,
@@ -879,6 +891,7 @@ export async function createProposal(input: {
     ctaKind: input.ctaKind ?? tpl.ctaKind,
     assetId: input.assetId ?? firstImageId ?? tpl.assetId ?? null,
     mediaIds: mediaIds ?? (input.assetId ? [input.assetId] : null),
+    widget,
     assigneeUserId: input.assigneeUserId ?? null,
     priority: input.priority && isPriority(input.priority) ? input.priority : "media",
     tone: isToneId(input.tone) ? input.tone : null,
@@ -895,6 +908,15 @@ export async function createProposal(input: {
     action: "creada",
     detail: `Creó la publicidad «${cleanText(input.title, 120) ?? tpl.title}»`,
   });
+
+  // 044b-B11 — cupón: emisión inicial de tokens (links listos para repartir).
+  if (widget?.type === "coupon" && emitirTokens > 0) {
+    await emitCouponTokens({
+      organizationId: input.organizationId,
+      proposalId: id,
+      cantidad: emitirTokens,
+    });
+  }
 
   return getProposalById(input.organizationId, id);
 }
@@ -1577,6 +1599,8 @@ export type PublicProposal = {
   /** 042 — quién atiende la propuesta (empleado derivado) y el WhatsApp del equipo. */
   assigneeName: string | null;
   whatsappPhone: string | null;
+  /** 044b-B11 — pieza especial (formulario, encuesta o cupón). null = clásica. */
+  widget: ProposalWidget | null;
 };
 
 /** 042 — WhatsApp público del equipo (wa.me): solo los dígitos, sin «+». */
@@ -1693,6 +1717,7 @@ export async function loadPublicProposal(
     online: p.online,
     assigneeName: assigneeRows[0]?.name ?? null,
     whatsappPhone,
+    widget: p.widget ?? null,
   };
 }
 
@@ -1844,4 +1869,238 @@ export async function listCommercialFollowUp(input: {
 
   items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   return { items: items.slice(0, tope) };
+}
+
+/* ------------------------------------------------------------------ */
+/* 044b-B11 — piezas del Constructor: formularios, encuestas y cupones */
+/* ------------------------------------------------------------------ */
+
+/** 044b-B11 — emite tokens únicos de un cupón/voucher (links listos). */
+export async function emitCouponTokens(input: {
+  organizationId: string;
+  proposalId: string;
+  cantidad: number;
+  issuedToName?: string | null;
+}): Promise<number> {
+  const db = getDb();
+  const rows = await db
+    .select({ widget: schema.proposal.widget })
+    .from(schema.proposal)
+    .where(
+      scoped(
+        schema.proposal.organizationId,
+        input.organizationId,
+        eq(schema.proposal.id, input.proposalId)
+      )
+    )
+    .limit(1);
+  const widget = rows[0]?.widget;
+  if (!widget || widget.type !== "coupon") {
+    throw new ProposalError("Esa pieza no es un cupón", 400, "bad_widget");
+  }
+  const cantidad = Math.max(1, Math.min(200, Math.floor(input.cantidad)));
+  const name = cleanText(input.issuedToName, 160);
+  let creados = 0;
+  for (let i = 0; i < cantidad; i++) {
+    for (let intento = 0; intento < 6; intento++) {
+      const token = couponCode(widget.prefijo);
+      try {
+        await db.insert(schema.couponToken).values({
+          id: newId("couponToken"),
+          organizationId: input.organizationId,
+          proposalId: input.proposalId,
+          token,
+          issuedToName: name,
+        });
+        creados += 1;
+        break;
+      } catch {
+        /* choque de código: probar otro */
+      }
+    }
+  }
+  return creados;
+}
+
+/** 044b-B11 — tokens de un cupón para el panel del negocio. */
+export async function listCouponTokens(input: {
+  organizationId: string;
+  proposalId: string;
+}): Promise<{
+  tokens: CouponTokenDto[];
+  summary: { total: number; emitidos: number; canjeados: number };
+}> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.couponToken)
+    .where(
+      scoped(
+        schema.couponToken.organizationId,
+        input.organizationId,
+        eq(schema.couponToken.proposalId, input.proposalId)
+      )
+    )
+    .orderBy(desc(schema.couponToken.createdAt))
+    .limit(500);
+  const tokens = rows.map((r) => ({
+    id: r.id,
+    token: r.token,
+    status: r.status === "canjeado" ? ("canjeado" as const) : ("emitido" as const),
+    issuedToName: r.issuedToName,
+    redeemedAt: r.redeemedAt?.toISOString() ?? null,
+    createdAt: r.createdAt.toISOString(),
+  }));
+  return {
+    tokens,
+    summary: {
+      total: tokens.length,
+      emitidos: tokens.filter((t) => t.status === "emitido").length,
+      canjeados: tokens.filter((t) => t.status === "canjeado").length,
+    },
+  };
+}
+
+/** 044b-B11 — marcar un token canjeado (o volverlo a emitido si fue error). */
+export async function setCouponTokenStatus(input: {
+  organizationId: string;
+  proposalId: string;
+  tokenId: string;
+  status: "emitido" | "canjeado";
+}): Promise<void> {
+  const db = getDb();
+  const rows = await db
+    .select({ id: schema.couponToken.id })
+    .from(schema.couponToken)
+    .where(
+      scoped(
+        schema.couponToken.organizationId,
+        input.organizationId,
+        and(
+          eq(schema.couponToken.id, input.tokenId),
+          eq(schema.couponToken.proposalId, input.proposalId)
+        )
+      )
+    )
+    .limit(1);
+  if (!rows[0]) throw new ProposalError("Ese token no existe", 404, "not_found");
+  await db
+    .update(schema.couponToken)
+    .set({
+      status: input.status,
+      redeemedAt: input.status === "canjeado" ? new Date() : null,
+    })
+    .where(eq(schema.couponToken.id, input.tokenId));
+}
+
+/** 044b-B11 — token público (para la página del cupón con ?t=). */
+export async function getCouponTokenByCode(
+  token: string
+): Promise<{ token: string; status: "emitido" | "canjeado"; proposalToken: string } | null> {
+  const clean = (token ?? "").trim().toUpperCase();
+  if (!/^[A-Z0-9-]{6,40}$/.test(clean)) return null;
+  const db = getDb();
+  const rows = await db
+    .select({
+      token: schema.couponToken.token,
+      status: schema.couponToken.status,
+      proposalId: schema.couponToken.proposalId,
+    })
+    .from(schema.couponToken)
+    .where(eq(schema.couponToken.token, clean))
+    .limit(1);
+  const t = rows[0];
+  if (!t) return null;
+  const prop = await db
+    .select({ token: schema.proposal.token })
+    .from(schema.proposal)
+    .where(eq(schema.proposal.id, t.proposalId))
+    .limit(1);
+  if (!prop[0]) return null;
+  return {
+    token: t.token,
+    status: t.status === "canjeado" ? "canjeado" : "emitido",
+    proposalToken: prop[0].token,
+  };
+}
+
+/** 044b-B11 — respuestas de un formulario/encuesta (panel del negocio). */
+export async function listProposalResponses(input: {
+  organizationId: string;
+  proposalId: string;
+}): Promise<ProposalResponseDto[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.proposalResponse)
+    .where(
+      scoped(
+        schema.proposalResponse.organizationId,
+        input.organizationId,
+        eq(schema.proposalResponse.proposalId, input.proposalId)
+      )
+    )
+    .orderBy(desc(schema.proposalResponse.createdAt))
+    .limit(500);
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    data: Array.isArray(r.data) ? r.data : [],
+    clientName: r.clientName,
+    clientPhone: r.clientPhone,
+    clientEmail: r.clientEmail,
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
+
+/** 044b-B11 — guarda una respuesta enviada desde la página pública. */
+export async function saveProposalResponse(input: {
+  token: string;
+  data: Array<{ label: string; value: string }>;
+}): Promise<{ ok: true } | { ok: false; code: string }> {
+  const clean = (input.token ?? "").trim();
+  if (!/^[A-Za-z0-9_-]{8,32}$/.test(clean)) return { ok: false, code: "not_found" };
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: schema.proposal.id,
+      organizationId: schema.proposal.organizationId,
+      widget: schema.proposal.widget,
+      online: schema.proposal.online,
+      deletedAt: schema.proposal.deletedAt,
+    })
+    .from(schema.proposal)
+    .where(eq(schema.proposal.token, clean))
+    .limit(1);
+  const p = rows[0];
+  if (!p || p.deletedAt || !p.online) return { ok: false, code: "not_found" };
+  const widget = p.widget;
+  if (!widget || (widget.type !== "form" && widget.type !== "survey")) {
+    return { ok: false, code: "not_a_widget" };
+  }
+  const flat = (Array.isArray(input.data) ? input.data : [])
+    .map((d) => ({
+      label: cleanText(d?.label, 200) ?? "",
+      value: cleanText(d?.value, 2000) ?? "",
+    }))
+    .filter((d) => d.label)
+    .slice(0, WIDGET_MAX_FIELDS);
+  if (flat.length === 0) return { ok: false, code: "empty" };
+  const find = (tipo: string) => {
+    const f = (widget.type === "form" ? widget.fields : widget.questions).find(
+      (x) => x.tipo === tipo
+    );
+    return f ? (flat.find((d) => d.label === f.label)?.value?.slice(0, 200) ?? null) : null;
+  };
+  await db.insert(schema.proposalResponse).values({
+    id: newId("proposalResponse"),
+    organizationId: p.organizationId,
+    proposalId: p.id,
+    kind: widget.type === "form" ? "form" : "survey",
+    data: flat,
+    clientName: find("texto"),
+    clientPhone: find("telefono"),
+    clientEmail: find("email"),
+  });
+  return { ok: true };
 }

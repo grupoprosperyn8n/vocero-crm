@@ -2,14 +2,23 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { MessageCircle, Video } from "lucide-react";
-import { getAgendaPublicUrl, kindLabel, loadPublicProposal } from "@/server/proposals/service";
+import {
+  getAgendaPublicUrl,
+  getCouponTokenByCode,
+  kindLabel,
+  loadPublicProposal,
+} from "@/server/proposals/service";
 import { getBranding } from "@/server/branding";
 import { PrintButton } from "./print-button";
 import { MediaCarousel } from "./media-carousel";
+import { PublicWidgetForm } from "./widget-form";
 
 export const dynamic = "force-dynamic";
 
-type Props = { params: Promise<{ token: string }> };
+type Props = {
+  params: Promise<{ token: string }>;
+  searchParams: Promise<{ t?: string }>;
+};
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { token } = await params;
@@ -29,11 +38,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * WhatsApp del equipo — si la gestión está derivada, atiende esa persona;
  * si no, responde el asistente al instante.
  */
-export default async function ProposalPage({ params }: Props) {
+export default async function ProposalPage({ params, searchParams }: Props) {
   const { token } = await params;
+  const sp = await searchParams;
   const proposal = await loadPublicProposal(token);
   if (!proposal) notFound();
   const branding = await getBranding().catch(() => null);
+
+  // 044b-B11 — cupón: si el link vino con ?t=VCH-… se muestra ESE código
+  // (links personalizados por token que reparte el negocio).
+  const cuponCodigo =
+    proposal.widget?.type === "coupon" && sp.t
+      ? await getCouponTokenByCode(sp.t).catch(() => null)
+      : null;
+  const cuponValido =
+    cuponCodigo && cuponCodigo.proposalToken === proposal.token ? cuponCodigo : null;
+  const fechaCorta = (iso: string) => iso.split("-").reverse().join("/");
 
   if (!proposal.online) {
     return (
@@ -233,6 +253,60 @@ export default async function ProposalPage({ params }: Props) {
             <div className="rounded-2xl border border-white/80 bg-white/60 px-4 py-3 shadow-inner backdrop-blur">
               <p className="text-[11px] font-bold tracking-wide text-neutral-400 uppercase">La oferta</p>
               <p className="mt-1 text-[13.5px] text-neutral-800">{proposal.offer}</p>
+            </div>
+          )}
+
+          {/* 044b-B11 — formulario o encuesta de la pieza */}
+          {proposal.widget && proposal.widget.type !== "coupon" && (
+            <PublicWidgetForm token={token} widget={proposal.widget} />
+          )}
+
+          {/* 044b-B11 — cupón/voucher: código y reglas de canje */}
+          {proposal.widget?.type === "coupon" && (
+            <div className="rounded-3xl border border-amber-200/80 bg-gradient-to-r from-amber-50 to-orange-50/80 px-4 py-4 shadow-sm">
+              <p className="text-[11px] font-bold tracking-wide text-amber-600 uppercase">
+                🎟️ Cupón de regalo
+              </p>
+              <p className="mt-1 text-[16px] font-extrabold text-neutral-900">
+                {proposal.widget.beneficio}
+              </p>
+              {cuponValido ? (
+                <div className="mt-3 rounded-2xl border border-dashed border-amber-400/80 bg-white/85 px-4 py-3 text-center">
+                  <p className="text-[11px] font-semibold tracking-wide text-neutral-400 uppercase">
+                    Código para canjear
+                  </p>
+                  <p className="mt-1 font-mono text-[22px] font-bold tracking-[0.18em] text-neutral-900">
+                    {cuponValido.token}
+                  </p>
+                  {cuponValido.status === "canjeado" && (
+                    <p className="mt-1 text-[11.5px] font-bold text-orange-600">Ya canjeado ✓</p>
+                  )}
+                </div>
+              ) : sp.t ? (
+                <p className="mt-2 rounded-xl border border-amber-200/80 bg-white/70 px-3 py-2 text-[12px] text-neutral-600">
+                  Ese código no corresponde a este cupón. Mostrá esta página en el local
+                  para canjear tu beneficio.
+                </p>
+              ) : (
+                <p className="mt-2 text-[12.5px] text-neutral-600">
+                  Mostrá esta página en el local para canjear tu beneficio.
+                </p>
+              )}
+              {(proposal.widget.desde || proposal.widget.hasta) && (
+                <p className="mt-2 text-[11.5px] text-neutral-500">
+                  {proposal.widget.desde && (
+                    <>Válido desde el {fechaCorta(proposal.widget.desde)}{" "}</>
+                  )}
+                  {proposal.widget.hasta && (
+                    <>hasta el {fechaCorta(proposal.widget.hasta)}.</>
+                  )}
+                </p>
+              )}
+              {proposal.widget.condiciones && (
+                <p className="mt-1 text-[11.5px] text-neutral-500">
+                  {proposal.widget.condiciones}
+                </p>
+              )}
             </div>
           )}
 

@@ -302,6 +302,13 @@
       "when": 1790708629560,
       "tag": "0042_worthless_tomorrow_man",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790719134141,
+      "tag": "0043_stormy_vertigo",
+      "breakpoints": true
     }
   ]
 }

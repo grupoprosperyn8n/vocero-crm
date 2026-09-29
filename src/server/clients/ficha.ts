@@ -663,6 +663,7 @@ export function proposalToDto(
         ? p.mediaIds.filter((id): id is string => typeof id === "string")
         : null,
     mediaTypes: extra.mediaTypes ?? null,
+    widget: p.widget ?? null,
     contactId: p.contactId,
     conversationId: p.conversationId,
     statusLabel:
