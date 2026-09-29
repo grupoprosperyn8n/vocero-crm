@@ -1865,6 +1865,12 @@ export const proposal = pgTable(
     derivedBy: text("derived_by").references(() => user.id, {
       onDelete: "set null",
     }),
+    /** B9 — derivada a un GRUPO del chat: quién aceptó la gestión (y cuándo).
+     * El aviso llega a la sala; el primero del grupo que la toma queda acá. */
+    acceptedBy: text("accepted_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    acceptedAt: timestamp("accepted_at"),
     contactId: text("contact_id").references(() => contact.id, {
       onDelete: "set null",
     }),

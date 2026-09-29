@@ -28,13 +28,10 @@ import {
   Phone,
   PlayCircle,
   RefreshCw,
-  Send,
   Sparkles,
   Target,
   Trash2,
   TrendingUp,
-  UserCheck,
-  Wand2,
   X,
 } from "lucide-react";
 import {
@@ -53,16 +50,9 @@ import {
   type ClientFichaDto,
   type ProposalDto,
   type ProposalPriority,
-  type TeamGroupLiteDto,
-  type TeamMemberLiteDto,
 } from "@/lib/types";
-import {
-  TONES,
-  TONE_IDS,
-  type ProposalAngleId,
-  type ProposalToneId,
-} from "@/lib/proposals/copy";
 import { ConstructorPanel } from "./constructor-panel";
+import { ProposalPostPanel } from "./proposal-post";
 import {
   ProposalEditModal,
   ProposalHistoryModal,
@@ -848,7 +838,7 @@ function ProposalRow({
 }
 
 /* ------------------------------------------------------------------ */
-/* Flujo de propuesta: crear → derivar → enviar                        */
+/* Flujo de propuesta: crear → compartir → derivar → enviar             */
 
 function ProposalFlow({
   customer,
@@ -870,188 +860,10 @@ function ProposalFlow({
   onProposalChange: () => void;
   onRefreshFicha: () => Promise<void>;
 }) {
-  const [directory, setDirectory] = useState<TeamMemberLiteDto[] | null>(null);
-
-  const [busy, setBusy] = useState<null | "derive" | "send">(null);
-  const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<ProposalDto | null>(null);
-  const [deriveOpen, setDeriveOpen] = useState(false);
-  const [assignee, setAssignee] = useState("");
-  const [priority, setPriority] = useState<ProposalPriority>("media");
-  const [note, setNote] = useState("");
-  const [stage, setStage] = useState<{ derived?: string; sent?: boolean }>({});
-  const [groups, setGroups] = useState<TeamGroupLiteDto[]>([]);
-  const [viewerRole, setViewerRole] = useState<string>("member");
-  // 042 — por defecto deriva a la IA: atiende primero; después se reasigna.
-  const [targetKind, setTargetKind] = useState<"ia" | "employee" | "group">("ia");
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [draftText, setDraftText] = useState("");
-  // 041c — el mensaje se reescribe con IA por tono (concepto de venta «beneficio»).
-  const angle: ProposalAngleId | null = "beneficio";
-  const aiInstructions = "";
-  const [aiBusy, setAiBusy] = useState<null | "mensaje">(null);
-  const [aiNotes, setAiNotes] = useState<string | null>(null);
-  const [msgTone, setMsgTone] = useState<ProposalToneId>("cercana");
-
-  // 041b — derivan (y ven todo el seguimiento) propietario, administrador y
-  // gerente, los mismos roles que en las alertas.
-  const canDerive =
-    viewerRole === "owner" || viewerRole === "admin" || viewerRole === "manager";
-
-
-  // 042f — al elegir del menú de productos queda el vínculo al sistema/CRM;
-  // texto libre sigue permitido (sin vínculo).
-
-
-
-  // 041b — directorio (empleados), grupos del chat y mi rol: quién deriva.
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      const res = await fetch("/api/staff/directory", { cache: "no-store" }).catch(() => null);
-      if (!alive || !res?.ok) return;
-      const data = (await res.json().catch(() => ({}))) as {
-        members?: TeamMemberLiteDto[];
-        groups?: TeamGroupLiteDto[];
-        viewer?: { role?: string };
-      };
-      setDirectory((prev) => prev ?? data.members ?? []);
-      setGroups(data.groups ?? []);
-      if (data.viewer?.role) setViewerRole(data.viewer.role);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-
-  // 042 — medios de la publicidad: sube fotos y UN video (mp4/webm, hasta
-  // 40 MB). Uno por uno para que el error sea del archivo puntual y el resto
-  // entre igual. Quedan en orden: carrusel.
-
-
-  // 041c — la IA escribe la pieza con el tono y el concepto elegidos. Nunca
-  // pisa el texto sin vuelta atrás: guarda el anterior para «Deshacer».
-
-  // 041c — reescribir el mensaje de WhatsApp con otro tono, antes de mandarlo.
-
-  const rewriteMessage = async (targetTone: ProposalToneId) => {
-    if (!created) return;
-    setAiBusy("mensaje");
-    setError(null);
-    const res = await fetch("/api/proposals/copy", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        target: "mensaje",
-        tone: targetTone,
-        angle,
-        instructions: aiInstructions.trim() || null,
-        clientName: customer.name,
-        kind: created.kind,
-        productName: created.productName ?? "",
-        companyName: created.companyName ?? "",
-        title: created.title ?? "",
-        subtitle: created.subtitle ?? "",
-        body: created.body ?? "",
-        offer: created.offer ?? "",
-        benefit: created.benefit ?? "",
-        ctaLabel: created.ctaLabel ?? "",
-        draftMessage: draftText,
-      }),
-    }).catch(() => null);
-    const data = res
-      ? ((await res.json().catch(() => ({}))) as {
-          copy?: { message?: string; notes?: string };
-          message?: string;
-        })
-      : null;
-    setAiBusy(null);
-    if (!res?.ok || !data?.copy?.message) {
-      setError(data?.message ?? "No se pudo reescribir el mensaje");
-      return;
-    }
-    const absUrl = `${window.location.origin}${created.publicUrl}`;
-    setDraftText(`${data.copy.message}\n\nMiralá acá 👉 ${absUrl}`);
-    setMsgTone(targetTone);
-    setAiNotes(data.copy.notes ?? null);
-  };
-
-
-  const openDerive = async () => {
-    setDeriveOpen(true);
-    if (!directory) {
-      const res = await fetch("/api/staff/directory", { cache: "no-store" }).catch(() => null);
-      const data = res
-        ? ((await res.json().catch(() => ({}))) as {
-            members?: TeamMemberLiteDto[];
-            groups?: TeamGroupLiteDto[];
-            viewer?: { role?: string };
-          })
-        : null;
-      setDirectory(data?.members ?? []);
-      setGroups(data?.groups ?? []);
-      if (data?.viewer?.role) setViewerRole(data.viewer.role);
-    }
-  };
-
-  const derive = async () => {
-    if (!created) return;
-    if (targetKind !== "ia" && !assignee) return;
-    setBusy("derive");
-    setError(null);
-    const res = await fetch(`/api/proposals/${created.id}/derive`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(
-        targetKind === "ia"
-          ? { assigneeKind: "ia", priority, note: note || null }
-          : targetKind === "group"
-            ? { assigneeGroupId: assignee, priority, note: note || null }
-            : { assigneeUserId: assignee, priority, note: note || null }
-      ),
-    }).catch(() => null);
-    const data = res ? ((await res.json().catch(() => ({}))) as { proposal?: ProposalDto; message?: string }) : null;
-    setBusy(null);
-    if (!res?.ok || !data?.proposal) {
-      setError(data?.message ?? "No se pudo derivar la propuesta");
-      return;
-    }
-    setCreated(data.proposal);
-    const who =
-      targetKind === "ia"
-        ? "la IA"
-        : targetKind === "group"
-          ? groups.find((g) => g.id === assignee)?.name ?? "el grupo"
-          : directory?.find((m) => m.userId === assignee)?.name ?? "el empleado";
-    setStage((s) => ({ ...s, derived: who }));
-    setDeriveOpen(false);
-    onProposalChange();
-  };
-
-  const sendNow = async () => {
-    if (!created) return;
-    setBusy("send");
-    setError(null);
-    const res = await fetch(`/api/proposals/${created.id}/send`, { method: "POST" }).catch(() => null);
-    const data = res
-      ? ((await res.json().catch(() => ({}))) as { proposal?: ProposalDto & { conversationId: string | null; contactId: string | null }; message?: string })
-      : null;
-    setBusy(null);
-    if (!res?.ok || !data?.proposal) {
-      setError(data?.message ?? "No se pudo registrar el envío");
-      return;
-    }
-    setCreated(data.proposal);
-    setStage((s) => ({ ...s, sent: true }));
-    setPreviewOpen(false);
-    onOpenInbox({
-      contactId: data.proposal.contactId ?? null,
-      draft: draftText.trim(),
-      attach: data.proposal.imageUrl,
-    });
-    void onRefreshFicha();
-  };
+  /* B9 — creada la pieza, TODO el flujo (compartir, derivar con aceptación
+   * del grupo, mensaje con IA y envío) vive en el panel compartido: el mismo
+   * que usa el Constructor de Marketing. Acá solo se pasa el cliente fijo. */
+  const [created, setCreated] = useState<{ id: string } | null>(null);
 
   return (
     <div className="mt-3 space-y-3 rounded-xl border bg-card p-4">
@@ -1067,308 +879,27 @@ function ProposalFlow({
           kindDefault={kindDefault}
           embebido
           onCreated={(p) => {
-            setCreated(p as unknown as ProposalDto);
+            setCreated({ id: String(p.id) });
             onProposalChange();
             void onRefreshFicha();
           }}
         />
       )}
       {created && (
-        <div className="space-y-3 rounded-xl border border-brand-soft bg-brand-tint/40 p-3">
-          <p className="text-[12.5px] font-bold text-text-1">
-            ✓ Propuesta creada — página pública lista para abrir desde cualquier computadora
-          </p>
-          {/* 042 — qué se le creó, de un vistazo */}
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-text-2">
-            <span className="rounded-full border bg-card px-2 py-0.5">🌐 Página pública</span>
-            <span className="rounded-full border bg-card px-2 py-0.5">
-              🖼️{" "}
-              {(created.mediaIds?.length ?? 0)
-                ? `${created.mediaIds?.length ?? 0} medio${(created.mediaIds?.length ?? 0) > 1 ? "s" : ""}`
-                : "sin medios"}
-            </span>
-            <span className="rounded-full border bg-card px-2 py-0.5">
-              {created.ctaUrl ? "🔗 con botón CTA" : "🔗 sin CTA — se carga en Ajustes → Propuestas"}
-            </span>
-            <span className="rounded-full border bg-card px-2 py-0.5">📲 mensaje con tono a elección</span>
-          </div>
-          {error && (
-            <p className="rounded-md border border-danger-soft bg-card px-3 py-2 text-[11.5px] text-danger-text">
-              {error}
-            </p>
-          )}
-          {aiNotes && <p className="text-[11px] text-text-3">{aiNotes}</p>}
-          <div className="flex flex-wrap items-center gap-2">
-            <a
-              href={created.publicUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-lg border bg-card px-3 py-1.5 text-[12px] font-semibold text-text-2 hover:bg-subtle"
-            >
-              <ExternalLink size={13} /> Abrir página
-            </a>
-            <button
-              type="button"
-              onClick={() => void navigator.clipboard.writeText(`${window.location.origin}${created.publicUrl}`).catch(() => {})}
-              className="flex items-center gap-1.5 rounded-lg border bg-card px-3 py-1.5 text-[12px] font-semibold text-text-2 hover:bg-subtle"
-            >
-              <ClipboardCopy size={13} /> Copiar link
-            </button>
-            {!stage.derived && canDerive && (
-              <button
-                type="button"
-                onClick={() => void openDerive()}
-                className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-[12px] font-bold text-white hover:opacity-90"
-              >
-                <UserCheck size={13} /> Derivar: IA, empleado o grupo
-              </button>
-            )}
-            {stage.derived && (
-              <span className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[12px] font-semibold text-emerald-700">
-                <UserCheck size={13} /> Derivada a {stage.derived}
-                {stage.derived === "la IA"
-                  ? " · atiende al instante por WhatsApp"
-                  : " · aviso enviado al chat"}
-              </span>
-            )}
-          </div>
-
-          {deriveOpen && (
-            <div className="space-y-2 rounded-lg border bg-card p-3">
-              <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
-                <span className="font-bold text-text-2">Derivar a:</span>
-                {(
-                  [
-                    { k: "ia" as const, l: "🤖 IA primero" },
-                    { k: "employee" as const, l: "👤 Empleado" },
-                    { k: "group" as const, l: "👥 Grupo" },
-                  ]
-                ).map(({ k, l }) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => {
-                      setTargetKind(k);
-                      setAssignee("");
-                    }}
-                    className={
-                      targetKind === k
-                        ? "rounded-full border border-brand bg-brand-veil px-3 py-1 font-bold text-brand"
-                        : "rounded-full border border-border-strong px-3 py-1 font-semibold text-text-2 hover:bg-accent"
-                    }
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
-              <div className="grid gap-2 md:grid-cols-3">
-                {targetKind === "ia" ? (
-                  <p className="flex items-center rounded-lg border border-dashed bg-subtle/40 px-3 py-2 text-[11.5px] text-text-2 md:col-span-1">
-                    🛡️ Si al cliente le interesa, seguís vos. La IA atiende y
-                    avisa qué pasó.
-                  </p>
-                ) : targetKind === "employee" ? (
-                  <select
-                    value={assignee}
-                    onChange={(e) => setAssignee(e.target.value)}
-                    className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
-                  >
-                    <option value="">Elegí el empleado…</option>
-                    {(directory ?? []).map((m) => (
-                      <option key={m.userId} value={m.userId}>
-                        {m.name}
-                        {m.locality ? ` — ${m.locality}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <select
-                    value={assignee}
-                    onChange={(e) => setAssignee(e.target.value)}
-                    className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
-                  >
-                    <option value="">Elegí el grupo del chat…</option>
-                    {groups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <select
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value as ProposalPriority)}
-                  className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
-                >
-                  <option value="alta">Prioridad alta</option>
-                  <option value="media">Prioridad media</option>
-                  <option value="baja">Prioridad baja</option>
-                </select>
-                <input
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="Nota para el empleado (opcional)"
-                  className="rounded-lg border bg-card px-3 py-2 text-[12.5px]"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => void derive()}
-                disabled={(targetKind !== "ia" && !assignee) || busy === "derive"}
-                className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[12.5px] font-bold text-white hover:opacity-90 disabled:opacity-50"
-              >
-                {busy === "derive" ? <Loader2 size={14} className="animate-spin" /> : <UserCheck size={14} />}
-                {targetKind === "ia"
-                  ? "Derivar a la IA (atiende primero)"
-                  : targetKind === "group"
-                    ? "Derivar al grupo y avisar"
-                    : "Derivar y avisar por el chat"}
-              </button>
-            </div>
-          )}
-
-          {!previewOpen && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  const absUrl = `${window.location.origin}${created.publicUrl}`;
-                  setDraftText(
-                    `¡Hola ${customer.name}! 👋 Te preparé una propuesta pensada para vos${created.benefit ? `: ${created.benefit}` : ""}. Miralá acá 👉 ${absUrl}`
-                  );
-                  setPreviewOpen(true);
-                }}
-                className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-[13px] font-bold text-white hover:opacity-90"
-              >
-                <Send size={14} />
-                Enviar por WhatsApp — con vista previa
-              </button>
-              {/* 042 — el tono del mensaje, a mano desde el primer momento:
-                  tocás uno, la IA lo reescribe y se abre la vista previa. */}
-              <span className="flex items-center gap-1 text-[11.5px] font-bold text-text-2">
-                <Wand2 size={12} /> Tono del mensaje:
-              </span>
-              {TONE_IDS.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => {
-                    if (!previewOpen) {
-                      const absUrl = `${window.location.origin}${created.publicUrl}`;
-                      setDraftText(
-                        `¡Hola ${customer.name}! 👋 Te preparé una propuesta pensada para vos${created.benefit ? `: ${created.benefit}` : ""}. Miralá acá 👉 ${absUrl}`
-                      );
-                      setPreviewOpen(true);
-                    }
-                    setMsgTone(id);
-                    void rewriteMessage(id);
-                  }}
-                  disabled={aiBusy !== null}
-                  aria-pressed={msgTone === id}
-                  title={TONES[id].hint}
-                  className={
-                    msgTone === id
-                      ? "rounded-full border border-emerald-600 bg-emerald-600 px-2 py-0.5 text-[11.5px] font-semibold text-white disabled:opacity-60"
-                      : "rounded-full border bg-card px-2 py-0.5 text-[11.5px] font-semibold text-text-2 hover:bg-subtle disabled:opacity-60"
-                  }
-                >
-                  {TONES[id].label}
-                </button>
-              ))}
-              {aiBusy === "mensaje" && <Loader2 size={12} className="animate-spin text-text-3" />}
-            </div>
-          )}
-
-          {previewOpen && (
-            <div className="space-y-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3">
-              <p className="text-[12.5px] font-bold text-text-1">
-                Así le llega por WhatsApp — revisalo antes de abrir el chat
-              </p>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                {created.imageUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={created.imageUrl ?? ""}
-                    alt="Imagen de la propuesta"
-                    className="h-32 w-32 shrink-0 self-start rounded-lg border object-cover"
-                  />
-                )}
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  {/* 041c — tocá un tono y el mensaje se reescribe; recién después va al chat */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="flex items-center gap-1 text-[11.5px] font-bold text-text-2">
-                      <Wand2 size={12} /> Tono
-                    </span>
-                    {TONE_IDS.map((id) => (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => void rewriteMessage(id)}
-                        disabled={aiBusy !== null}
-                        aria-pressed={msgTone === id}
-                        title={TONES[id].hint}
-                        className={
-                          msgTone === id
-                            ? "rounded-full border border-emerald-600 bg-emerald-600 px-2 py-0.5 text-[11.5px] font-semibold text-white disabled:opacity-60"
-                            : "rounded-full border bg-card px-2 py-0.5 text-[11.5px] font-semibold text-text-2 hover:bg-subtle disabled:opacity-60"
-                        }
-                      >
-                        {TONES[id].label}
-                      </button>
-                    ))}
-                    {aiBusy === "mensaje" && <Loader2 size={12} className="animate-spin text-text-3" />}
-                  </div>
-                  <div className="rounded-2xl rounded-tr-sm border border-emerald-600/20 bg-[#dcf8c6] px-3 py-2 text-[12.5px] leading-snug text-emerald-950 shadow-sm">
-                    <textarea
-                      value={draftText}
-                      onChange={(e) => setDraftText(e.target.value)}
-                      rows={4}
-                      aria-label="Mensaje para WhatsApp"
-                      className="w-full resize-none bg-transparent text-[12.5px] leading-snug text-emerald-950 outline-none"
-                    />
-                    <span className="block text-right text-[10px] text-emerald-950/60">
-                      ahora ✓
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-text-3">
-                    {created.imageUrl
-                      ? "Va con la primera foto de la publicación adjunta y el link a la página. Queda cargado en el chat sin enviar."
-                      : "Queda cargado en el chat sin enviar: lo revisás y lo mandás desde ahí."}
-                  </p>
-                  {!stage.derived && canDerive && (
-                    <p className="text-[11px] text-text-3">
-                      Podés derivarla (arriba) a un empleado o a un grupo para
-                      que la envíe y la gestione.
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => void sendNow()}
-                  disabled={busy === "send" || !draftText.trim()}
-                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-[13px] font-bold text-white hover:opacity-90 disabled:opacity-50"
-                >
-                  {busy === "send" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                  Abrir el chat con esto listo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPreviewOpen(false)}
-                  className="rounded-lg border bg-card px-3 py-2 text-[12.5px] font-semibold text-text-2 hover:bg-subtle"
-                >
-                  Volver
-                </button>
-              </div>
-            </div>
-          )}
-          {stage.sent && (
-            <p className="text-[12px] font-semibold text-emerald-700">
-              ✓ Marcada como enviada — el chat quedó abierto con el borrador y la imagen listos.
-            </p>
-          )}
-        </div>
+        <ProposalPostPanel
+          proposalId={created.id}
+          customerName={customer.name}
+          onOpenInbox={onOpenInbox}
+          onChanged={() => {
+            onProposalChange();
+            void onRefreshFicha();
+          }}
+          onNew={() => {
+            setCreated(null);
+            onProposalChange();
+            void onRefreshFicha();
+          }}
+        />
       )}
     </div>
   );

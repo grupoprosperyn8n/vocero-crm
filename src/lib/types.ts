@@ -652,6 +652,10 @@ export type ProposalDto = {
   lastViewAt: string | null;
   sentAt: string | null;
   derivedAt: string | null;
+  /** B9 — gestión de un grupo aceptada: quién y cuándo. */
+  acceptedAt: string | null;
+  acceptedBy: string | null;
+  acceptedByName: string | null;
   respondedAt: string | null;
   createdAt: string;
 };

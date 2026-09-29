@@ -17,8 +17,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  Copy,
-  ExternalLink,
   FolderOpen,
   ImagePlus,
   Lightbulb,
@@ -37,6 +35,7 @@ import { LibraryPicker } from "./library-picker";
 import { ANGLE_IDS, ANGLES, TONE_IDS, TONES, type ProposalAngleId, type ProposalToneId } from "@/lib/proposals/copy";
 import { PROPOSAL_KINDS, type SystemClientSearchResultDto } from "@/lib/types";
 import { cn, systemClientName } from "@/lib/utils";
+import { ProposalPostPanel } from "./proposal-post";
 
 type ClienteSistema = SystemClientSearchResultDto["client"];
 
@@ -66,6 +65,7 @@ export function ConstructorPanel({
   kindDefault,
   embebido = false,
   onCreated,
+  onOpenInbox,
 }: {
   onGoToProposals?: () => void;
   /** Modo Cliente 360: el cliente ya está elegido y el wizard arranca en «Publicación». */
@@ -73,6 +73,12 @@ export function ConstructorPanel({
   kindDefault?: string;
   embebido?: boolean;
   onCreated?: (proposal: Record<string, unknown>) => void;
+  /** B9 — abrir el chat con el borrador (lo usa el panel post-creación). */
+  onOpenInbox?: (input: {
+    contactId: string | null;
+    draft: string;
+    attach?: string | null;
+  }) => void;
 }) {
   const pasoInicial = clienteFijo ? 1 : 0;
   const [paso, setPaso] = useState(pasoInicial);
@@ -151,7 +157,6 @@ export function ConstructorPanel({
   const [creando, setCreando] = useState(false);
   const [creada, setCreada] = useState<Creada | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copiado, setCopiado] = useState<"link" | "mensaje" | null>(null);
 
   /* Asistente de IA (041c) — misma mecánica que el Cliente 360°: tono +
      concepto de venta + indicaciones libres escriben la pieza y el mensaje. */
@@ -161,7 +166,6 @@ export function ConstructorPanel({
   const [aiBusy, setAiBusy] = useState<null | "pieza" | "mensaje">(null);
   const [aiNotas, setAiNotas] = useState<string | null>(null);
   const [prevForm, setPrevForm] = useState<typeof form | null>(null);
-  const [mensajeIA, setMensajeIA] = useState<string | null>(null);
 
   /* Menús reales de productos y compañías + textos base (best-effort). */
   useEffect(() => {
@@ -349,48 +353,6 @@ export function ConstructorPanel({
     setAiNotas(copy.notes ?? null);
   };
 
-  /* 041c — el mensaje de WhatsApp también lo puede escribir la IA (la pieza ya creada). */
-  const aiMessage = async () => {
-    if (!creada || !cliente) return;
-    setAiBusy("mensaje");
-    setError(null);
-    const companyName = companias.find((c) => c.id === form.companyRef)?.name ?? "";
-    const url = `${window.location.origin}${creada.publicUrl}`;
-    const res = await fetch("/api/proposals/copy", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        target: "mensaje",
-        tone,
-        angle,
-        instructions: aiInstructions.trim() || null,
-        clientName: systemClientName(cliente),
-        kind,
-        productName: form.productName,
-        companyName,
-        title: form.title,
-        subtitle: form.subtitle,
-        body: form.body,
-        offer: form.offer,
-        benefit: form.benefit,
-        draftMessage: (mensajeIA ?? `${form.title}${form.benefit ? ` — ${form.benefit}` : ""}`).slice(0, 900) || null,
-      }),
-    }).catch(() => null);
-    const data = res
-      ? ((await res.json().catch(() => ({}))) as {
-          copy?: { message?: string; notes?: string };
-          error?: { message?: string };
-          message?: string;
-        })
-      : null;
-    setAiBusy(null);
-    if (!res?.ok || !data?.copy?.message) {
-      setError(data?.error?.message ?? data?.message ?? "No se pudo escribir el mensaje con IA");
-      return;
-    }
-    setMensajeIA(`${data.copy.message}\n\nMiralá acá 👉 ${url}`);
-    setAiNotas(data.copy.notes ?? null);
-  };
 
   const subirArchivos = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -504,22 +466,6 @@ export function ConstructorPanel({
     });
   };
 
-  const copiar = async (que: "link" | "mensaje") => {
-    if (!creada) return;
-    const url = `${window.location.origin}${creada.publicUrl}`;
-    const texto =
-      que === "link"
-        ? url
-        : mensajeIA ??
-          `${form.title}${form.benefit ? ` — ${form.benefit}` : ""}\n\nMiralá acá 👉 ${url}`;
-    try {
-      await navigator.clipboard.writeText(texto);
-      setCopiado(que);
-      setTimeout(() => setCopiado(null), 2000);
-    } catch {
-      /* sin portapapeles: el link está a la vista */
-    }
-  };
 
   const reiniciar = () => {
     setPaso(pasoInicial);
@@ -556,7 +502,6 @@ export function ConstructorPanel({
     setAiInstructions("");
     setAiNotas(null);
     setPrevForm(null);
-    setMensajeIA(null);
     setLogoAssetId(null);
     setLogoPreview(null);
     setPickerTarget(null);
@@ -688,100 +633,27 @@ export function ConstructorPanel({
   /* ———————————————————— Éxito ———————————————————— */
   if (creada) {
     return (
-      <div className="rounded-lg border bg-card p-5">
-        <div className="flex items-start gap-3">
-          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-tint text-brand-text">
-            <Sparkles size={18} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <h3 className="text-[15px] font-semibold">¡Publicación creada!</h3>
-            <p className="mt-0.5 text-[12.5px] text-text-2">
-              {form.title} {cliente ? `· para ${systemClientName(cliente)}` : ""}. Ya tiene su página
-              pública y quedó como borrador en Propuestas, lista para derivar y enviar.
-            </p>
-
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <a
-                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-brand px-3 text-[12px] font-semibold text-brand-fg transition-opacity hover:opacity-90"
-                href={creada.publicUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <ExternalLink size={13} />
-                Abrir publicación
-              </a>
-              <button
-                type="button"
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong px-3 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent"
-                onClick={() => void copiar("link")}
-              >
-                {copiado === "link" ? <Check size={13} /> : <Copy size={13} />}
-                {copiado === "link" ? "Copiado" : "Copiar link"}
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong px-3 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent"
-                onClick={() => void copiar("mensaje")}
-              >
-                {copiado === "mensaje" ? <Check size={13} /> : <Copy size={13} />}
-                {copiado === "mensaje" ? "Copiado" : "Copiar mensaje de WhatsApp"}
-              </button>
-              <div className="inline-flex h-8 items-center gap-1 rounded-md border border-border-strong pl-2 pr-1">
-                <span className="text-[11px] font-semibold text-text-3">Tono</span>
-                <select
-                  value={tone}
-                  onChange={(e) => setTone(e.target.value as ProposalToneId)}
-                  className="h-7 rounded border-0 bg-transparent pr-1 text-[12px] font-semibold text-text-2 focus:outline-none"
-                >
-                  {TONE_IDS.map((id) => (
-                    <option key={id} value={id}>
-                      {TONES[id].label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button
-                type="button"
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-brand-soft bg-brand-tint px-3 text-[12px] font-semibold text-brand-text transition-opacity hover:opacity-90 disabled:opacity-50"
-                onClick={() => void aiMessage()}
-                disabled={aiBusy !== null}
-              >
-                {aiBusy === "mensaje" ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <Sparkles size={13} />
-                )}
-                {mensajeIA ? "Mensaje de nuevo con IA" : "Mensaje con IA"}
-              </button>
-              {onGoToProposals && (
-                <button
-                  type="button"
-                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-brand-soft bg-brand-tint px-3 text-[12px] font-semibold text-brand-text transition-opacity hover:opacity-90"
-                  onClick={onGoToProposals}
-                >
-                  Ver en Propuestas
-                </button>
-              )}
-              <button
-                type="button"
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent"
-                onClick={reiniciar}
-              >
-                Crear otra
-              </button>
-            </div>
-
-            <p className="mt-2 text-[11px] text-text-3 break-all">{publicUrlAbs}</p>
-            {mensajeIA && (
-              <div className="mt-3 rounded-lg border border-border-strong bg-subtle/60 p-2.5">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-text-3">
-                  Mensaje listo para mandar (IA)
-                </p>
-                <p className="mt-1 whitespace-pre-wrap text-[12px] text-text-2">{mensajeIA}</p>
-              </div>
-            )}
-            {aiNotas && <p className="mt-2 text-[11px] text-text-3">{aiNotas}</p>}
-          </div>
+      <div className="space-y-2">
+        {/* B9 — el flujo post-creación (compartir a un cliente del sistema o
+            del CRM, derivar con aceptación del grupo, mensaje con IA y envío)
+            es el MISMO panel que usa el Cliente 360°: una sola experiencia. */}
+        <ProposalPostPanel
+          proposalId={creada.id}
+          customerName={cliente ? systemClientName(cliente) : null}
+          onOpenInbox={onOpenInbox}
+          onNew={reiniciar}
+        />
+        <div className="flex flex-wrap items-center gap-2 px-1">
+          {onGoToProposals && (
+            <button
+              type="button"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-brand-soft bg-brand-tint px-3 text-[12px] font-semibold text-brand-text transition-opacity hover:opacity-90"
+              onClick={onGoToProposals}
+            >
+              Ver en Propuestas
+            </button>
+          )}
+          <p className="text-[11px] text-text-3 break-all">{publicUrlAbs}</p>
         </div>
       </div>
     );

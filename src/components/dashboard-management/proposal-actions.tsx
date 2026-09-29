@@ -52,6 +52,8 @@ const EVENT_EMOJI: Record<string, string> = {
   publicada: "▶️",
   pausada: "⏸️",
   eliminada: "🗑️",
+  compartida: "🤝",
+  aceptada: "✅",
 };
 
 /** Historial con quién hizo qué y cuándo. */

@@ -151,6 +151,21 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
     }
   };
 
+  /** B9 — aceptar la gestión derivada al grupo: queda marcado quién la toma. */
+  const handleAccept = async (p: ProposalDto) => {
+    const res = await fetch(`/api/proposals/${p.id}/accept`, { method: "POST" }).catch(
+      () => null
+    );
+    if (!res?.ok) {
+      const body = (await res?.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null;
+      setError(body?.error?.message ?? "No se pudo aceptar la gestión");
+      return;
+    }
+    await load(true);
+  };
+
   const tasaRespuesta =
     funnel && funnel.enviada > 0 ? Math.round((funnel.respondidas / funnel.enviada) * 100) : null;
 
@@ -271,6 +286,24 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
                     Archivada
                   </span>
                 )}
+                {/* B9 — gestión de un grupo: aceptar / quién la tomó */}
+                {p.assigneeGroupId && !p.acceptedBy ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleAccept(p)}
+                    className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10.5px] font-bold text-amber-700 hover:bg-amber-500/20"
+                    title="La gestión está asignada al grupo: aceptala y queda registrado que la tomás vos"
+                  >
+                    👥 Sin aceptar — Aceptar
+                  </button>
+                ) : p.acceptedByName ? (
+                  <span
+                    className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-bold text-emerald-700"
+                    title={`Gestión aceptada por ${p.acceptedByName}`}
+                  >
+                    ✓ {p.acceptedByName}
+                  </span>
+                ) : null}
                 <span className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold ${pr.className}`}>
                   {pr.label.replace("Prioridad ", "")}
                 </span>

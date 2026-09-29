@@ -12,6 +12,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { and, desc, eq, inArray, isNotNull, isNull, or, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -33,6 +34,7 @@ import { isAngleId, isToneId } from "@/lib/proposals/copy";
 import { defaultKindPrompt } from "@/lib/proposals/kind-prompts";
 import { normalizeAdImage } from "@/server/images/normalize";
 import { recordProposalEvent, resolveUserName } from "./events";
+import { isManagerOrAbove } from "./permissions";
 
 export class ProposalError extends Error {
   constructor(
@@ -920,6 +922,8 @@ export async function getProposalById(
   const dto = proposalToDto(row.p, {
     assigneeName: row.assigneeName,
     respondedAt: await respondedAtFor(row.p),
+    /* B9 — si un grupo ya aceptó la gestión, quién fue. */
+    acceptedByName: row.p.acceptedBy ? await resolveUserName(row.p.acceptedBy) : null,
   });
   return dto;
 }
@@ -1017,15 +1021,21 @@ export async function listProposals(input: {
     conditions.push(or(...alcance)!);
   }
 
+  /** B9 — alias para el join de quién aceptó la gestión. */
+  const acceptedUser = alias(schema.user, "accepted_user");
+
   const rows = await db
     .select({
       p: schema.proposal,
       assigneeName: schema.user.name,
+      /** B9 — quién aceptó la gestión (grupo). */
+      acceptedName: acceptedUser.name,
       groupName: schema.chatRoom.name,
       lastInboundAt: schema.conversation.lastInboundAt,
     })
     .from(schema.proposal)
     .leftJoin(schema.user, eq(schema.proposal.assigneeUserId, schema.user.id))
+    .leftJoin(acceptedUser, eq(schema.proposal.acceptedBy, acceptedUser.id))
     .leftJoin(schema.chatRoom, eq(schema.proposal.assigneeGroupId, schema.chatRoom.id))
     .leftJoin(
       schema.conversation,
@@ -1035,7 +1045,7 @@ export async function listProposals(input: {
     .orderBy(desc(schema.proposal.createdAt))
     .limit(Math.min(input.limit ?? 120, 300));
 
-  const proposals = rows.map(({ p, assigneeName, groupName, lastInboundAt }) => {
+  const proposals = rows.map(({ p, assigneeName, acceptedName, groupName, lastInboundAt }) => {
     const respondedAt =
       p.sentAt && lastInboundAt && lastInboundAt.getTime() > p.sentAt.getTime()
         ? lastInboundAt.toISOString()
@@ -1043,7 +1053,7 @@ export async function listProposals(input: {
     const quien = p.assigneeGroupId
       ? groupName?.trim() || "Grupo"
       : assigneeName;
-    return proposalToDto(p, { assigneeName: quien, respondedAt });
+    return proposalToDto(p, { assigneeName: quien, respondedAt, acceptedByName: acceptedName });
   });
 
   const funnel: ProposalFunnel = {
@@ -1207,7 +1217,10 @@ export async function deriveProposal(input: {
       p.benefit ? `Beneficio: ${p.benefit}` : null,
       input.note ? `Nota: ${input.note}` : null,
       "",
-      `Abrila y compartila desde acá: ${url}`,
+      destinoEmpleado
+        ? "Enviásela al cliente desde su ficha (Cliente 360°) o compartila con el link:"
+        : "Abrila, ACEPTÁ la gestión (queda registrado quién la toma) y compartila:",
+      url,
     ].filter((l): l is string => l !== null);
     try {
       const roomId =
@@ -1238,6 +1251,207 @@ export async function deriveProposal(input: {
         ? `Derivada a ${assigneeName ?? "un empleado"} · prioridad ${input.priority}`
         : `Derivada al grupo «${assigneeGroupName ?? "grupo"}» · prioridad ${input.priority}`,
   });
+
+  return getProposalById(input.organizationId, input.id);
+}
+
+/**
+ * B9 — COMPARTIR la publicación a un cliente directo: uno del sistema
+ * (recordId de Airtable) o un contacto del CRM (prospecto que escribió por
+ * WhatsApp). Cambia el destinatario de la pieza y queda en el historial.
+ * El envío posterior usa el camino normal (markProposalSent).
+ */
+export async function shareProposal(input: {
+  organizationId: string;
+  userId: string;
+  id: string;
+  /** Cliente del sistema (uno de estos dos, no ambos). */
+  clientRef?: string | null;
+  /** Contacto del CRM (el otro camino). */
+  contactId?: string | null;
+  clientName?: string | null;
+  clientPhone?: string | null;
+}): Promise<ProposalDto> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.proposal)
+    .where(
+      scoped(
+        schema.proposal.organizationId,
+        input.organizationId,
+        eq(schema.proposal.id, input.id),
+        isNull(schema.proposal.deletedAt)
+      )
+    )
+    .limit(1);
+  const p = rows[0];
+  if (!p) throw new ProposalError("Propuesta no encontrada", 404, "not_found");
+
+  const clientRef = input.clientRef?.trim() || null;
+  const contactId = input.contactId?.trim() || null;
+  if ((clientRef && contactId) || (!clientRef && !contactId)) {
+    throw new ProposalError(
+      "Elegí un cliente del sistema O un contacto del CRM (uno solo)",
+      422,
+      "bad_target"
+    );
+  }
+  if (clientRef && !/^rec[A-Za-z0-9]{4,30}$/.test(clientRef)) {
+    throw new ProposalError("Cliente inválido", 422, "bad_client");
+  }
+  if (contactId) {
+    const c = await db
+      .select({ id: schema.contact.id })
+      .from(schema.contact)
+      .where(
+        scoped(
+          schema.contact.organizationId,
+          input.organizationId,
+          eq(schema.contact.id, contactId),
+          isNull(schema.contact.archivedAt)
+        )
+      )
+      .limit(1);
+    if (!c[0]) throw new ProposalError("Ese contacto no existe en el CRM", 404, "not_found");
+  }
+
+  const newName = input.clientName?.trim() || p.clientName;
+  await db
+    .update(schema.proposal)
+    .set({
+      clientRef: clientRef ?? "",
+      contactId,
+      clientName: newName,
+      clientPhone: input.clientPhone?.trim() || p.clientPhone,
+      // La conversación se re-resuelve al enviar (markProposalSent).
+      conversationId: null,
+    })
+    .where(
+      scoped(
+        schema.proposal.organizationId,
+        input.organizationId,
+        eq(schema.proposal.id, input.id)
+      )
+    );
+
+  await recordProposalEvent({
+    organizationId: input.organizationId,
+    proposalId: input.id,
+    actorId: input.userId,
+    actorName: await resolveUserName(input.userId),
+    action: "compartida",
+    detail: `Compartida a ${newName}${contactId ? " (contacto del CRM)" : " (cliente del sistema)"}`,
+  });
+
+  return getProposalById(input.organizationId, input.id);
+}
+
+/**
+ * B9 — ACEPTAR la gestión de un grupo: la pieza se derivó a un grupo del
+ * chat y alguien la toma. Queda marcado QUIÉN y CUÁNDO (acceptedBy/At) y la
+ * sala recibe el aviso. La primera aceptación gana (idempotente después).
+ */
+export async function acceptProposalGroup(input: {
+  organizationId: string;
+  userId: string;
+  id: string;
+}): Promise<ProposalDto> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.proposal)
+    .where(
+      scoped(
+        schema.proposal.organizationId,
+        input.organizationId,
+        eq(schema.proposal.id, input.id),
+        isNull(schema.proposal.deletedAt)
+      )
+    )
+    .limit(1);
+  const p = rows[0];
+  if (!p) throw new ProposalError("Propuesta no encontrada", 404, "not_found");
+  if (!p.assigneeGroupId) {
+    throw new ProposalError(
+      "Esta publicación no está asignada a un grupo",
+      422,
+      "no_group"
+    );
+  }
+  if (p.acceptedBy) {
+    // Ya la tomó alguien: no se pisa (queda registrado quién fue).
+    return getProposalById(input.organizationId, input.id);
+  }
+
+  // Quién puede aceptar: un integrante activo del grupo asignado… o quien
+  // administra la organización (gerente y hacia arriba).
+  const member = await db
+    .select({ id: schema.chatRoomMember.id })
+    .from(schema.chatRoomMember)
+    .where(
+      scoped(
+        schema.chatRoomMember.organizationId,
+        input.organizationId,
+        eq(schema.chatRoomMember.roomId, p.assigneeGroupId),
+        eq(schema.chatRoomMember.userId, input.userId),
+        isNull(schema.chatRoomMember.pausedAt)
+      )
+    )
+    .limit(1);
+  if (!member[0]) {
+    const m = await db
+      .select({ role: schema.member.role })
+      .from(schema.member)
+      .where(
+        scoped(
+          schema.member.organizationId,
+          input.organizationId,
+          eq(schema.member.userId, input.userId)
+        )
+      )
+      .limit(1);
+    if (!isManagerOrAbove(m[0]?.role ?? "")) {
+      throw new ProposalError(
+        "Solo el grupo asignado (o un gerente) puede aceptar esta gestión",
+        403,
+        "forbidden"
+      );
+    }
+  }
+
+  await db
+    .update(schema.proposal)
+    .set({ acceptedBy: input.userId, acceptedAt: new Date() })
+    .where(
+      scoped(
+        schema.proposal.organizationId,
+        input.organizationId,
+        eq(schema.proposal.id, input.id)
+      )
+    );
+
+  const name = await resolveUserName(input.userId);
+  await recordProposalEvent({
+    organizationId: input.organizationId,
+    proposalId: input.id,
+    actorId: input.userId,
+    actorName: name,
+    action: "aceptada",
+    detail: `${name} aceptó la gestión de la publicación para ${p.clientName}`,
+  });
+  // Aviso a la sala del grupo: quedó tomada (y por quién).
+  try {
+    await postChatMessage({
+      organizationId: input.organizationId,
+      roomId: p.assigneeGroupId,
+      senderId: input.userId,
+      body: `✅ ${name} aceptó la gestión: ${kindLabel(p.kind).toLowerCase()} para ${p.clientName}.\n${absoluteProposalUrl(p.token)}`,
+    });
+  } catch (err) {
+    // El aviso no puede tumbar la aceptación: queda registrada igual.
+    console.error("[proposals] no se pudo avisar la aceptación al chat:", err);
+  }
 
   return getProposalById(input.organizationId, input.id);
 }

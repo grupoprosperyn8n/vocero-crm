@@ -3199,7 +3199,22 @@ export function ExecDashboard() {
             onAction={applyHelpAction}
           />
 
-          <ConstructorPanel onGoToProposals={() => setTab("propuestas")} />
+          <ConstructorPanel
+            onGoToProposals={() => setTab("propuestas")}
+            onOpenInbox={(input) => {
+              // B9 — el panel post-creación abre el chat con el borrador listo.
+              if (input.contactId) {
+                const params = new URLSearchParams({
+                  contact: input.contactId,
+                  draft: input.draft,
+                });
+                if (input.attach) params.set("attach", input.attach);
+                router.push(`/inbox?${params.toString()}`);
+              } else {
+                router.push("/inbox");
+              }
+            }}
+          />
         </div>
       )}
 

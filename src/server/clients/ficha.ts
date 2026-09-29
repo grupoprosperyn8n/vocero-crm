@@ -613,6 +613,8 @@ export function proposalToDto(
     assigneeName?: string | null;
     createdByName?: string | null;
     respondedAt?: string | null;
+    /** B9 — nombre de quien aceptó la gestión del grupo. */
+    acceptedByName?: string | null;
     /** 042 — tipos alineados con mediaIds (los aporta quien ya los leyó). */
     mediaTypes?: ("image" | "video")[] | null;
   } = {}
@@ -674,6 +676,9 @@ export function proposalToDto(
     lastViewAt: p.lastViewAt?.toISOString() ?? null,
     sentAt: p.sentAt?.toISOString() ?? null,
     derivedAt: p.derivedAt?.toISOString() ?? null,
+    acceptedAt: p.acceptedAt?.toISOString() ?? null,
+    acceptedBy: p.acceptedBy,
+    acceptedByName: extra.acceptedByName ?? null,
     respondedAt: extra.respondedAt ?? null,
     createdAt: p.createdAt.toISOString(),
   };
