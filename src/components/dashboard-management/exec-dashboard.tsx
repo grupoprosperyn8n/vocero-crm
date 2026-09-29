@@ -55,6 +55,7 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  LabelList,
   Legend,
   Line,
   Pie,
@@ -104,6 +105,75 @@ const CHART = {
   net: "#0d5bff",
   series: ["#0d5bff", "#1fb35b", "#f2a71b", "#8b5cf6", "#e11d48", "#0ea5e9"],
 };
+
+/* ————— Gráficos: estilo común (mejora 044b) ————— */
+const CHART_GRID = "#e5e9f2";
+const CHART_TICK = { fontSize: 11, fill: "#7b879c" };
+const CHART_LEGEND = {
+  iconType: "circle" as const,
+  iconSize: 9,
+  wrapperStyle: { fontSize: 11.5, paddingTop: 2 },
+};
+
+function compactNumber(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+/** Tooltip de gráficos: legible, en es-AR y con el sistema de diseño. */
+function ChartTip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: { name?: string; value?: number; color?: string }[];
+  label?: string | number;
+}) {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div className="rounded-lg border border-border-strong bg-card px-3 py-2 shadow-lg">
+      {label !== undefined && label !== "" && (
+        <p className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
+          {String(label)}
+        </p>
+      )}
+      <div className="space-y-0.5">
+        {payload.map((item, index) => (
+          <div key={index} className="flex items-center justify-between gap-5 text-[12px]">
+            <span className="flex items-center gap-1.5 text-text-2">
+              <span className="h-2 w-2 rounded-full" style={{ background: item.color }} />
+              {item.name}
+            </span>
+            <strong className="tabular-nums">{number(item.value ?? 0)}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Etiqueta % dentro de los sectores del donut (solo en sectores legibles). */
+type PieLabelProps = { x?: number; y?: number; percent?: number };
+function piePercentLabel(props: PieLabelProps) {
+  const { x, y, percent } = props;
+  if (x === undefined || y === undefined || (percent ?? 0) < 0.06) return undefined;
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="#ffffff"
+      fontSize={10.5}
+      fontWeight={700}
+      textAnchor="middle"
+      dominantBaseline="central"
+    >
+      {Math.round((percent ?? 0) * 100)}%
+    </text>
+  );
+}
 
 function number(value: number) {
   return new Intl.NumberFormat("es-AR").format(value);
@@ -1632,6 +1702,9 @@ export function ExecDashboard() {
     1
   );
 
+  const topOffices = [...data.offices].sort((a, b) => b.altas - a.altas).slice(0, 8);
+  const channelsTotal = data.channels.reduce((sum, channel) => sum + channel.value, 0);
+
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain">
     <div className="w-full space-y-3 px-3 pb-8 lg:px-5">
@@ -1934,26 +2007,48 @@ export function ExecDashboard() {
             >
               <div className="h-[300px]">
                 <ResponsiveContainer>
-                  <ComposedChart data={data.monthly}>
-                    <CartesianGrid strokeDasharray="4 4" vertical={false} />
-                    <XAxis dataKey="month" fontSize={11} />
-                    <YAxis fontSize={11} />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="altas" name="Altas" fill={CHART.altas} radius={[5, 5, 0, 0]} />
+                  <ComposedChart
+                    data={data.monthly}
+                    margin={{ top: 6, right: 10, left: -12, bottom: 0 }}
+                  >
+                    <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 4" vertical={false} />
+                    <XAxis
+                      dataKey="month"
+                      tick={CHART_TICK}
+                      tickLine={false}
+                      axisLine={{ stroke: CHART_GRID }}
+                    />
+                    <YAxis
+                      tick={CHART_TICK}
+                      tickLine={false}
+                      axisLine={false}
+                      width={44}
+                      tickFormatter={(value) => compactNumber(Number(value))}
+                    />
+                    <Tooltip content={<ChartTip />} cursor={{ fill: "rgba(13,91,255,0.06)" }} />
+                    <Legend {...CHART_LEGEND} />
+                    <Bar
+                      dataKey="altas"
+                      name="Altas"
+                      fill={CHART.altas}
+                      radius={[5, 5, 0, 0]}
+                      maxBarSize={26}
+                    />
                     <Bar
                       dataKey="anulaciones"
                       name="Anulaciones"
                       fill={CHART.anulaciones}
                       radius={[5, 5, 0, 0]}
+                      maxBarSize={26}
                     />
                     <Line
                       type="monotone"
                       dataKey="net"
                       name="Crecimiento neto"
                       stroke={CHART.net}
-                      strokeWidth={3}
-                      dot={false}
+                      strokeWidth={2.5}
+                      dot={{ r: 2.5, fill: CHART.net, strokeWidth: 0 }}
+                      activeDot={{ r: 4.5 }}
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -1963,14 +2058,18 @@ export function ExecDashboard() {
             <Section title="Cómo llegan y se atienden" subtitle="Distribución histórica por canal">
               <div className="h-[300px]">
                 <ResponsiveContainer>
-                  <PieChart>
+                  <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
                     <Pie
                       data={data.channels}
                       dataKey="value"
                       nameKey="name"
-                      innerRadius={70}
-                      outerRadius={110}
+                      innerRadius={62}
+                      outerRadius={94}
                       paddingAngle={3}
+                      cornerRadius={5}
+                      strokeWidth={0}
+                      label={piePercentLabel}
+                      labelLine={false}
                     >
                       {data.channels.map((_, index) => (
                         <Cell
@@ -1979,13 +2078,72 @@ export function ExecDashboard() {
                         />
                       ))}
                     </Pie>
-                    <Tooltip />
-                    <Legend />
+                    <text x="50%" y="40%" textAnchor="middle" fontSize={22} fontWeight={700} fill="#0f1c2e">
+                      {number(channelsTotal)}
+                    </text>
+                    <text x="50%" y="45.5%" textAnchor="middle" fontSize={10.5} fill="#7b879c">
+                      gestiones
+                    </text>
+                    <Tooltip content={<ChartTip />} />
+                    <Legend
+                      {...CHART_LEGEND}
+                      formatter={(value: unknown, entry: unknown) => {
+                        const e = entry as { value?: number; payload?: { value?: number } };
+                        const v = e?.payload?.value ?? e?.value;
+                        if (typeof v !== "number" || !channelsTotal) return String(value);
+                        return `${String(value)} · ${Math.round((v / channelsTotal) * 100)}%`;
+                      }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
             </Section>
           </div>
+
+          {topOffices.length > 0 && (
+            <Section
+              title="Actividad por oficina"
+              subtitle="Top 8 por altas históricas — altas y anulaciones"
+            >
+              <div className="h-[320px]">
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topOffices}
+                    layout="vertical"
+                    margin={{ top: 4, right: 44, left: 6, bottom: 0 }}
+                    barGap={2}
+                  >
+                    <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 4" horizontal={false} />
+                    <XAxis type="number" tick={CHART_TICK} tickLine={false} axisLine={false} />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={150}
+                      tick={{ ...CHART_TICK, fontSize: 10.5 }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip content={<ChartTip />} cursor={{ fill: "rgba(100,116,139,0.07)" }} />
+                    <Legend {...CHART_LEGEND} />
+                    <Bar
+                      dataKey="altas"
+                      name="Altas"
+                      fill={CHART.altas}
+                      radius={[0, 5, 5, 0]}
+                      maxBarSize={11}
+                    />
+                    <Bar
+                      dataKey="anulaciones"
+                      name="Anulaciones"
+                      fill={CHART.anulaciones}
+                      radius={[0, 5, 5, 0]}
+                      maxBarSize={11}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Section>
+          )}
 
           <Section title="Lectura ejecutiva" subtitle="Las señales que requieren decisión">
             <div className="grid gap-3 md:grid-cols-3">
@@ -2085,12 +2243,35 @@ export function ExecDashboard() {
             <Section title="Productos históricos" subtitle="Todo lo que realmente se gestionó en Rafael">
               <div className="h-[320px]">
                 <ResponsiveContainer>
-                  <BarChart data={data.historicProducts} layout="vertical" margin={{ left: 8 }}>
-                    <CartesianGrid strokeDasharray="4 4" horizontal={false} />
-                    <XAxis type="number" fontSize={11} />
-                    <YAxis type="category" dataKey="name" width={110} fontSize={11} />
-                    <Tooltip />
-                    <Bar dataKey="value" name="Gestiones" fill={CHART.series[0]} radius={[0, 6, 6, 0]} />
+                  <BarChart
+                    data={data.historicProducts}
+                    layout="vertical"
+                    margin={{ top: 4, right: 48, left: 4, bottom: 0 }}
+                  >
+                    <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 4" horizontal={false} />
+                    <XAxis type="number" tick={CHART_TICK} tickLine={false} axisLine={false} />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={118}
+                      tick={{ ...CHART_TICK, fontSize: 10.5 }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip content={<ChartTip />} cursor={{ fill: "rgba(13,91,255,0.05)" }} />
+                    <Bar
+                      dataKey="value"
+                      name="Gestiones"
+                      fill={CHART.series[0]}
+                      radius={[0, 6, 6, 0]}
+                      maxBarSize={20}
+                    >
+                      <LabelList
+                        dataKey="value"
+                        position="right"
+                        style={{ fontSize: 10.5, fill: "#7b879c" }}
+                      />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -2099,12 +2280,33 @@ export function ExecDashboard() {
             <Section title="Productos cargados actualmente" subtitle="Foto parcial de la nueva base">
               <div className="h-[320px]">
                 <ResponsiveContainer>
-                  <BarChart data={data.currentProducts}>
-                    <CartesianGrid strokeDasharray="4 4" vertical={false} />
-                    <XAxis dataKey="name" fontSize={10} />
-                    <YAxis fontSize={11} />
-                    <Tooltip />
-                    <Bar dataKey="value" name="Pólizas" fill={CHART.altas} radius={[6, 6, 0, 0]} />
+                  <BarChart
+                    data={data.currentProducts}
+                    margin={{ top: 20, right: 6, left: -12, bottom: 0 }}
+                  >
+                    <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 4" vertical={false} />
+                    <XAxis
+                      dataKey="name"
+                      tick={{ ...CHART_TICK, fontSize: 9.5 }}
+                      interval={0}
+                      tickLine={false}
+                      axisLine={{ stroke: CHART_GRID }}
+                    />
+                    <YAxis tick={CHART_TICK} tickLine={false} axisLine={false} width={34} />
+                    <Tooltip content={<ChartTip />} cursor={{ fill: "rgba(31,179,91,0.06)" }} />
+                    <Bar
+                      dataKey="value"
+                      name="Pólizas"
+                      fill={CHART.altas}
+                      radius={[6, 6, 0, 0]}
+                      maxBarSize={30}
+                    >
+                      <LabelList
+                        dataKey="value"
+                        position="top"
+                        style={{ fontSize: 10, fill: "#7b879c" }}
+                      />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -3152,35 +3354,60 @@ export function ExecDashboard() {
                 >
                   <div className="h-[300px]">
                     <ResponsiveContainer>
-                      <AreaChart data={data.crm.daily}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <AreaChart
+                        data={data.crm.daily}
+                        margin={{ top: 6, right: 10, left: -12, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="gradInbound" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={CHART.series[0]} stopOpacity={0.3} />
+                            <stop offset="100%" stopColor={CHART.series[0]} stopOpacity={0.03} />
+                          </linearGradient>
+                          <linearGradient id="gradOutbound" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={CHART.series[5]} stopOpacity={0.28} />
+                            <stop offset="100%" stopColor={CHART.series[5]} stopOpacity={0.03} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 4" vertical={false} />
                         <XAxis
                           dataKey="day"
-                          tick={{ fontSize: 10 }}
+                          tick={{ ...CHART_TICK, fontSize: 10 }}
+                          tickLine={false}
+                          axisLine={{ stroke: CHART_GRID }}
                           tickFormatter={(value) =>
                             String(value).slice(5).replace("-", "/")
                           }
                         />
-                        <YAxis tick={{ fontSize: 10 }} width={34} />
-                        <Tooltip />
-                        <Legend />
+                        <YAxis
+                          tick={{ ...CHART_TICK, fontSize: 10 }}
+                          tickLine={false}
+                          axisLine={false}
+                          width={34}
+                        />
+                        <Tooltip
+                          content={<ChartTip />}
+                          cursor={{ stroke: "#94a3b8", strokeDasharray: "3 3" }}
+                        />
+                        <Legend {...CHART_LEGEND} />
                         <Area
                           type="monotone"
                           dataKey="inbound"
                           name="Recibidos"
                           stroke={CHART.series[0]}
-                          fill={CHART.series[0]}
-                          fillOpacity={0.15}
-                          strokeWidth={2}
+                          fill="url(#gradInbound)"
+                          fillOpacity={1}
+                          strokeWidth={2.2}
+                          activeDot={{ r: 3.5 }}
                         />
                         <Area
                           type="monotone"
                           dataKey="outbound"
                           name="Enviados"
                           stroke={CHART.series[5]}
-                          fill={CHART.series[5]}
-                          fillOpacity={0.12}
-                          strokeWidth={2}
+                          fill="url(#gradOutbound)"
+                          fillOpacity={1}
+                          strokeWidth={2.2}
+                          activeDot={{ r: 3.5 }}
                         />
                       </AreaChart>
                     </ResponsiveContainer>
