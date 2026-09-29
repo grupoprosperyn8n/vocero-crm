@@ -38,6 +38,7 @@ import {
   Settings2,
   ShieldCheck,
   Sigma,
+  SlidersHorizontal,
   Sparkles,
   Target,
   TrendingUp,
@@ -1022,7 +1023,18 @@ export function ExecDashboard() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({ ...EMPTY_FILTERS });
+  const [fpanelOpen, setFpanelOpen] = useState(false);
   const [tab, setTab] = useState<TabId>("pulso");
+
+  // 044b — el panel de filtros se cierra con Escape.
+  useEffect(() => {
+    if (!fpanelOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFpanelOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fpanelOpen]);
   // 041 — panel de control del cliente (Cliente 360°), a pantalla completa.
   const [panelClient, setPanelClient] = useState<PanelCustomer | null>(null);
   // 042 — el rol del visor decide si ve el tablero de campañas (owner/admin/manager).
@@ -1756,156 +1768,44 @@ export function ExecDashboard() {
         }}
       />
 
-      {/* Filtros */}
-      <section className="rounded-lg border bg-card p-3">
+      {/* Filtros — barra liviana + panel lateral (044b: estilo maqueta) */}
+      <section className="rounded-lg border bg-card px-3 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
-          {tabFilters.date && (
-            <>
-              {(
-                [
-                  ["Este mes", "month", CalendarDays],
-                  ["Mes pasado", "lastMonth", History],
-                  ["Este año", "year", CalendarRange],
-                  ["Todo el tiempo", "all", InfinityIcon],
-                ] as const
-              ).map(([label, preset, Icon]) => (
-                <button
-                  key={label}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11.5px] font-semibold text-text-2 transition-colors hover:bg-accent"
-                  onClick={() => {
-                    const range = presetRange(preset);
-                    const next = { ...filters, from: range.from, to: range.to };
-                    setFilters(next);
-                    void load(next);
-                  }}
-                >
-                  <Icon size={12} />
-                  {label}
-                </button>
-              ))}
-
-              <span className="mx-1 h-5 w-px bg-border" />
-
-              <input
-                type="date"
-                value={filters.from}
-                onChange={(e) => updateFilter("from", e.target.value)}
-                className={selectClass}
-              />
-              <input
-                type="date"
-                value={filters.to}
-                onChange={(e) => updateFilter("to", e.target.value)}
-                className={selectClass}
-              />
-            </>
-          )}
-
-          {tabFilters.office && (
-            <select
-              value={filters.office}
-              onChange={(e) => updateFilter("office", e.target.value)}
-              className={selectClass}
+          {hasTabFilters && (
+            <button
+              className={cn(
+                "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-semibold transition-colors",
+                fpanelOpen
+                  ? "border-brand bg-brand-tint text-brand-text"
+                  : "border-border-strong bg-background text-text-2 hover:bg-accent"
+              )}
+              onClick={() => setFpanelOpen(true)}
+              aria-expanded={fpanelOpen}
+              title="Abrir el panel de filtros"
             >
-              <option value="">Todas las oficinas</option>
-              {data.filters.offices.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
+              <SlidersHorizontal size={13} />
+              Filtrar
+              {activeFilterChips.length > 0 && (
+                <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-brand-fg">
+                  {activeFilterChips.length}
+                </span>
+              )}
+            </button>
           )}
 
-          {tabFilters.product && (
-            <select
-              value={filters.product}
-              onChange={(e) => updateFilter("product", e.target.value)}
-              className={selectClass}
+          {activeFilterChips.map(([key, value]) => (
+            <span
+              key={key}
+              className="inline-flex items-center gap-1 rounded-full border border-brand-soft bg-brand-tint px-2 py-0.5 text-[11px] font-semibold text-brand-text"
             >
-              <option value="">Todos los productos</option>
-              {data.filters.products.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          )}
+              {filterLabels[key](value)}
+              <button onClick={() => removeFilter(key)} aria-label={`Quitar filtro ${key}`}>
+                <X size={11} />
+              </button>
+            </span>
+          ))}
 
-          {tabFilters.channel && (
-            <select
-              value={filters.channel}
-              onChange={(e) => updateFilter("channel", e.target.value)}
-              className={selectClass}
-            >
-              <option value="">Todos los canales</option>
-              {data.filters.channels.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {tabFilters.employee && (
-            <select
-              value={filters.employee}
-              onChange={(e) => updateFilter("employee", e.target.value)}
-              className={selectClass}
-            >
-              <option value="">Todos los empleados</option>
-              {data.filters.employees.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {tabFilters.company && (
-            <select
-              value={filters.company}
-              onChange={(e) => updateFilter("company", e.target.value)}
-              className={selectClass}
-            >
-              <option value="">Todas las compañías</option>
-              {data.filters.companies.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {tabFilters.search && (
-            <input
-              value={filters.search}
-              onChange={(e) => updateFilter("search", e.target.value)}
-              placeholder="Buscar cliente, DNI o póliza…"
-              className="h-8 min-w-[200px] flex-1 rounded-md border border-border-strong bg-background px-2 text-[12.5px]"
-            />
-          )}
-
-          {!hasTabFilters && (
-            <p className="flex items-center gap-1.5 text-[11.5px] text-text-3">
-              <Info size={12} />
-              Este módulo se muestra completo: no usa filtros.
-            </p>
-          )}
-        </div>
-
-        {activeFilterChips.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {activeFilterChips.map(([key, value]) => (
-              <span
-                key={key}
-                className="inline-flex items-center gap-1 rounded-full border border-brand-soft bg-brand-tint px-2 py-0.5 text-[11px] font-semibold text-brand-text"
-              >
-                {filterLabels[key](value)}
-                <button onClick={() => removeFilter(key)} aria-label={`Quitar filtro ${key}`}>
-                  <X size={11} />
-                </button>
-              </span>
-            ))}
+          {activeFilterChips.length > 0 && (
             <button
               className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
               onClick={clearFilters}
@@ -1914,17 +1814,238 @@ export function ExecDashboard() {
               <RotateCcw size={11} />
               Limpiar todo
             </button>
-          </div>
-        )}
+          )}
 
-        <p
-          className="mt-2 flex items-center gap-1.5 text-[11px] text-text-3"
-          title="Cada pestaña muestra solo los filtros que ese módulo usa realmente."
-        >
-          <Info size={12} />
-          {FILTER_SCOPE[tab]}
-        </p>
+          {!hasTabFilters && (
+            <p className="flex items-center gap-1.5 text-[11.5px] text-text-3">
+              <Info size={12} />
+              Este módulo se muestra completo: no usa filtros.
+            </p>
+          )}
+
+          <p
+            className="ml-auto hidden items-center gap-1.5 text-[11px] text-text-3 lg:flex"
+            title="Cada pestaña muestra solo los filtros que ese módulo usa realmente."
+          >
+            <Info size={12} />
+            {FILTER_SCOPE[tab]}
+          </p>
+        </div>
       </section>
+
+      {/* Panel lateral de filtros (044b) */}
+      {fpanelOpen && hasTabFilters && (
+        <div className="fixed inset-0 z-50" role="dialog" aria-label="Filtros del tablero">
+          <div className="absolute inset-0 bg-overlay" onClick={() => setFpanelOpen(false)} />
+          <aside className="absolute inset-y-0 right-0 flex w-full max-w-[420px] flex-col border-l bg-card shadow-2xl">
+            <header className="flex items-start justify-between gap-3 border-b px-4 py-3">
+              <div>
+                <h2 className="text-[14px] font-semibold">Filtros</h2>
+                <p className="mt-0.5 text-[11px] text-text-3">{FILTER_SCOPE[tab]}</p>
+              </div>
+              <button
+                className="rounded-md border border-border-strong px-2 py-1 text-text-2 transition-colors hover:bg-accent"
+                onClick={() => setFpanelOpen(false)}
+                aria-label="Cerrar filtros"
+              >
+                <X size={14} />
+              </button>
+            </header>
+
+            <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
+              {tabFilters.date && (
+                <section>
+                  <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Tiempo
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        ["Este mes", "month", CalendarDays],
+                        ["Mes pasado", "lastMonth", History],
+                        ["Este año", "year", CalendarRange],
+                        ["Todo el tiempo", "all", InfinityIcon],
+                      ] as const
+                    ).map(([label, preset, Icon]) => {
+                      const range = presetRange(preset);
+                      const active =
+                        preset === "all"
+                          ? !filters.from && !filters.to
+                          : filters.from === range.from && filters.to === range.to;
+                      return (
+                        <button
+                          key={label}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold transition-colors",
+                            active
+                              ? "border-brand bg-brand-tint text-brand-text"
+                              : "border-border text-text-2 hover:bg-accent"
+                          )}
+                          onClick={() => {
+                            const next = { ...filters, from: range.from, to: range.to };
+                            setFilters(next);
+                            void load(next);
+                          }}
+                        >
+                          <Icon size={12} />
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={filters.from}
+                      onChange={(e) => updateFilter("from", e.target.value)}
+                      className={cn(selectClass, "flex-1")}
+                    />
+                    <span className="text-[11px] text-text-3">hasta</span>
+                    <input
+                      type="date"
+                      value={filters.to}
+                      onChange={(e) => updateFilter("to", e.target.value)}
+                      className={cn(selectClass, "flex-1")}
+                    />
+                  </div>
+                </section>
+              )}
+
+              {tabFilters.office && (
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Oficina
+                  </span>
+                  <select
+                    value={filters.office}
+                    onChange={(e) => updateFilter("office", e.target.value)}
+                    className={cn(selectClass, "w-full")}
+                  >
+                    <option value="">Todas las oficinas</option>
+                    {data.filters.offices.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {tabFilters.product && (
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Producto
+                  </span>
+                  <select
+                    value={filters.product}
+                    onChange={(e) => updateFilter("product", e.target.value)}
+                    className={cn(selectClass, "w-full")}
+                  >
+                    <option value="">Todos los productos</option>
+                    {data.filters.products.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {tabFilters.channel && (
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Canal
+                  </span>
+                  <select
+                    value={filters.channel}
+                    onChange={(e) => updateFilter("channel", e.target.value)}
+                    className={cn(selectClass, "w-full")}
+                  >
+                    <option value="">Todos los canales</option>
+                    {data.filters.channels.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {tabFilters.employee && (
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Empleado
+                  </span>
+                  <select
+                    value={filters.employee}
+                    onChange={(e) => updateFilter("employee", e.target.value)}
+                    className={cn(selectClass, "w-full")}
+                  >
+                    <option value="">Todos los empleados</option>
+                    {data.filters.employees.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {tabFilters.company && (
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Compañía
+                  </span>
+                  <select
+                    value={filters.company}
+                    onChange={(e) => updateFilter("company", e.target.value)}
+                    className={cn(selectClass, "w-full")}
+                  >
+                    <option value="">Todas las compañías</option>
+                    {data.filters.companies.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {tabFilters.search && (
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Buscar
+                  </span>
+                  <input
+                    value={filters.search}
+                    onChange={(e) => updateFilter("search", e.target.value)}
+                    placeholder="Cliente, DNI o póliza…"
+                    className="h-8 w-full rounded-md border border-border-strong bg-background px-2 text-[12.5px]"
+                  />
+                </label>
+              )}
+            </div>
+
+            <footer className="flex items-center justify-between gap-2 border-t px-4 py-3">
+              <button
+                className="inline-flex items-center gap-1 rounded-md border border-border-strong px-2.5 py-1.5 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent disabled:opacity-50"
+                onClick={clearFilters}
+                disabled={activeFilterChips.length === 0}
+                title="Quitar todos los filtros y recargar"
+              >
+                <RotateCcw size={12} />
+                Limpiar todo
+              </button>
+              <button
+                className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[12px] font-semibold text-brand-fg transition-opacity hover:opacity-90"
+                onClick={() => setFpanelOpen(false)}
+              >
+                Listo
+              </button>
+            </footer>
+          </aside>
+        </div>
+      )}
 
       {/* Módulos */}
       <nav className="flex flex-wrap gap-1.5">
