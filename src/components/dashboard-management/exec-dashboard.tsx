@@ -47,6 +47,7 @@ import {
   UserRound,
   UserRoundCheck,
   Users,
+  Wand2,
   X,
 } from "lucide-react";
 import {
@@ -72,6 +73,7 @@ import type { SystemClientSearchResultDto } from "@/lib/types";
 import { airtableTagStyle } from "@/lib/dashboard-management/airtable-colors";
 import { ClientPanel, type PanelCustomer } from "./client-panel";
 import { ProposalsPanel } from "./proposals-panel";
+import { ConstructorPanel } from "./constructor-panel";
 import { CampaignsPanel } from "./campaigns-panel";
 import { LibraryPanel } from "./library-panel";
 import { FollowUpPanel } from "./followup-panel";
@@ -972,6 +974,7 @@ const MODULE_TABS: { id: TabId; label: string; Icon: typeof TrendingUp }[] = [
   { id: "clientes", label: "Cliente 360°", Icon: Users },
   { id: "crm", label: "CRM · Venta y gestión", Icon: MessageSquareText },
   { id: "propuestas", label: "Propuestas", Icon: FileText },
+  { id: "constructor", label: "Constructor de publicaciones", Icon: Wand2 },
   { id: "seguimiento", label: "Seguimiento", Icon: History },
   { id: "campanas", label: "Campañas 360", Icon: Megaphone },
   { id: "archivos", label: "Archivos", Icon: FolderOpen },
@@ -988,7 +991,7 @@ const MODULE_GROUPS: { id: string; label: string; Icon: typeof TrendingUp; tabs:
     tabs: ["cola", "retencion", "reactivacion", "cross"],
   },
   { id: "clientes", label: "Clientes", Icon: Users, tabs: ["clientes", "seguimiento"] },
-  { id: "marketing", label: "Marketing", Icon: Megaphone, tabs: ["propuestas", "campanas", "archivos"] },
+  { id: "marketing", label: "Marketing", Icon: Megaphone, tabs: ["constructor", "propuestas", "campanas", "archivos"] },
   { id: "crm", label: "CRM", Icon: MessageSquareText, tabs: ["crm"] },
 ];
 
@@ -1010,6 +1013,7 @@ const TAB_FILTERS: Record<
   clientes: { date: false, office: true, product: false, channel: false, employee: false, company: false, search: true },
   crm: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   propuestas: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
+  constructor: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   seguimiento: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   campanas: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   archivos: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
@@ -1026,6 +1030,7 @@ const FILTER_SCOPE: Record<TabId, string> = {
   clientes: "Buscá por nombre, DNI o teléfono; la oficina acota el universo del cliente.",
   crm: "Este módulo muestra el CRM completo: los filtros de cartera y gestiones no lo afectan.",
   propuestas: "La pestaña tiene sus propios filtros: empleado asignado y estado del embudo.",
+  constructor: "El constructor arma la publicación desde cero con vista previa: elegís cliente, tipo, producto y archivos; no necesita filtros de cartera.",
   seguimiento: "El archivo comercial tiene sus propios filtros: quién gestiona, origen (cola, ficha o propuesta) y búsqueda por cliente.",
   campanas: "El tablero de campañas tiene sus propios filtros: estado del embudo y búsqueda por cliente.",
   archivos: "El contenedor de archivos es global (fotos y videos de todo el equipo): los filtros de cartera no lo afectan.",
@@ -3033,6 +3038,18 @@ export function ExecDashboard() {
               Sin resultados. Probá con otro nombre, DNI o teléfono.
             </div>
           )}
+        </div>
+      )}
+
+      {tab === "constructor" && (
+        <div className="space-y-3">
+          <HelpZone
+            help={MODULE_HELP.constructor}
+            id="constructor"
+            onAction={applyHelpAction}
+          />
+
+          <ConstructorPanel onGoToProposals={() => setTab("propuestas")} />
         </div>
       )}
 

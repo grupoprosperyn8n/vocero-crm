@@ -1,0 +1,860 @@
+"use client";
+
+/*
+ * 044b Bloque 4 — Constructor de publicaciones (subpestaña de Marketing).
+ *
+ * Wizard en pasos al estilo de la maqueta 044, montado sobre la maquinaria
+ * REAL del CRM (cero duplicación de reglas):
+ *   · /api/clients/search        → elegir el cliente del sistema (SGSA)
+ *   · /api/proposals/products    → menú de productos (sistema + CRM)
+ *   · /api/proposals/companies   → compañías auspiciantes
+ *   · /api/proposals/assets      → subir fotos y video de la publicidad
+ *   · POST /api/proposals        → crear la pieza (borrador, con su link /p/)
+ */
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Copy,
+  ExternalLink,
+  ImagePlus,
+  Loader2,
+  Search,
+  Sparkles,
+  Trash2,
+  Wand2,
+} from "lucide-react";
+
+import { PROPOSAL_KINDS, type SystemClientSearchResultDto } from "@/lib/types";
+import { cn, systemClientName } from "@/lib/utils";
+
+type ClienteSistema = SystemClientSearchResultDto["client"];
+
+type MediaItem = { id: string; mime: string; url: string; name: string };
+type ProductoOpcion = { id: string; name: string };
+type CompaniaOpcion = { id: string; name: string };
+
+type Creada = { id: string; token: string; publicUrl: string };
+
+const PASOS = ["Cliente", "Publicación", "Fotos y video", "Vista y creada"] as const;
+const MAX_MEDIA = 8;
+
+const inputClass =
+  "h-9 w-full rounded-md border border-border-strong bg-background px-2.5 text-[12.5px] text-text";
+
+export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => void }) {
+  const [paso, setPaso] = useState(0);
+
+  /* Paso 1 · cliente */
+  const [q, setQ] = useState("");
+  const [buscando, setBuscando] = useState(false);
+  const [resultados, setResultados] = useState<SystemClientSearchResultDto[]>([]);
+  const [cliente, setCliente] = useState<ClienteSistema | null>(null);
+  const [buscoAlMenosUnaVez, setBuscoAlMenosUnaVez] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* Paso 2 · publicación */
+  const [kind, setKind] = useState<string>(PROPOSAL_KINDS[0].id);
+  const [form, setForm] = useState({
+    title: "",
+    subtitle: "",
+    body: "",
+    benefit: "",
+    offer: "",
+    productRef: "",
+    productName: "",
+    companyRef: "",
+    companyName: "",
+  });
+  const [productos, setProductos] = useState<ProductoOpcion[]>([]);
+  const [companias, setCompanias] = useState<CompaniaOpcion[]>([]);
+  const [cargandoMenus, setCargandoMenus] = useState(true);
+
+  /* Paso 3 · medios */
+  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [subiendo, setSubiendo] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+
+  /* Paso 4 · crear */
+  const [creando, setCreando] = useState(false);
+  const [creada, setCreada] = useState<Creada | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copiado, setCopiado] = useState<"link" | "mensaje" | null>(null);
+
+  /* Menús reales de productos y compañías (best-effort: si fallan, queda el texto libre). */
+  useEffect(() => {
+    let vivo = true;
+    void (async () => {
+      const [p, c] = await Promise.all([
+        fetch("/api/proposals/products", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetch("/api/proposals/companies", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ]);
+      if (!vivo) return;
+      const pl = (p as { products?: Array<Record<string, unknown>> } | null)?.products;
+      if (Array.isArray(pl)) {
+        setProductos(
+          pl
+            .map((x) => ({ id: String(x.ref ?? x.id ?? ""), name: String(x.name ?? "").trim() }))
+            .filter((x) => x.id && x.name)
+        );
+      }
+      const cl = (c as { companies?: Array<Record<string, unknown>> } | null)?.companies;
+      if (Array.isArray(cl)) {
+        setCompanias(
+          cl
+            .map((x) => ({ id: String(x.id ?? x.ref ?? ""), name: String(x.name ?? "").trim() }))
+            .filter((x) => x.id && x.name)
+        );
+      }
+      setCargandoMenus(false);
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  /* Búsqueda de clientes con debounce contra el sistema de seguros. */
+  useEffect(() => {
+    if (timer.current) clearTimeout(timer.current);
+    const term = q.trim();
+    if (cliente || term.length < 2) {
+      setResultados([]);
+      return;
+    }
+    timer.current = setTimeout(async () => {
+      setBuscando(true);
+      setBuscoAlMenosUnaVez(true);
+      const res = await fetch(`/api/clients/search?q=${encodeURIComponent(term)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+      setBuscando(false);
+      setResultados(
+        ((res as { results?: SystemClientSearchResultDto[] } | null)?.results ?? []).slice(0, 8)
+      );
+    }, 450);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [q, cliente]);
+
+  const set = (campo: keyof typeof form) => (valor: string) =>
+    setForm((prev) => ({ ...prev, [campo]: valor }));
+
+  const subirArchivos = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setMediaError(null);
+    const lista = Array.from(files);
+    const espacio = MAX_MEDIA - media.length;
+    if (espacio <= 0) {
+      setMediaError(`Máximo ${MAX_MEDIA} archivos por publicación.`);
+      return;
+    }
+    setSubiendo(true);
+    const subidos: MediaItem[] = [];
+    for (const file of lista.slice(0, espacio)) {
+      if (file.size > 30 * 1024 * 1024) {
+        setMediaError(`«${file.name}» pesa más de 30 MB: achicalo e intentá de nuevo.`);
+        continue;
+      }
+      const dataUrl = await new Promise<string | null>((resolve) => {
+        const lector = new FileReader();
+        lector.onload = () => resolve(typeof lector.result === "string" ? lector.result : null);
+        lector.onerror = () => resolve(null);
+        lector.readAsDataURL(file);
+      });
+      const base64 = dataUrl?.split(",")[1];
+      if (!base64) {
+        setMediaError(`No se pudo leer «${file.name}».`);
+        continue;
+      }
+      const res = await fetch("/api/proposals/assets", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          mime: file.type || "application/octet-stream",
+          filename: file.name,
+          data: base64,
+          purpose: "media",
+        }),
+      }).catch(() => null);
+      const json = res ? ((await res.json().catch(() => null)) as { id?: string; url?: string; message?: string } | null) : null;
+      if (!res?.ok || !json?.id || !json.url) {
+        setMediaError(json?.message ?? `No se pudo guardar «${file.name}».`);
+        continue;
+      }
+      subidos.push({ id: json.id, mime: file.type, url: json.url, name: file.name });
+    }
+    if (subidos.length > 0) setMedia((prev) => [...prev, ...subidos].slice(0, MAX_MEDIA));
+    setSubiendo(false);
+    if (fileInput.current) fileInput.current.value = "";
+  };
+
+  const crear = async () => {
+    if (!cliente) return;
+    setCreando(true);
+    setError(null);
+    const res = await fetch("/api/proposals", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind,
+        clientRef: cliente.recordId,
+        clientName: systemClientName(cliente),
+        clientDni: cliente.dni ?? null,
+        clientPhone: cliente.telefono ?? null,
+        title: form.title.trim(),
+        subtitle: form.subtitle.trim() || null,
+        body: form.body.trim(),
+        benefit: form.benefit.trim() || null,
+        offer: form.offer.trim() || null,
+        productName: form.productName.trim() || null,
+        productRef: form.productRef.trim() || null,
+        companyRef: form.companyRef.trim() || null,
+        companyName: form.companyName.trim() || null,
+        ctaKind: "link",
+        assetId: media.find((m) => m.mime.startsWith("image/"))?.id ?? null,
+        mediaIds: media.map((m) => m.id),
+      }),
+    }).catch(() => null);
+    const json = res
+      ? ((await res.json().catch(() => ({}))) as {
+          proposal?: { id: string; token: string; publicUrl?: string | null };
+          message?: string;
+        })
+      : null;
+    setCreando(false);
+    if (!res?.ok || !json?.proposal) {
+      setError(json?.message ?? "No se pudo crear la publicación. Probá de nuevo.");
+      return;
+    }
+    const token = json.proposal.token;
+    setCreada({
+      id: json.proposal.id,
+      token,
+      publicUrl: json.proposal.publicUrl ?? `/p/${token}`,
+    });
+  };
+
+  const copiar = async (que: "link" | "mensaje") => {
+    if (!creada) return;
+    const url = `${window.location.origin}${creada.publicUrl}`;
+    const texto =
+      que === "link"
+        ? url
+        : `${form.title}${form.benefit ? ` — ${form.benefit}` : ""}\n\nMiralá acá 👉 ${url}`;
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiado(que);
+      setTimeout(() => setCopiado(null), 2000);
+    } catch {
+      /* sin portapapeles: el link está a la vista */
+    }
+  };
+
+  const reiniciar = () => {
+    setPaso(0);
+    setQ("");
+    setResultados([]);
+    setCliente(null);
+    setBuscoAlMenosUnaVez(false);
+    setKind(PROPOSAL_KINDS[0].id);
+    setForm({
+      title: "",
+      subtitle: "",
+      body: "",
+      benefit: "",
+      offer: "",
+      productRef: "",
+      productName: "",
+      companyRef: "",
+      companyName: "",
+    });
+    setMedia([]);
+    setMediaError(null);
+    setCreada(null);
+    setError(null);
+  };
+
+  const puedeAvanzar = useMemo(() => {
+    if (paso === 0) return Boolean(cliente);
+    if (paso === 1) return form.title.trim().length >= 3;
+    if (paso === 2) return true;
+    return true;
+  }, [paso, cliente, form.title]);
+
+  const publicUrlAbs = creada ? `${typeof window !== "undefined" ? window.location.origin : ""}${creada.publicUrl}` : "";
+  const portada = media[0];
+
+  /* ———————————————————— Éxito ———————————————————— */
+  if (creada) {
+    return (
+      <div className="rounded-lg border bg-card p-5">
+        <div className="flex items-start gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-tint text-brand-text">
+            <Sparkles size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[15px] font-semibold">¡Publicación creada!</h3>
+            <p className="mt-0.5 text-[12.5px] text-text-2">
+              {form.title} {cliente ? `· para ${systemClientName(cliente)}` : ""}. Ya tiene su página
+              pública y quedó como borrador en Propuestas, lista para derivar y enviar.
+            </p>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <a
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-brand px-3 text-[12px] font-semibold text-brand-fg transition-opacity hover:opacity-90"
+                href={creada.publicUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <ExternalLink size={13} />
+                Abrir publicación
+              </a>
+              <button
+                type="button"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong px-3 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                onClick={() => void copiar("link")}
+              >
+                {copiado === "link" ? <Check size={13} /> : <Copy size={13} />}
+                {copiado === "link" ? "Copiado" : "Copiar link"}
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong px-3 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                onClick={() => void copiar("mensaje")}
+              >
+                {copiado === "mensaje" ? <Check size={13} /> : <Copy size={13} />}
+                {copiado === "mensaje" ? "Copiado" : "Copiar mensaje de WhatsApp"}
+              </button>
+              {onGoToProposals && (
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-brand-soft bg-brand-tint px-3 text-[12px] font-semibold text-brand-text transition-opacity hover:opacity-90"
+                  onClick={onGoToProposals}
+                >
+                  Ver en Propuestas
+                </button>
+              )}
+              <button
+                type="button"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                onClick={reiniciar}
+              >
+                Crear otra
+              </button>
+            </div>
+
+            <p className="mt-2 text-[11px] text-text-3 break-all">{publicUrlAbs}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ———————————————————— Wizard ———————————————————— */
+  return (
+    <div className="space-y-3">
+      {/* Pasos */}
+      <ol className="flex flex-wrap items-center gap-1.5">
+        {PASOS.map((nombre, i) => {
+          const activo = i === paso;
+          const hecho = i < paso;
+          return (
+            <li key={nombre}>
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-semibold transition-colors",
+                  activo
+                    ? "border-brand bg-brand text-brand-fg"
+                    : hecho
+                      ? "border-brand-soft bg-brand-tint text-brand-text"
+                      : "border-border text-text-3"
+                )}
+                onClick={() => {
+                  if (i <= paso) setPaso(i);
+                }}
+                disabled={i > paso}
+              >
+                {hecho ? <Check size={12} /> : <span className="text-[10.5px] font-bold">{i + 1}</span>}
+                {nombre}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+
+      <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
+        {/* Columna de trabajo */}
+        <div className="rounded-lg border bg-card p-4">
+          {paso === 0 && (
+            <section aria-label="Elegir cliente">
+              <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
+                <Search size={14} /> ¿Para qué cliente es la publicación?
+              </h3>
+              <p className="mt-0.5 text-[11.5px] text-text-3">
+                Buscá por nombre, DNI o teléfono en el sistema de seguros.
+              </p>
+
+              {!cliente && (
+                <>
+                  <div className="relative mt-2">
+                    <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-text-3" />
+                    <input
+                      className={cn(inputClass, "pl-8")}
+                      placeholder="Ej.: GIMENEZ, 30123456, 341…"
+                      value={q}
+                      onChange={(e) => setQ(e.target.value)}
+                      autoFocus
+                    />
+                    {buscando && (
+                      <Loader2 size={14} className="absolute right-2.5 top-2.5 animate-spin text-text-3" />
+                    )}
+                  </div>
+
+                  {resultados.length > 0 && (
+                    <ul className="mt-2 max-h-72 divide-y divide-border overflow-y-auto rounded-md border">
+                      {resultados.map((r) => (
+                        <li key={r.client.recordId}>
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-accent"
+                            onClick={() => {
+                              setCliente(r.client);
+                              setResultados([]);
+                              setQ("");
+                            }}
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-[12.5px] font-semibold">
+                                {systemClientName(r.client)}
+                              </span>
+                              <span className="block text-[11px] text-text-3">
+                                {r.client.dni ? `DNI ${r.client.dni}` : "sin DNI"}
+                                {r.client.telefono ? ` · ${r.client.telefono}` : ""}
+                                {r.client.oficina ? ` · ${r.client.oficina}` : ""}
+                              </span>
+                            </span>
+                            <ArrowRight size={13} className="shrink-0 text-text-3" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {buscoAlMenosUnaVez && !buscando && resultados.length === 0 && (
+                    <p className="mt-2 rounded-md border bg-background px-3 py-2 text-[11.5px] text-text-3">
+                      Sin resultados con esa búsqueda. Probá con otro apellido o el DNI completo.
+                    </p>
+                  )}
+                </>
+              )}
+
+              {cliente && (
+                <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-brand-soft bg-brand-tint px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-[12.5px] font-semibold text-brand-text">
+                      {systemClientName(cliente)}
+                    </p>
+                    <p className="text-[11px] text-text-3">
+                      {cliente.dni ? `DNI ${cliente.dni}` : "sin DNI"}
+                      {cliente.telefono ? ` · ${cliente.telefono}` : ""}
+                      {cliente.oficina ? ` · ${cliente.oficina}` : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-md border border-border-strong bg-card px-2 py-1 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                    onClick={() => setCliente(null)}
+                  >
+                    Cambiar
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
+
+          {paso === 1 && (
+            <section aria-label="Contenido de la publicación" className="space-y-3">
+              <div>
+                <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
+                  <Wand2 size={14} /> ¿Qué ofrecemos?
+                </h3>
+                <p className="mt-0.5 text-[11.5px] text-text-3">
+                  El tipo ordena la propuesta en el embudo; el texto es lo que va a leer el cliente.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {PROPOSAL_KINDS.map((k) => (
+                  <button
+                    key={k.id}
+                    type="button"
+                    className={cn(
+                      "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-semibold transition-colors",
+                      kind === k.id
+                        ? "border-brand bg-brand-tint text-brand-text"
+                        : "border-border text-text-2 hover:bg-accent"
+                    )}
+                    onClick={() => setKind(k.id)}
+                  >
+                    <span aria-hidden>{k.emoji}</span>
+                    {k.label}
+                  </button>
+                ))}
+              </div>
+
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                  Título de la publicación *
+                </span>
+                <input
+                  className={inputClass}
+                  maxLength={120}
+                  placeholder="Ej.: Tu auto, protegido por menos"
+                  value={form.title}
+                  onChange={(e) => set("title")(e.target.value)}
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                  Bajada (opcional)
+                </span>
+                <input
+                  className={inputClass}
+                  maxLength={160}
+                  placeholder="Ej.: Cobertura completa con auxilio y sin sorpresas"
+                  value={form.subtitle}
+                  onChange={(e) => set("subtitle")(e.target.value)}
+                />
+              </label>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Producto
+                  </span>
+                  {productos.length > 0 ? (
+                    <select
+                      className={inputClass}
+                      value={form.productRef}
+                      onChange={(e) => {
+                        const sel = productos.find((x) => x.id === e.target.value);
+                        setForm((prev) => ({
+                          ...prev,
+                          productRef: sel ? sel.id : "",
+                          productName: sel ? sel.name : "",
+                        }));
+                      }}
+                    >
+                      <option value="">Sin producto puntual</option>
+                      {productos.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      className={inputClass}
+                      placeholder={cargandoMenus ? "Cargando…" : "Ej.: AUTOMOTOR"}
+                      value={form.productName}
+                      onChange={(e) => setForm((prev) => ({ ...prev, productName: e.target.value, productRef: "" }))}
+                    />
+                  )}
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Compañía auspiciante
+                  </span>
+                  {companias.length > 0 ? (
+                    <select
+                      className={inputClass}
+                      value={form.companyRef}
+                      onChange={(e) => {
+                        const sel = companias.find((x) => x.id === e.target.value);
+                        setForm((prev) => ({
+                          ...prev,
+                          companyRef: sel ? sel.id : "",
+                          companyName: sel ? sel.name : "",
+                        }));
+                      }}
+                    >
+                      <option value="">Sin compañía</option>
+                      {companias.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      className={inputClass}
+                      placeholder={cargandoMenus ? "Cargando…" : "Ej.: LA SEGUNDA"}
+                      value={form.companyName}
+                      onChange={(e) => setForm((prev) => ({ ...prev, companyName: e.target.value, companyRef: "" }))}
+                    />
+                  )}
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                  Beneficio destacado (opcional)
+                </span>
+                <input
+                  className={inputClass}
+                  maxLength={200}
+                  placeholder="Ej.: 15% de descuento en la primera cuota 🎁"
+                  value={form.benefit}
+                  onChange={(e) => set("benefit")(e.target.value)}
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                  Oferta / detalles (opcional)
+                </span>
+                <input
+                  className={inputClass}
+                  maxLength={400}
+                  placeholder="Ej.: válido hasta el 30/10 para clientes con póliza vigente"
+                  value={form.offer}
+                  onChange={(e) => set("offer")(e.target.value)}
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                  Mensaje para el cliente
+                </span>
+                <textarea
+                  className="min-h-24 w-full rounded-md border border-border-strong bg-background px-2.5 py-2 text-[12.5px] text-text"
+                  maxLength={1600}
+                  placeholder="Contá la propuesta con tus palabras: qué gana, hasta cuándo, cómo la aprovecha…"
+                  value={form.body}
+                  onChange={(e) => set("body")(e.target.value)}
+                />
+              </label>
+            </section>
+          )}
+
+          {paso === 2 && (
+            <section aria-label="Fotos y video" className="space-y-3">
+              <div>
+                <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
+                  <ImagePlus size={14} /> Fotos y video de la publicación
+                </h3>
+                <p className="mt-0.5 text-[11.5px] text-text-3">
+                  Hasta {MAX_MEDIA} archivos (imágenes o un video MP4/WebM de menos de 30 MB). La
+                  primera foto es la portada.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-dashed border-border-strong bg-background px-3 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent disabled:opacity-60"
+                onClick={() => fileInput.current?.click()}
+                disabled={subiendo || media.length >= MAX_MEDIA}
+              >
+                {subiendo ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
+                {subiendo ? "Subiendo…" : "Elegir archivos"}
+              </button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/*,video/mp4,video/webm,video/quicktime"
+                multiple
+                className="hidden"
+                onChange={(e) => void subirArchivos(e.target.files)}
+              />
+
+              {mediaError && (
+                <p className="rounded-md border border-danger-soft bg-card px-3 py-2 text-[11.5px] text-danger-text">
+                  {mediaError}
+                </p>
+              )}
+
+              {media.length > 0 && (
+                <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {media.map((m, i) => (
+                    <li key={m.id} className="group relative overflow-hidden rounded-md border bg-background">
+                      {m.mime.startsWith("video/") ? (
+                        <video className="h-28 w-full object-cover" src={m.url} muted playsInline />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img className="h-28 w-full object-cover" src={m.url} alt={m.name} />
+                      )}
+                      {i === 0 && (
+                        <span className="absolute left-1.5 top-1.5 rounded-full bg-brand px-1.5 py-0.5 text-[9.5px] font-bold text-brand-fg">
+                          Portada
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="absolute right-1.5 top-1.5 rounded-full border bg-card p-1 text-text-2 shadow-sm transition-colors hover:bg-accent"
+                        onClick={() => setMedia((prev) => prev.filter((x) => x.id !== m.id))}
+                        aria-label={`Quitar ${m.name}`}
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {media.length === 0 && !subiendo && (
+                <p className="rounded-md border bg-background px-3 py-2 text-[11.5px] text-text-3">
+                  Sin archivos la publicación igual funciona: queda el texto y el beneficio.
+                </p>
+              )}
+            </section>
+          )}
+
+          {paso === 3 && (
+            <section aria-label="Vista previa y publicación" className="space-y-3">
+              <div>
+                <h3 className="text-[13px] font-semibold">Última revisión</h3>
+                <p className="mt-0.5 text-[11.5px] text-text-3">
+                  Mirá la vista previa de al lado. Cuando esté lista, creala: queda como borrador,
+                  con su página pública y lista para derivar y enviar por WhatsApp.
+                </p>
+              </div>
+
+              <dl className="grid gap-2 text-[12px] sm:grid-cols-2">
+                <div className="rounded-md border bg-background px-3 py-2">
+                  <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-text-3">Cliente</dt>
+                  <dd className="font-semibold">{cliente ? systemClientName(cliente) : "—"}</dd>
+                </div>
+                <div className="rounded-md border bg-background px-3 py-2">
+                  <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-text-3">Tipo</dt>
+                  <dd className="font-semibold">
+                    {PROPOSAL_KINDS.find((k) => k.id === kind)?.emoji}{" "}
+                    {PROPOSAL_KINDS.find((k) => k.id === kind)?.label}
+                  </dd>
+                </div>
+                <div className="rounded-md border bg-background px-3 py-2">
+                  <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-text-3">Archivos</dt>
+                  <dd className="font-semibold">{media.length === 0 ? "Sin archivos" : `${media.length} cargado(s)`}</dd>
+                </div>
+                <div className="rounded-md border bg-background px-3 py-2">
+                  <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-text-3">Producto</dt>
+                  <dd className="font-semibold">{form.productName || "—"}</dd>
+                </div>
+              </dl>
+
+              {error && (
+                <p className="rounded-md border border-danger-soft bg-card px-3 py-2 text-[12px] text-danger-text">
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="button"
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-brand px-4 text-[12.5px] font-semibold text-brand-fg transition-opacity hover:opacity-90 disabled:opacity-60"
+                onClick={() => void crear()}
+                disabled={creando}
+              >
+                {creando ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {creando ? "Creando…" : "Crear publicación"}
+              </button>
+            </section>
+          )}
+
+          {/* Navegación */}
+          <div className="mt-4 flex items-center justify-between gap-2 border-t pt-3">
+            <button
+              type="button"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong px-3 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent disabled:opacity-40"
+              onClick={() => setPaso((p) => Math.max(0, p - 1))}
+              disabled={paso === 0}
+            >
+              <ArrowLeft size={13} />
+              Atrás
+            </button>
+            {paso < 3 && (
+              <button
+                type="button"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-brand px-3 text-[12px] font-semibold text-brand-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                onClick={() => setPaso((p) => Math.min(3, p + 1))}
+                disabled={!puedeAvanzar}
+              >
+                Siguiente
+                <ArrowRight size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Vista previa (al estilo de la pieza pública) */}
+        <aside className="rounded-lg border bg-card p-4">
+          <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
+            Vista previa
+          </p>
+          <div className="overflow-hidden rounded-xl border border-border-strong bg-gradient-to-b from-brand-tint to-card">
+            <div className="border-b border-border px-3 py-2 text-[10.5px] font-semibold text-text-2">
+              Propuesta para {cliente ? systemClientName(cliente) : "el cliente"}
+            </div>
+
+            {portada ? (
+              portada.mime.startsWith("video/") ? (
+                <video className="h-36 w-full object-cover" src={portada.url} muted playsInline />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="h-36 w-full object-cover" src={portada.url} alt="" />
+              )
+            ) : (
+              <div className="flex h-24 items-center justify-center text-[11px] text-text-3">
+                (la portada va acá)
+              </div>
+            )}
+
+            <div className="space-y-1.5 px-3 py-3">
+              <p className="text-[13.5px] font-bold leading-snug">
+                {form.title || "Título de la publicación"}
+              </p>
+              {form.subtitle && <p className="text-[11.5px] text-text-2">{form.subtitle}</p>}
+              {form.benefit && (
+                <p className="inline-flex rounded-full border border-brand-soft bg-brand-tint px-2 py-0.5 text-[10.5px] font-semibold text-brand-text">
+                  🎁 {form.benefit}
+                </p>
+              )}
+              {form.offer && <p className="text-[10.5px] text-text-3">{form.offer}</p>}
+              {form.productName && (
+                <p className="text-[10.5px] text-text-2">Producto: {form.productName}</p>
+              )}
+              {form.body && (
+                <p className="line-clamp-4 whitespace-pre-line text-[11px] text-text-2">{form.body}</p>
+              )}
+              <div className="flex items-center gap-1.5 pt-1">
+                <span className="inline-flex h-6 items-center rounded-md bg-brand px-2 text-[10.5px] font-semibold text-brand-fg">
+                  Te contacto
+                </span>
+                <span className="inline-flex h-6 items-center rounded-md border px-2 text-[10.5px] font-semibold text-text-2">
+                  WhatsApp
+                </span>
+              </div>
+              {form.companyName && (
+                <p className="pt-1 text-[9.5px] uppercase tracking-wide text-text-3">
+                  Auspicia {form.companyName}
+                </p>
+              )}
+            </div>
+          </div>
+          <p className="mt-2 text-[10.5px] text-text-3">
+            La pieza final (la que abre el cliente con el link) respeta este contenido.
+          </p>
+        </aside>
+      </div>
+    </div>
+  );
+}

@@ -8,6 +8,7 @@ export type TabId =
   | "clientes"
   | "crm"
   | "propuestas"
+  | "constructor"
   | "seguimiento"
   | "campanas"
   | "archivos"
@@ -295,6 +296,31 @@ export const MODULE_HELP: Record<
       {
         text: "Ir al panel de un cliente y crear una propuesta",
         action: { kind: "goto", tab: "clientes" },
+      },
+    ],
+  },
+
+  constructor: {
+    title: "Constructor de publicaciones",
+    tagline:
+      "Armá la publicidad paso a paso —cliente, tipo, producto, fotos y video— con vista previa en vivo.",
+    what: [
+      "Es el camino corto para crear una publicación sin abrir el panel de un cliente: elegís el cliente, el tipo de gestión, el producto y subís las fotos o el video.",
+      "A la derecha ves la vista previa mientras escribís: título, beneficio y portada, tal como los va a ver el cliente en su link.",
+    ],
+    measures: [
+      "Cuántas publicaciones creaste y de qué tipo (renovación, retención, venta cruzada…).",
+      "La pieza creada queda como borrador en Propuestas, esperando que la derives y la envíes.",
+    ],
+    usage: [
+      "Buscá al cliente por nombre, DNI o teléfono y elegilo.",
+      "Completá tipo, título, beneficio y mensaje; el producto y la compañía salen del sistema.",
+      "Subí hasta 8 fotos (o un video) y creala: queda con su página pública y su link para WhatsApp.",
+    ],
+    suggestions: [
+      {
+        text: "Ver las publicaciones creadas en Propuestas → Propuestas",
+        action: { kind: "goto", tab: "propuestas" },
       },
     ],
   },
