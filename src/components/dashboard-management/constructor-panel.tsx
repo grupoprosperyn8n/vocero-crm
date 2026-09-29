@@ -20,6 +20,7 @@ import {
   Copy,
   ExternalLink,
   ImagePlus,
+  Lightbulb,
   Loader2,
   Search,
   Sparkles,
@@ -27,6 +28,7 @@ import {
   Wand2,
 } from "lucide-react";
 
+import { ANGLE_IDS, ANGLES, TONE_IDS, TONES, type ProposalAngleId, type ProposalToneId } from "@/lib/proposals/copy";
 import { PROPOSAL_KINDS, type SystemClientSearchResultDto } from "@/lib/types";
 import { cn, systemClientName } from "@/lib/utils";
 
@@ -83,6 +85,16 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
   const [creada, setCreada] = useState<Creada | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiado, setCopiado] = useState<"link" | "mensaje" | null>(null);
+
+  /* Asistente de IA (041c) — misma mecánica que el Cliente 360°: tono +
+     concepto de venta + indicaciones libres escriben la pieza y el mensaje. */
+  const [tone, setTone] = useState<ProposalToneId>("cercana");
+  const [angle, setAngle] = useState<ProposalAngleId | null>("beneficio");
+  const [aiInstructions, setAiInstructions] = useState("");
+  const [aiBusy, setAiBusy] = useState<null | "pieza" | "mensaje">(null);
+  const [aiNotas, setAiNotas] = useState<string | null>(null);
+  const [prevForm, setPrevForm] = useState<typeof form | null>(null);
+  const [mensajeIA, setMensajeIA] = useState<string | null>(null);
 
   /* Menús reales de productos y compañías (best-effort: si fallan, queda el texto libre). */
   useEffect(() => {
@@ -147,6 +159,107 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
   const set = (campo: keyof typeof form) => (valor: string) =>
     setForm((prev) => ({ ...prev, [campo]: valor }));
 
+  /* 041c — la IA escribe la pieza con el tono y el concepto elegidos. Nunca
+     pisa el texto sin vuelta atrás: guarda el anterior para «Deshacer». */
+  const aiWrite = async () => {
+    if (!cliente) return;
+    setAiBusy("pieza");
+    setError(null);
+    const companyName = companias.find((c) => c.id === form.companyRef)?.name ?? "";
+    const res = await fetch("/api/proposals/copy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        target: "pieza",
+        tone,
+        angle,
+        instructions: aiInstructions.trim() || null,
+        clientName: systemClientName(cliente),
+        kind,
+        productName: form.productName,
+        companyName,
+        title: form.title,
+        subtitle: form.subtitle,
+        body: form.body,
+        offer: form.offer,
+        benefit: form.benefit,
+      }),
+    }).catch(() => null);
+    const data = res
+      ? ((await res.json().catch(() => ({}))) as {
+          copy?: {
+            title?: string;
+            subtitle?: string;
+            body?: string;
+            offer?: string;
+            benefit?: string;
+            notes?: string;
+          };
+          error?: { message?: string };
+          message?: string;
+        })
+      : null;
+    setAiBusy(null);
+    if (!res?.ok || !data?.copy) {
+      setError(data?.error?.message ?? data?.message ?? "No se pudo escribir con IA");
+      return;
+    }
+    const copy = data.copy;
+    setPrevForm(form);
+    setForm((f) => ({
+      ...f,
+      title: copy.title ?? f.title,
+      subtitle: copy.subtitle ?? f.subtitle,
+      body: copy.body ?? f.body,
+      offer: copy.offer ?? f.offer,
+      benefit: copy.benefit ?? f.benefit,
+    }));
+    setAiNotas(copy.notes ?? null);
+  };
+
+  /* 041c — el mensaje de WhatsApp también lo puede escribir la IA (la pieza ya creada). */
+  const aiMessage = async () => {
+    if (!creada || !cliente) return;
+    setAiBusy("mensaje");
+    setError(null);
+    const companyName = companias.find((c) => c.id === form.companyRef)?.name ?? "";
+    const url = `${window.location.origin}${creada.publicUrl}`;
+    const res = await fetch("/api/proposals/copy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        target: "mensaje",
+        tone,
+        angle,
+        instructions: aiInstructions.trim() || null,
+        clientName: systemClientName(cliente),
+        kind,
+        productName: form.productName,
+        companyName,
+        title: form.title,
+        subtitle: form.subtitle,
+        body: form.body,
+        offer: form.offer,
+        benefit: form.benefit,
+        draftMessage: (mensajeIA ?? `${form.title}${form.benefit ? ` — ${form.benefit}` : ""}`).slice(0, 900) || null,
+      }),
+    }).catch(() => null);
+    const data = res
+      ? ((await res.json().catch(() => ({}))) as {
+          copy?: { message?: string; notes?: string };
+          error?: { message?: string };
+          message?: string;
+        })
+      : null;
+    setAiBusy(null);
+    if (!res?.ok || !data?.copy?.message) {
+      setError(data?.error?.message ?? data?.message ?? "No se pudo escribir el mensaje con IA");
+      return;
+    }
+    setMensajeIA(`${data.copy.message}\n\nMiralá acá 👉 ${url}`);
+    setAiNotas(data.copy.notes ?? null);
+  };
+
   const subirArchivos = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setMediaError(null);
@@ -161,6 +274,14 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
     for (const file of lista.slice(0, espacio)) {
       if (file.size > 30 * 1024 * 1024) {
         setMediaError(`«${file.name}» pesa más de 30 MB: achicalo e intentá de nuevo.`);
+        continue;
+      }
+      if (
+        file.type.startsWith("video/") &&
+        (media.some((m) => m.mime.startsWith("video/")) ||
+          subidos.some((m) => m.mime.startsWith("video/")))
+      ) {
+        setMediaError("La publicidad lleva UN video: quitá el que está para cambiarlo");
         continue;
       }
       const dataUrl = await new Promise<string | null>((resolve) => {
@@ -248,7 +369,8 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
     const texto =
       que === "link"
         ? url
-        : `${form.title}${form.benefit ? ` — ${form.benefit}` : ""}\n\nMiralá acá 👉 ${url}`;
+        : mensajeIA ??
+          `${form.title}${form.benefit ? ` — ${form.benefit}` : ""}\n\nMiralá acá 👉 ${url}`;
     try {
       await navigator.clipboard.writeText(texto);
       setCopiado(que);
@@ -280,6 +402,12 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
     setMediaError(null);
     setCreada(null);
     setError(null);
+    setTone("cercana");
+    setAngle("beneficio");
+    setAiInstructions("");
+    setAiNotas(null);
+    setPrevForm(null);
+    setMensajeIA(null);
   };
 
   const puedeAvanzar = useMemo(() => {
@@ -333,6 +461,33 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
                 {copiado === "mensaje" ? <Check size={13} /> : <Copy size={13} />}
                 {copiado === "mensaje" ? "Copiado" : "Copiar mensaje de WhatsApp"}
               </button>
+              <div className="inline-flex h-8 items-center gap-1 rounded-md border border-border-strong pl-2 pr-1">
+                <span className="text-[11px] font-semibold text-text-3">Tono</span>
+                <select
+                  value={tone}
+                  onChange={(e) => setTone(e.target.value as ProposalToneId)}
+                  className="h-7 rounded border-0 bg-transparent pr-1 text-[12px] font-semibold text-text-2 focus:outline-none"
+                >
+                  {TONE_IDS.map((id) => (
+                    <option key={id} value={id}>
+                      {TONES[id].label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-brand-soft bg-brand-tint px-3 text-[12px] font-semibold text-brand-text transition-opacity hover:opacity-90 disabled:opacity-50"
+                onClick={() => void aiMessage()}
+                disabled={aiBusy !== null}
+              >
+                {aiBusy === "mensaje" ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Sparkles size={13} />
+                )}
+                {mensajeIA ? "Mensaje de nuevo con IA" : "Mensaje con IA"}
+              </button>
               {onGoToProposals && (
                 <button
                   type="button"
@@ -352,6 +507,15 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
             </div>
 
             <p className="mt-2 text-[11px] text-text-3 break-all">{publicUrlAbs}</p>
+            {mensajeIA && (
+              <div className="mt-3 rounded-lg border border-border-strong bg-subtle/60 p-2.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-text-3">
+                  Mensaje listo para mandar (IA)
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-[12px] text-text-2">{mensajeIA}</p>
+              </div>
+            )}
+            {aiNotas && <p className="mt-2 text-[11px] text-text-3">{aiNotas}</p>}
           </div>
         </div>
       </div>
@@ -536,6 +700,87 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
                   onChange={(e) => set("subtitle")(e.target.value)}
                 />
               </label>
+
+              {/* 041c — Escribir con IA: tono (cercana ↔ formal…) + concepto de venta */}
+              <div className="space-y-2 rounded-xl border border-border-strong bg-subtle/60 p-2.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="flex items-center gap-1 text-[12px] font-bold text-text-2">
+                    <Wand2 size={13} /> Tono
+                  </span>
+                  {TONE_IDS.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setTone(id)}
+                      aria-pressed={tone === id}
+                      title={TONES[id].hint}
+                      className={
+                        tone === id
+                          ? "rounded-full border border-brand bg-brand px-2.5 py-1 text-[12px] font-semibold text-white"
+                          : "rounded-full border bg-card px-2.5 py-1 text-[12px] font-semibold text-text-2 hover:bg-subtle"
+                      }
+                    >
+                      {TONES[id].label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="flex items-center gap-1 text-[12px] font-bold text-text-2">
+                    <Lightbulb size={13} /> Concepto de venta
+                  </span>
+                  {ANGLE_IDS.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setAngle((a) => (a === id ? null : id))}
+                      aria-pressed={angle === id}
+                      title={ANGLES[id].hint}
+                      className={
+                        angle === id
+                          ? "rounded-full border border-brand bg-brand px-2.5 py-1 text-[12px] font-semibold text-white"
+                          : "rounded-full border bg-card px-2.5 py-1 text-[12px] font-semibold text-text-2 hover:bg-subtle"
+                      }
+                    >
+                      {ANGLES[id].label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    value={aiInstructions}
+                    onChange={(e) => setAiInstructions(e.target.value)}
+                    placeholder="Indicaciones para la IA (opcional): «mencioná el 20%», «hablale de la familia»…"
+                    className="min-w-0 flex-1 rounded-lg border bg-card px-3 py-2 text-[12.5px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void aiWrite()}
+                    disabled={aiBusy !== null || !form.title.trim()}
+                    className="flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[12.5px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {aiBusy === "pieza" ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={14} />
+                    )}
+                    Escribir con IA
+                  </button>
+                  {prevForm && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm(prevForm);
+                        setPrevForm(null);
+                        setAiNotas(null);
+                      }}
+                      className="flex items-center justify-center gap-1.5 rounded-lg border border-border-strong px-3 py-2 text-[12.5px] font-semibold text-text-2 hover:bg-accent"
+                    >
+                      Deshacer
+                    </button>
+                  )}
+                </div>
+                {aiNotas && <p className="text-[11px] text-text-3">{aiNotas}</p>}
+              </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
