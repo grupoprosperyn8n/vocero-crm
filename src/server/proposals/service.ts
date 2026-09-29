@@ -753,6 +753,8 @@ export async function createProposal(input: {
   kind: string;
   /** Vacío/null = destinatario libre (grupo o persona sin ficha). */
   clientRef?: string | null;
+  /** B8 — contacto del CRM elegido como destinatario (prospecto nuevo). */
+  contactId?: string | null;
   clientName: string;
   clientDni?: string | null;
   clientPhone?: string | null;
@@ -807,6 +809,22 @@ export async function createProposal(input: {
   const token = newToken();
   const db = getDb();
 
+  /* B8 — contacto del CRM como destinatario: debe ser de la organización. */
+  if (input.contactId) {
+    const own = await db
+      .select({ id: schema.contact.id })
+      .from(schema.contact)
+      .where(
+        scoped(
+          schema.contact.organizationId,
+          input.organizationId,
+          eq(schema.contact.id, input.contactId)
+        )
+      )
+      .limit(1);
+    if (!own[0]) throw new ProposalError("Contacto inválido", 400, "bad_contact");
+  }
+
   // 042 — medios de la publicidad (carrusel + video) + compatibilidad: la
   // primera FOTO sigue siendo `assetId` (adjunto del chat, miniaturas).
   const mediaIds = await sanitizeMediaIds(input.organizationId, input.mediaIds);
@@ -832,6 +850,7 @@ export async function createProposal(input: {
     token,
     kind: input.kind,
     clientRef: input.clientRef ?? "",
+    contactId: input.contactId ?? null,
     clientName: cleanText(input.clientName, 160) ?? "Cliente",
     clientDni: cleanText(input.clientDni, 20),
     clientPhone: cleanText(input.clientPhone, 30),
@@ -1256,6 +1275,8 @@ export async function markProposalSent(input: {
       recordId: p.clientRef,
       name: p.clientName,
       phone: p.clientPhone,
+      /* B8 — si la publicación nació para un contacto del CRM, se usa ESE. */
+      contactId: p.contactId,
       userId: input.userId,
     });
     contactId = linked.contactId;

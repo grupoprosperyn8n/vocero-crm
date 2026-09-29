@@ -153,4 +153,51 @@ suite("clientes del sistema ↔ CRM — integración con copia de la BD real", (
       })
     ).rejects.toMatchObject({ code: "no_phone" });
   });
+
+  it("B8 — publicación para un contacto NUEVO del CRM: vínculo directo, sin tocar external_ref", async () => {
+    // Prospecto del CRM tal como queda tras escribir por WhatsApp: sin ficha
+    // en el sistema (`external_ref` nulo). Se elige directo en el Constructor.
+    const stamp2 = String(Date.now()).slice(-7);
+    const phone2 = `54936166${stamp2}`;
+    const cId = `ct_itb8${stamp2}`;
+    await sql`
+      INSERT INTO contact (id, organization_id, name, phone, wa_identity, channel)
+      VALUES (${cId}, ${orgId}, ${"Prospecto CRM B8"}, ${phone2}, ${phone2}, 'whatsapp')`;
+    try {
+      const r = await link.resolveOrLinkClient({
+        organizationId: orgId,
+        recordId: "",
+        name: "Prospecto CRM B8",
+        phone: phone2,
+        contactId: cId,
+      });
+      expect(r.contactId).toBe(cId);
+      expect(r.created).toBe(false);
+      expect(r.reopened).toBe(false);
+
+      const rows = await sql<{ external_ref: string | null }[]>`
+        SELECT external_ref FROM contact WHERE id = ${cId}`;
+      // Crítico: el prospecto del CRM NO se re-marca como cliente del sistema.
+      expect(rows[0]!.external_ref).toBeNull();
+
+      const conv = await sql<{ contact_id: string }[]>`
+        SELECT contact_id FROM conversation WHERE contact_id = ${cId}`;
+      expect(conv.length).toBe(1);
+      await sql`DELETE FROM conversation WHERE contact_id = ${cId}`;
+    } finally {
+      await sql`DELETE FROM contact WHERE id = ${cId}`;
+    }
+  });
+
+  it("B8 — contacto inexistente: error claro", async () => {
+    await expect(
+      link.resolveOrLinkClient({
+        organizationId: orgId,
+        recordId: "",
+        name: "Fantasma",
+        phone: "5493610000000",
+        contactId: "ct_no_existe",
+      })
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
 });

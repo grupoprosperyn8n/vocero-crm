@@ -10,7 +10,7 @@ import { phoneDigits, phoneKey } from "@/server/clients/phone";
 
 export class ClientLinkError extends Error {
   constructor(
-    public readonly code: "no_phone",
+    public readonly code: "no_phone" | "not_found",
     message: string
   ) {
     super(message);
@@ -135,6 +135,52 @@ export type ResolveClientResult = {
 };
 
 /**
+ * B8 — asegura la conversación del contacto (la reabre si estaba cerrada) y
+ * devuelve el vínculo listo para escribir. Se comparte entre el camino
+ * «cliente del sistema» (resuelto por teléfono) y «contacto del CRM».
+ */
+async function linkConversation(input: {
+  organizationId: string;
+  contactId: string;
+  created: boolean;
+  userId?: string;
+  db: ReturnType<typeof getDb>;
+}): Promise<ResolveClientResult> {
+  const existing = await input.db
+    .select({ id: schema.conversation.id, closedAt: schema.conversation.closedAt })
+    .from(schema.conversation)
+    .where(
+      scoped(
+        schema.conversation.organizationId,
+        input.organizationId,
+        eq(schema.conversation.contactId, input.contactId),
+        eq(schema.conversation.isTest, false)
+      )
+    )
+    .limit(1);
+
+  let conversationId: string;
+  let reopened = false;
+  if (existing[0]) {
+    conversationId = existing[0].id;
+    if (existing[0].closedAt) {
+      await updateConversation(input.organizationId, conversationId, {
+        reactivate: true,
+      });
+      reopened = true;
+    }
+  } else {
+    const conv = await getOrCreateConversation(input.organizationId, input.contactId);
+    conversationId = conv.id;
+  }
+
+  // 026 — si la conversación no tenía empleado a cargo, queda para quien abrió.
+  await assignIfFree(input.organizationId, conversationId, input.userId);
+
+  return { contactId: input.contactId, conversationId, created: input.created, reopened };
+}
+
+/**
  * "Abrir chat" con un cliente del sistema de gestión: encuentra (o crea) el
  * contacto del CRM por teléfono normalizado, guarda el vínculo
  * `sgsa:<recordId>` y devuelve la conversación lista para escribir. Si la
@@ -146,9 +192,39 @@ export async function resolveOrLinkClient(input: {
   recordId: string;
   name: string;
   phone: string | null;
+  /** B8 — contacto elegido del CRM (prospecto): camino directo, sin re-vincular. */
+  contactId?: string | null;
   /** 026 — quien abre el chat queda a cargo si la conversación no tenía dueño. */
   userId?: string;
 }): Promise<ResolveClientResult> {
+  const db = getDb();
+
+  // B8 — camino directo: el contacto YA es del CRM (se eligió de la lista de
+  // prospectos). Se valida que sea de la organización y se sigue con la
+  // conversación; NO se toca `external_ref` (sigue siendo un contacto del CRM).
+  if (input.contactId) {
+    const own = await db
+      .select({ id: schema.contact.id })
+      .from(schema.contact)
+      .where(
+        scoped(
+          schema.contact.organizationId,
+          input.organizationId,
+          eq(schema.contact.id, input.contactId)
+        )
+      )
+      .limit(1);
+    const cid = own[0]?.id;
+    if (!cid) throw new ClientLinkError("not_found", "El contacto no existe");
+    return linkConversation({
+      organizationId: input.organizationId,
+      contactId: cid,
+      created: false,
+      userId: input.userId,
+      db,
+    });
+  }
+
   const digits = phoneDigits(input.phone);
   if (digits.length < 8) {
     throw new ClientLinkError(
@@ -158,7 +234,6 @@ export async function resolveOrLinkClient(input: {
   }
   const key = phoneKey(digits);
   const externalRef = `sgsa:${input.recordId}`;
-  const db = getDb();
 
   const found = await db
     .select({ id: schema.contact.id, externalRef: schema.contact.externalRef })
@@ -221,36 +296,11 @@ export async function resolveOrLinkClient(input: {
     if (!contactId) throw new Error("no se pudo crear el contacto");
   }
 
-  const existing = await db
-    .select({ id: schema.conversation.id, closedAt: schema.conversation.closedAt })
-    .from(schema.conversation)
-    .where(
-      scoped(
-        schema.conversation.organizationId,
-        input.organizationId,
-        eq(schema.conversation.contactId, contactId),
-        eq(schema.conversation.isTest, false)
-      )
-    )
-    .limit(1);
-
-  let conversationId: string;
-  let reopened = false;
-  if (existing[0]) {
-    conversationId = existing[0].id;
-    if (existing[0].closedAt) {
-      await updateConversation(input.organizationId, conversationId, {
-        reactivate: true,
-      });
-      reopened = true;
-    }
-  } else {
-    const conv = await getOrCreateConversation(input.organizationId, contactId);
-    conversationId = conv.id;
-  }
-
-  // 026 — si la conversación no tenía empleado a cargo, queda para quien abrió.
-  await assignIfFree(input.organizationId, conversationId, input.userId);
-
-  return { contactId, conversationId, created, reopened };
+  return linkConversation({
+    organizationId: input.organizationId,
+    contactId,
+    created,
+    userId: input.userId,
+    db,
+  });
 }

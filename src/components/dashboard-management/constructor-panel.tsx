@@ -23,6 +23,7 @@ import {
   ImagePlus,
   Lightbulb,
   Loader2,
+  MessageCircle,
   Search,
   Sparkles,
   Trash2,
@@ -82,9 +83,16 @@ export function ConstructorPanel({
   const [resultados, setResultados] = useState<SystemClientSearchResultDto[]>([]);
   const [cliente, setCliente] = useState<ClienteSistema | null>(null);
   const [buscoAlMenosUnaVez, setBuscoAlMenosUnaVez] = useState(false);
-  /* Destinatario libre: grupo de clientes, grupo de personas o alguien sin ficha. */
-  const [modoLibre, setModoLibre] = useState(false);
+  /* Destinatario: cliente del sistema · contacto del CRM · grupo o persona sin ficha. */
+  const [modo, setModo] = useState<"sistema" | "libre" | "crm">("sistema");
   const [libreNombre, setLibreNombre] = useState("");
+  /* B8 — contactos del CRM (prospectos nuevos: escribieron por WhatsApp). */
+  const [crmQ, setCrmQ] = useState("");
+  const [crmResultados, setCrmResultados] = useState<
+    Array<{ id: string; name: string; phone: string | null; stageName?: string | null }>
+  >([]);
+  const [crmBuscando, setCrmBuscando] = useState(false);
+  const [crmContactId, setCrmContactId] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* Paso 2 · publicación */
@@ -243,6 +251,42 @@ export function ConstructorPanel({
       if (timer.current) clearTimeout(timer.current);
     };
   }, [q, cliente]);
+
+  /* B8 — búsqueda de contactos del CRM (prospectos nuevos) con debounce. */
+  useEffect(() => {
+    const term = crmQ.trim();
+    if (modo !== "crm" || term.length < 2) {
+      setCrmResultados([]);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(async () => {
+      setCrmBuscando(true);
+      const res = await fetch(`/api/contacts?q=${encodeURIComponent(term)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+      if (!alive) return;
+      setCrmBuscando(false);
+      setCrmResultados(
+        (
+          (res as
+            | {
+                contacts?: Array<{
+                  id: string;
+                  name: string;
+                  phone: string | null;
+                  stageName?: string | null;
+                }>;
+              }
+            | null)?.contacts ?? []
+        ).slice(0, 8)
+      );
+    }, 400);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [modo, crmQ]);
 
   const set = (campo: keyof typeof form) => (valor: string) =>
     setForm((prev) => ({ ...prev, [campo]: valor }));
@@ -415,6 +459,7 @@ export function ConstructorPanel({
       body: JSON.stringify({
         kind,
         clientRef: cliente.recordId,
+        contactId: crmContactId ?? undefined,
         clientName: systemClientName(cliente),
         clientDni: cliente.dni ?? null,
         clientPhone: cliente.telefono ?? null,
@@ -482,8 +527,11 @@ export function ConstructorPanel({
     setResultados([]);
     setCliente(null);
     setBuscoAlMenosUnaVez(false);
-    setModoLibre(false);
+    setModo("sistema");
     setLibreNombre("");
+    setCrmQ("");
+    setCrmResultados([]);
+    setCrmContactId(null);
     setKind(kindDefault ?? PROPOSAL_KINDS[0].id);
     setForm({
       title: "",
@@ -789,8 +837,8 @@ export function ConstructorPanel({
                 <Users size={14} /> ¿Para quién es la publicación?
               </h3>
               <p className="mt-0.5 text-[11.5px] text-text-3">
-                Un cliente del sistema, un grupo, o alguien sin ficha — con todas las herramientas
-                igual.
+                Un cliente del sistema, un contacto nuevo del CRM, un grupo o alguien sin ficha —
+                con todas las herramientas igual.
               </p>
 
               {!cliente && (
@@ -800,12 +848,12 @@ export function ConstructorPanel({
                       type="button"
                       className={cn(
                         "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-semibold transition-colors",
-                        !modoLibre
+                        modo === "sistema"
                           ? "border-brand bg-brand-tint text-brand-text"
                           : "border-border text-text-2 hover:bg-accent"
                       )}
                       onClick={() => {
-                        setModoLibre(false);
+                        setModo("sistema");
                         setQ("");
                         setResultados([]);
                       }}
@@ -816,12 +864,28 @@ export function ConstructorPanel({
                       type="button"
                       className={cn(
                         "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-semibold transition-colors",
-                        modoLibre
+                        modo === "crm"
                           ? "border-brand bg-brand-tint text-brand-text"
                           : "border-border text-text-2 hover:bg-accent"
                       )}
                       onClick={() => {
-                        setModoLibre(true);
+                        setModo("crm");
+                        setQ("");
+                        setResultados([]);
+                      }}
+                    >
+                      <MessageCircle size={12} /> Contacto del CRM
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-semibold transition-colors",
+                        modo === "libre"
+                          ? "border-brand bg-brand-tint text-brand-text"
+                          : "border-border text-text-2 hover:bg-accent"
+                      )}
+                      onClick={() => {
+                        setModo("libre");
                         setQ("");
                         setResultados([]);
                       }}
@@ -830,7 +894,7 @@ export function ConstructorPanel({
                     </button>
                   </div>
 
-                  {!modoLibre ? (
+                  {modo === "sistema" ? (
                     <>
                       <div className="relative mt-2">
                         <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-text-3" />
@@ -855,6 +919,7 @@ export function ConstructorPanel({
                                 className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-accent"
                                 onClick={() => {
                                   setCliente(r.client);
+                                  setCrmContactId(null);
                                   setResultados([]);
                                   setQ("");
                                 }}
@@ -883,7 +948,7 @@ export function ConstructorPanel({
                         </p>
                       )}
                     </>
-                  ) : (
+                  ) : modo === "libre" ? (
                     <div className="mt-2 space-y-2">
                       <label className="block">
                         <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
@@ -918,6 +983,66 @@ export function ConstructorPanel({
                         textos base, fotos, logo) funcionan igual.
                       </p>
                     </div>
+                  ) : (
+                    <div className="mt-2 space-y-1.5">
+                      <div className="relative">
+                        <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-text-3" />
+                        <input
+                          className={cn(inputClass, "pl-8")}
+                          placeholder="Buscar prospecto por nombre o teléfono…"
+                          value={crmQ}
+                          onChange={(e) => setCrmQ(e.target.value)}
+                          autoFocus
+                        />
+                        {crmBuscando && (
+                          <Loader2 size={14} className="absolute right-2.5 top-2.5 animate-spin text-text-3" />
+                        )}
+                      </div>
+                      {crmResultados.length > 0 && (
+                        <ul className="max-h-72 divide-y divide-border overflow-y-auto rounded-md border">
+                          {crmResultados.map((c) => (
+                            <li key={c.id}>
+                              <button
+                                type="button"
+                                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-accent"
+                                onClick={() => {
+                                  setCliente({
+                                    recordId: "",
+                                    nombre: c.name,
+                                    apellido: "",
+                                    telefono: c.phone,
+                                  } as unknown as ClienteSistema);
+                                  setCrmContactId(c.id);
+                                  setCrmQ("");
+                                  setCrmResultados([]);
+                                }}
+                              >
+                                <span className="min-w-0">
+                                  <span className="block truncate text-[12.5px] font-semibold">
+                                    {c.name}
+                                  </span>
+                                  <span className="block text-[11px] text-text-3">
+                                    {c.phone ? `📱 ${c.phone}` : "sin teléfono"}
+                                    {c.stageName ? ` · ${c.stageName}` : ""}
+                                  </span>
+                                </span>
+                                <ArrowRight size={13} className="shrink-0 text-text-3" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {crmQ.trim().length >= 2 && !crmBuscando && crmResultados.length === 0 && (
+                        <p className="rounded-md border bg-background px-3 py-2 text-[11.5px] text-text-3">
+                          Sin resultados entre los contactos del CRM. Probá otro nombre o teléfono —
+                          o usá «Grupo o persona sin ficha».
+                        </p>
+                      )}
+                      <p className="text-[11px] text-text-3">
+                        Prospectos nuevos del CRM (escribieron por WhatsApp, todavía no están en el
+                        sistema): la publicación queda vinculada a su chat para mandársela.
+                      </p>
+                    </div>
                   )}
                 </>
               )}
@@ -933,16 +1058,24 @@ export function ConstructorPanel({
                         ? `${cliente.dni ? `DNI ${cliente.dni}` : "sin DNI"}${
                             cliente.telefono ? ` · ${cliente.telefono}` : ""
                           }${cliente.oficina ? ` · ${cliente.oficina}` : ""}`
-                        : "destinatario libre — sin ficha en el sistema"}
+                        : crmContactId
+                          ? `contacto del CRM — prospecto${
+                              cliente.telefono ? ` · ${cliente.telefono}` : ""
+                            }`
+                          : "destinatario libre — sin ficha en el sistema"}
                     </p>
                   </div>
                   <button
                     type="button"
                     className="shrink-0 rounded-md border border-border-strong bg-card px-2 py-1 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
                     onClick={() => {
-                      if (!cliente.recordId) {
+                      if (crmContactId) {
+                        setModo("crm");
+                        setCrmQ(systemClientName(cliente));
+                        setCrmContactId(null);
+                      } else if (!cliente.recordId) {
                         setLibreNombre(systemClientName(cliente));
-                        setModoLibre(true);
+                        setModo("libre");
                       }
                       setCliente(null);
                     }}
