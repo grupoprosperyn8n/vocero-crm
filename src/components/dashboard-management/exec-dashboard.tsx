@@ -6,6 +6,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowUpRight,
+  BarChart3,
   Blend,
   Bot,
   BriefcaseBusiness,
@@ -977,6 +978,20 @@ const MODULE_TABS: { id: TabId; label: string; Icon: typeof TrendingUp }[] = [
   { id: "migracion", label: "Calidad de datos", Icon: Database },
 ];
 
+/* 044b Bloque 3 — Agrupación de módulos (Camino 3 de la maqueta): 5 grupos con subpestañas. */
+const MODULE_GROUPS: { id: string; label: string; Icon: typeof TrendingUp; tabs: TabId[] }[] = [
+  { id: "analisis", label: "Análisis", Icon: BarChart3, tabs: ["pulso", "cartera", "migracion"] },
+  {
+    id: "oportunidades",
+    label: "Oportunidades",
+    Icon: Target,
+    tabs: ["cola", "retencion", "reactivacion", "cross"],
+  },
+  { id: "clientes", label: "Clientes", Icon: Users, tabs: ["clientes", "seguimiento"] },
+  { id: "marketing", label: "Marketing", Icon: Megaphone, tabs: ["propuestas", "campanas", "archivos"] },
+  { id: "crm", label: "CRM", Icon: MessageSquareText, tabs: ["crm"] },
+];
+
 /* Filtros ideales por pestaña — verificado contra el motor real (buildDashboard):
    · oficina / producto / empleado / compañía → cartera y gestiones de todos los módulos de cartera.
    · fecha y canal → solo las gestiones del Pulso (listas altas / anulaciones / siniestros).
@@ -1024,6 +1039,8 @@ export function ExecDashboard() {
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({ ...EMPTY_FILTERS });
   const [fpanelOpen, setFpanelOpen] = useState(false);
+  // 044b Bloque 3 — último módulo visitado dentro de cada grupo (subpestañas).
+  const [subPorGrupo, setSubPorGrupo] = useState<Partial<Record<string, TabId>>>({});
   const [tab, setTab] = useState<TabId>("pulso");
 
   // 044b — el panel de filtros se cierra con Escape.
@@ -1155,6 +1172,18 @@ export function ExecDashboard() {
         : MODULE_TABS.filter((t) => t.id !== "campanas"),
     [viewerRole]
   );
+
+  /* 044b Bloque 3 — grupos visibles (según rol) y grupo activo derivado del módulo. */
+  const groupsVisibles = useMemo(
+    () =>
+      MODULE_GROUPS.map((g) => ({
+        ...g,
+        tabs: g.tabs.filter((t) => visibleTabs.some((v) => v.id === t)),
+      })).filter((g) => g.tabs.length > 0),
+    [visibleTabs]
+  );
+  const grupoActivo = groupsVisibles.find((g) => g.tabs.includes(tab)) ?? groupsVisibles[0];
+  const tabMeta = (id: TabId) => MODULE_TABS.find((t) => t.id === id)!;
 
   /* — Lecturas con IA — */
 
@@ -2047,24 +2076,66 @@ export function ExecDashboard() {
         </div>
       )}
 
-      {/* Módulos */}
-      <nav className="flex flex-wrap gap-1.5">
-        {visibleTabs.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            className={cn(
-              "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] font-semibold transition-colors",
-              tab === id
-                ? "border-brand bg-brand text-brand-fg shadow-sm"
-                : "border-brand-soft bg-brand-tint text-brand-text hover:bg-brand-soft"
-            )}
-            onClick={() => setTab(id)}
-          >
-            <Icon size={14} />
-            {label}
-          </button>
-        ))}
+      {/* Módulos — grupos + subpestañas (044b Bloque 3: Camino 3 de la maqueta) */}
+      <nav className="space-y-1.5">
+        <div className="flex flex-wrap gap-1.5">
+          {groupsVisibles.map(({ id, label, Icon, tabs }) => {
+            const activo = grupoActivo?.id === id;
+            return (
+              <button
+                key={id}
+                className={cn(
+                  "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-semibold transition-colors",
+                  activo
+                    ? "border-brand bg-brand text-brand-fg shadow-sm"
+                    : "border-border bg-card text-text-2 hover:bg-accent"
+                )}
+                onClick={() => {
+                  const guardado = subPorGrupo[id];
+                  const destino = guardado && tabs.includes(guardado) ? guardado : tabs[0]!;
+                  setTab(destino);
+                }}
+                aria-current={activo ? "page" : undefined}
+              >
+                <Icon size={14} />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {grupoActivo?.tabs.map((tid) => {
+            const sub = tabMeta(tid);
+            const subActiva = tab === tid;
+            return (
+              <button
+                key={tid}
+                className={cn(
+                  "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-semibold transition-colors",
+                  subActiva
+                    ? "border-brand-soft bg-brand-tint text-brand-text"
+                    : "border-transparent text-text-3 hover:bg-accent hover:text-text-2"
+                )}
+                onClick={() => {
+                  setTab(tid);
+                  setSubPorGrupo((prev) => ({ ...prev, [grupoActivo.id]: tid }));
+                }}
+              >
+                <sub.Icon size={13} />
+                {sub.label}
+              </button>
+            );
+          })}
+        </div>
       </nav>
+
+      {/* Migas del módulo activo */}
+      <p className="flex items-center gap-1.5 text-[11px] text-text-3">
+        <span>{grupoActivo?.label}</span>
+        <span aria-hidden>›</span>
+        <span className="font-semibold text-text-2">{tabMeta(tab).label}</span>
+      </p>
 
       {/* Módulo activo */}
       {tab === "pulso" && (
