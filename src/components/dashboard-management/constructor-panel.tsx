@@ -19,14 +19,19 @@ import {
   Check,
   Copy,
   ExternalLink,
+  FolderOpen,
   ImagePlus,
   Lightbulb,
   Loader2,
   Search,
   Sparkles,
   Trash2,
+  UserRound,
+  Users,
   Wand2,
 } from "lucide-react";
+
+import { LibraryPicker } from "./library-picker";
 
 import { ANGLE_IDS, ANGLES, TONE_IDS, TONES, type ProposalAngleId, type ProposalToneId } from "@/lib/proposals/copy";
 import { PROPOSAL_KINDS, type SystemClientSearchResultDto } from "@/lib/types";
@@ -46,8 +51,30 @@ const MAX_MEDIA = 8;
 const inputClass =
   "h-9 w-full rounded-md border border-border-strong bg-background px-2.5 text-[12.5px] text-text";
 
-export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => void }) {
-  const [paso, setPaso] = useState(0);
+export type ClienteFijoWizard = {
+  recordId: string;
+  nombre: string;
+  apellido?: string | null;
+  dni?: string | null;
+  telefono?: string | null;
+};
+
+export function ConstructorPanel({
+  onGoToProposals,
+  clienteFijo,
+  kindDefault,
+  embebido = false,
+  onCreated,
+}: {
+  onGoToProposals?: () => void;
+  /** Modo Cliente 360: el cliente ya está elegido y el wizard arranca en «Publicación». */
+  clienteFijo?: ClienteFijoWizard;
+  kindDefault?: string;
+  embebido?: boolean;
+  onCreated?: (proposal: Record<string, unknown>) => void;
+}) {
+  const pasoInicial = clienteFijo ? 1 : 0;
+  const [paso, setPaso] = useState(pasoInicial);
 
   /* Paso 1 · cliente */
   const [q, setQ] = useState("");
@@ -55,10 +82,13 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
   const [resultados, setResultados] = useState<SystemClientSearchResultDto[]>([]);
   const [cliente, setCliente] = useState<ClienteSistema | null>(null);
   const [buscoAlMenosUnaVez, setBuscoAlMenosUnaVez] = useState(false);
+  /* Destinatario libre: grupo de clientes, grupo de personas o alguien sin ficha. */
+  const [modoLibre, setModoLibre] = useState(false);
+  const [libreNombre, setLibreNombre] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* Paso 2 · publicación */
-  const [kind, setKind] = useState<string>(PROPOSAL_KINDS[0].id);
+  const [kind, setKind] = useState<string>(kindDefault ?? PROPOSAL_KINDS[0].id);
   const [form, setForm] = useState({
     title: "",
     subtitle: "",
@@ -69,16 +99,45 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
     productName: "",
     companyRef: "",
     companyName: "",
+    ctaLabel: "",
+    ctaUrl: "",
+    ctaKind: "link" as "link" | "pdf" | "agenda",
   });
   const [productos, setProductos] = useState<ProductoOpcion[]>([]);
   const [companias, setCompanias] = useState<CompaniaOpcion[]>([]);
   const [cargandoMenus, setCargandoMenus] = useState(true);
+  /* Textos base por tipo (los mismos que usa el Cliente 360°). */
+  const [plantillas, setPlantillas] = useState<
+    Array<{
+      kind: string;
+      label?: string | null;
+      title?: string;
+      subtitle?: string | null;
+      body?: string;
+      productName?: string | null;
+      productRef?: string | null;
+      offer?: string | null;
+      benefit?: string | null;
+      ctaLabel?: string | null;
+      ctaUrl?: string | null;
+      ctaKind?: "link" | "pdf" | "agenda";
+      assetId?: string | null;
+      logoAssetId?: string | null;
+    }>
+  >([]);
+
+  /* Logo del emisor + contenedor universal (biblioteca), igual que el panel real. */
+  const [logoAssetId, setLogoAssetId] = useState<string | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [subiendoLogo, setSubiendoLogo] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<null | "media" | "logo">(null);
 
   /* Paso 3 · medios */
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [subiendo, setSubiendo] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const logoInput = useRef<HTMLInputElement | null>(null);
 
   /* Paso 4 · crear */
   const [creando, setCreando] = useState(false);
@@ -96,15 +155,18 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
   const [prevForm, setPrevForm] = useState<typeof form | null>(null);
   const [mensajeIA, setMensajeIA] = useState<string | null>(null);
 
-  /* Menús reales de productos y compañías (best-effort: si fallan, queda el texto libre). */
+  /* Menús reales de productos y compañías + textos base (best-effort). */
   useEffect(() => {
     let vivo = true;
     void (async () => {
-      const [p, c] = await Promise.all([
+      const [p, c, t] = await Promise.all([
         fetch("/api/proposals/products", { cache: "no-store" })
           .then((r) => (r.ok ? r.json() : null))
           .catch(() => null),
         fetch("/api/proposals/companies", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetch("/api/proposals/templates", { cache: "no-store" })
           .then((r) => (r.ok ? r.json() : null))
           .catch(() => null),
       ]);
@@ -123,6 +185,32 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
           cl
             .map((x) => ({ id: String(x.id ?? x.ref ?? ""), name: String(x.name ?? "").trim() }))
             .filter((x) => x.id && x.name)
+        );
+      }
+      const tl = (t as { templates?: Array<Record<string, unknown>> } | null)?.templates;
+      if (Array.isArray(tl)) {
+        setPlantillas(
+          tl
+            .map((x) => ({
+              kind: String(x.kind ?? ""),
+              label: x.label ? String(x.label) : null,
+              title: x.title ? String(x.title) : "",
+              subtitle: x.subtitle ? String(x.subtitle) : "",
+              body: x.body ? String(x.body) : "",
+              productName: x.productName ? String(x.productName) : "",
+              productRef: x.productRef ? String(x.productRef) : "",
+              offer: x.offer ? String(x.offer) : "",
+              benefit: x.benefit ? String(x.benefit) : "",
+              ctaLabel: x.ctaLabel ? String(x.ctaLabel) : "",
+              ctaUrl: x.ctaUrl ? String(x.ctaUrl) : "",
+              ctaKind: (x.ctaKind === "pdf" || x.ctaKind === "agenda" ? x.ctaKind : "link") as
+                | "link"
+                | "pdf"
+                | "agenda",
+              assetId: x.assetId ? String(x.assetId) : null,
+              logoAssetId: x.logoAssetId ? String(x.logoAssetId) : null,
+            }))
+            .filter((x) => x.kind)
         );
       }
       setCargandoMenus(false);
@@ -339,20 +427,28 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
         productRef: form.productRef.trim() || null,
         companyRef: form.companyRef.trim() || null,
         companyName: form.companyName.trim() || null,
-        ctaKind: "link",
+        ctaKind: form.ctaKind,
+        ctaLabel: form.ctaLabel.trim() || null,
+        ctaUrl: form.ctaUrl.trim() || null,
+        logoAssetId,
         assetId: media.find((m) => m.mime.startsWith("image/"))?.id ?? null,
         mediaIds: media.map((m) => m.id),
       }),
     }).catch(() => null);
     const json = res
       ? ((await res.json().catch(() => ({}))) as {
-          proposal?: { id: string; token: string; publicUrl?: string | null };
+          proposal?: { id: string; token: string; publicUrl?: string | null } & Record<string, unknown>;
           message?: string;
         })
       : null;
     setCreando(false);
     if (!res?.ok || !json?.proposal) {
       setError(json?.message ?? "No se pudo crear la publicación. Probá de nuevo.");
+      return;
+    }
+    /* Cliente 360 (embebido): el panel que contiene sigue con derivar/enviar. */
+    if (embebido && onCreated) {
+      onCreated(json.proposal as unknown as Record<string, unknown>);
       return;
     }
     const token = json.proposal.token;
@@ -381,12 +477,14 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
   };
 
   const reiniciar = () => {
-    setPaso(0);
+    setPaso(pasoInicial);
     setQ("");
     setResultados([]);
     setCliente(null);
     setBuscoAlMenosUnaVez(false);
-    setKind(PROPOSAL_KINDS[0].id);
+    setModoLibre(false);
+    setLibreNombre("");
+    setKind(kindDefault ?? PROPOSAL_KINDS[0].id);
     setForm({
       title: "",
       subtitle: "",
@@ -397,6 +495,9 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
       productName: "",
       companyRef: "",
       companyName: "",
+      ctaLabel: "",
+      ctaUrl: "",
+      ctaKind: "link",
     });
     setMedia([]);
     setMediaError(null);
@@ -408,7 +509,123 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
     setAiNotas(null);
     setPrevForm(null);
     setMensajeIA(null);
+    setLogoAssetId(null);
+    setLogoPreview(null);
+    setPickerTarget(null);
   };
+
+  /* Textos base por tipo — misma mecánica que el Cliente 360° (applyTemplate). */
+  const applyTemplate = (t: (typeof plantillas)[number] | undefined) => {
+    if (!t) return;
+    setForm((f) => ({
+      ...f,
+      title: t.title ?? f.title,
+      subtitle: t.subtitle ?? "",
+      body: t.body ?? "",
+      productName: t.productName ?? "",
+      productRef: t.productRef ?? "",
+      offer: t.offer ?? "",
+      benefit: t.benefit ?? "",
+      ctaLabel: t.ctaLabel ?? "",
+      ctaUrl: t.ctaUrl ?? "",
+      ctaKind: t.ctaKind ?? "link",
+    }));
+    if (t.assetId && media.length === 0) {
+      setMedia([{ id: t.assetId, url: `/api/public/propuesta/img/${t.assetId}`, mime: "image/*", name: "Portada" }]);
+    }
+    if (t.logoAssetId) {
+      setLogoAssetId(t.logoAssetId);
+      setLogoPreview(`/api/public/propuesta/img/${t.logoAssetId}`);
+    }
+  };
+
+  const elegirKind = (id: string) => {
+    setKind(id);
+    applyTemplate(plantillas.find((t) => t.kind === id));
+  };
+
+  /* Logo del emisor — subida real con purpose «logo» (igual que el panel real). */
+  const subirLogo = async (file: File | null | undefined) => {
+    if (!file) return;
+    setMediaError(null);
+    setSubiendoLogo(true);
+    const dataUrl = await new Promise<string | null>((resolve) => {
+      const lector = new FileReader();
+      lector.onload = () => resolve(typeof lector.result === "string" ? lector.result : null);
+      lector.onerror = () => resolve(null);
+      lector.readAsDataURL(file);
+    });
+    const base64 = dataUrl?.split(",")[1];
+    if (!base64) {
+      setMediaError(`No se pudo leer «${file.name}».`);
+      setSubiendoLogo(false);
+      return;
+    }
+    const res = await fetch("/api/proposals/assets", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mime: file.type || "image/png",
+        filename: file.name,
+        data: base64,
+        purpose: "logo",
+      }),
+    }).catch(() => null);
+    const json = res ? ((await res.json().catch(() => null)) as { id?: string; url?: string; message?: string } | null) : null;
+    setSubiendoLogo(false);
+    if (!res?.ok || !json?.id) {
+      setMediaError(json?.message ?? "No se pudo guardar el logo.");
+      return;
+    }
+    setLogoAssetId(json.id);
+    setLogoPreview(json.url ?? `/api/public/propuesta/img/${json.id}`);
+  };
+
+  /* Elegir del contenedor universal (biblioteca) — fotos/video o el logo. */
+  const pickFromLibrary = async (asset: { id: string; mime: string }) => {
+    if (!pickerTarget) return;
+    setMediaError(null);
+    const res = await fetch("/api/proposals/assets", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        libraryId: asset.id,
+        purpose: pickerTarget === "media" ? "media" : "logo",
+      }),
+    }).catch(() => null);
+    const json = res ? ((await res.json().catch(() => null)) as { id?: string; mime?: string; url?: string; message?: string } | null) : null;
+    if (!res?.ok || !json?.id) {
+      setMediaError(json?.message ?? "No se pudo usar el archivo del contenedor");
+      setPickerTarget(null);
+      return;
+    }
+    const mime = json.mime ?? asset.mime;
+    if (pickerTarget === "media") {
+      if (mime.startsWith("video/") && media.some((m) => m.mime.startsWith("video/"))) {
+        setMediaError("La publicidad lleva UN video: quitá el que está para cambiarlo");
+        setPickerTarget(null);
+        return;
+      }
+      setMedia((prev) => [...prev, { id: json.id!, mime, url: json.url ?? `/api/public/propuesta/img/${json.id}`, name: "Del contenedor" }].slice(0, MAX_MEDIA));
+    } else {
+      setLogoAssetId(json.id);
+      setLogoPreview(json.url ?? `/api/public/propuesta/img/${json.id}`);
+    }
+    setPickerTarget(null);
+  };
+
+  /* Cliente 360: el cliente del panel entra como si lo hubieran elegido en el paso 1. */
+  useEffect(() => {
+    if (clienteFijo && !cliente) setCliente(clienteFijo as unknown as ClienteSistema);
+  }, [clienteFijo, cliente]);
+
+  /* Textos base: al cargar las plantillas, si el título está vacío, aplicar los del tipo. */
+  useEffect(() => {
+    if (plantillas.length && !form.title.trim()) {
+      applyTemplate(plantillas.find((x) => x.kind === kind));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plantillas]);
 
   const puedeAvanzar = useMemo(() => {
     if (paso === 0) return Boolean(cliente);
@@ -527,7 +744,15 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
     <div className="space-y-3">
       {/* Pasos */}
       <ol className="flex flex-wrap items-center gap-1.5">
+        {clienteFijo && (
+          <li>
+            <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 text-[11.5px] font-semibold text-emerald-700">
+              <Check size={12} /> {clienteFijo.nombre}
+            </span>
+          </li>
+        )}
         {PASOS.map((nombre, i) => {
+          if (clienteFijo && i === 0) return null;
           const activo = i === paso;
           const hecho = i < paso;
           return (
@@ -547,7 +772,7 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
                 }}
                 disabled={i > paso}
               >
-                {hecho ? <Check size={12} /> : <span className="text-[10.5px] font-bold">{i + 1}</span>}
+                {hecho ? <Check size={12} /> : <span className="text-[10.5px] font-bold">{clienteFijo ? i : i + 1}</span>}
                 {nombre}
               </button>
             </li>
@@ -559,64 +784,140 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
         {/* Columna de trabajo */}
         <div className="rounded-lg border bg-card p-4">
           {paso === 0 && (
-            <section aria-label="Elegir cliente">
+            <section aria-label="Elegir destinatario">
               <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
-                <Search size={14} /> ¿Para qué cliente es la publicación?
+                <Users size={14} /> ¿Para quién es la publicación?
               </h3>
               <p className="mt-0.5 text-[11.5px] text-text-3">
-                Buscá por nombre, DNI o teléfono en el sistema de seguros.
+                Un cliente del sistema, un grupo, o alguien sin ficha — con todas las herramientas
+                igual.
               </p>
 
               {!cliente && (
                 <>
-                  <div className="relative mt-2">
-                    <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-text-3" />
-                    <input
-                      className={cn(inputClass, "pl-8")}
-                      placeholder="Ej.: GIMENEZ, 30123456, 341…"
-                      value={q}
-                      onChange={(e) => setQ(e.target.value)}
-                      autoFocus
-                    />
-                    {buscando && (
-                      <Loader2 size={14} className="absolute right-2.5 top-2.5 animate-spin text-text-3" />
-                    )}
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      className={cn(
+                        "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-semibold transition-colors",
+                        !modoLibre
+                          ? "border-brand bg-brand-tint text-brand-text"
+                          : "border-border text-text-2 hover:bg-accent"
+                      )}
+                      onClick={() => {
+                        setModoLibre(false);
+                        setQ("");
+                        setResultados([]);
+                      }}
+                    >
+                      <UserRound size={12} /> Cliente del sistema
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-semibold transition-colors",
+                        modoLibre
+                          ? "border-brand bg-brand-tint text-brand-text"
+                          : "border-border text-text-2 hover:bg-accent"
+                      )}
+                      onClick={() => {
+                        setModoLibre(true);
+                        setQ("");
+                        setResultados([]);
+                      }}
+                    >
+                      <Users size={12} /> Grupo o persona sin ficha
+                    </button>
                   </div>
 
-                  {resultados.length > 0 && (
-                    <ul className="mt-2 max-h-72 divide-y divide-border overflow-y-auto rounded-md border">
-                      {resultados.map((r) => (
-                        <li key={r.client.recordId}>
-                          <button
-                            type="button"
-                            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-accent"
-                            onClick={() => {
-                              setCliente(r.client);
-                              setResultados([]);
-                              setQ("");
-                            }}
-                          >
-                            <span className="min-w-0">
-                              <span className="block truncate text-[12.5px] font-semibold">
-                                {systemClientName(r.client)}
-                              </span>
-                              <span className="block text-[11px] text-text-3">
-                                {r.client.dni ? `DNI ${r.client.dni}` : "sin DNI"}
-                                {r.client.telefono ? ` · ${r.client.telefono}` : ""}
-                                {r.client.oficina ? ` · ${r.client.oficina}` : ""}
-                              </span>
-                            </span>
-                            <ArrowRight size={13} className="shrink-0 text-text-3" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  {!modoLibre ? (
+                    <>
+                      <div className="relative mt-2">
+                        <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-text-3" />
+                        <input
+                          className={cn(inputClass, "pl-8")}
+                          placeholder="Ej.: GIMENEZ, 30123456, 341…"
+                          value={q}
+                          onChange={(e) => setQ(e.target.value)}
+                          autoFocus
+                        />
+                        {buscando && (
+                          <Loader2 size={14} className="absolute right-2.5 top-2.5 animate-spin text-text-3" />
+                        )}
+                      </div>
 
-                  {buscoAlMenosUnaVez && !buscando && resultados.length === 0 && (
-                    <p className="mt-2 rounded-md border bg-background px-3 py-2 text-[11.5px] text-text-3">
-                      Sin resultados con esa búsqueda. Probá con otro apellido o el DNI completo.
-                    </p>
+                      {resultados.length > 0 && (
+                        <ul className="mt-2 max-h-72 divide-y divide-border overflow-y-auto rounded-md border">
+                          {resultados.map((r) => (
+                            <li key={r.client.recordId}>
+                              <button
+                                type="button"
+                                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-accent"
+                                onClick={() => {
+                                  setCliente(r.client);
+                                  setResultados([]);
+                                  setQ("");
+                                }}
+                              >
+                                <span className="min-w-0">
+                                  <span className="block truncate text-[12.5px] font-semibold">
+                                    {systemClientName(r.client)}
+                                  </span>
+                                  <span className="block text-[11px] text-text-3">
+                                    {r.client.dni ? `DNI ${r.client.dni}` : "sin DNI"}
+                                    {r.client.telefono ? ` · ${r.client.telefono}` : ""}
+                                    {r.client.oficina ? ` · ${r.client.oficina}` : ""}
+                                  </span>
+                                </span>
+                                <ArrowRight size={13} className="shrink-0 text-text-3" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
+                      {buscoAlMenosUnaVez && !buscando && resultados.length === 0 && (
+                        <p className="mt-2 rounded-md border bg-background px-3 py-2 text-[11.5px] text-text-3">
+                          Sin resultados con esa búsqueda. Probá con otro apellido o el DNI completo
+                          — o pasá a «Grupo o persona sin ficha».
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      <label className="block">
+                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                          ¿Para quién es? *
+                        </span>
+                        <input
+                          className={inputClass}
+                          maxLength={160}
+                          placeholder="Ej.: Vecinos de Funes · Juan Pérez (referido) · Gym Los Cedros"
+                          value={libreNombre}
+                          onChange={(e) => setLibreNombre(e.target.value)}
+                          autoFocus
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        disabled={libreNombre.trim().length < 2}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-brand bg-brand px-3 text-[12px] font-semibold text-brand-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                        onClick={() => {
+                          setCliente({
+                            recordId: "",
+                            nombre: libreNombre.trim(),
+                          } as unknown as ClienteSistema);
+                          setLibreNombre("");
+                        }}
+                      >
+                        <Check size={13} /> Usar «{libreNombre.trim() || "…"}»
+                      </button>
+                      <p className="text-[11px] text-text-3">
+                        Queda «Para {libreNombre.trim() || "…"}», sin ficha: sirve para un grupo de
+                        clientes, de personas, o alguien que no es cliente. Todas las opciones (IA,
+                        textos base, fotos, logo) funcionan igual.
+                      </p>
+                    </div>
                   )}
                 </>
               )}
@@ -628,15 +929,23 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
                       {systemClientName(cliente)}
                     </p>
                     <p className="text-[11px] text-text-3">
-                      {cliente.dni ? `DNI ${cliente.dni}` : "sin DNI"}
-                      {cliente.telefono ? ` · ${cliente.telefono}` : ""}
-                      {cliente.oficina ? ` · ${cliente.oficina}` : ""}
+                      {cliente.recordId
+                        ? `${cliente.dni ? `DNI ${cliente.dni}` : "sin DNI"}${
+                            cliente.telefono ? ` · ${cliente.telefono}` : ""
+                          }${cliente.oficina ? ` · ${cliente.oficina}` : ""}`
+                        : "destinatario libre — sin ficha en el sistema"}
                     </p>
                   </div>
                   <button
                     type="button"
                     className="shrink-0 rounded-md border border-border-strong bg-card px-2 py-1 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
-                    onClick={() => setCliente(null)}
+                    onClick={() => {
+                      if (!cliente.recordId) {
+                        setLibreNombre(systemClientName(cliente));
+                        setModoLibre(true);
+                      }
+                      setCliente(null);
+                    }}
                   >
                     Cambiar
                   </button>
@@ -656,6 +965,34 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
                 </p>
               </div>
 
+              {plantillas.length > 0 && (
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Textos base (opcional)
+                  </span>
+                  <select
+                    className={inputClass}
+                    value=""
+                    onChange={(e) => {
+                      const t = plantillas.find((x) => x.kind === e.target.value);
+                      if (t) {
+                        setKind(t.kind);
+                        applyTemplate(t);
+                      }
+                    }}
+                  >
+                    <option value="">Elegí un texto base para precargar la pieza…</option>
+                    {plantillas.map((t) => (
+                      <option key={t.kind} value={t.kind}>
+                        {t.label?.trim() ||
+                          PROPOSAL_KINDS.find((k) => k.id === t.kind)?.label ||
+                          t.kind}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
               <div className="flex flex-wrap gap-1.5">
                 {PROPOSAL_KINDS.map((k) => (
                   <button
@@ -667,7 +1004,7 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
                         ? "border-brand bg-brand-tint text-brand-text"
                         : "border-border text-text-2 hover:bg-accent"
                     )}
-                    onClick={() => setKind(k.id)}
+                    onClick={() => elegirKind(k.id)}
                   >
                     <span aria-hidden>{k.emoji}</span>
                     {k.label}
@@ -878,6 +1215,57 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
                 />
               </label>
 
+              {/* Botón de la pieza — mismos campos que el panel real. */}
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Botón — tipo
+                  </span>
+                  <select
+                    className={inputClass}
+                    value={form.ctaKind}
+                    onChange={(e) => {
+                      const v = e.target.value as "link" | "pdf" | "agenda";
+                      setForm((prev) => ({
+                        ...prev,
+                        ctaKind: v,
+                        ctaLabel:
+                          prev.ctaLabel ||
+                          (v === "agenda" ? "Agendar videollamada" : v === "pdf" ? "Ver la propuesta" : "Ver más"),
+                      }));
+                    }}
+                  >
+                    <option value="link">Enlace</option>
+                    <option value="pdf">PDF</option>
+                    <option value="agenda">Agendar</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Botón — texto (opcional)
+                  </span>
+                  <input
+                    className={inputClass}
+                    maxLength={60}
+                    placeholder="Ej.: Quiero cotizar"
+                    value={form.ctaLabel}
+                    onChange={(e) => set("ctaLabel")(e.target.value)}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                    Botón — enlace (opcional)
+                  </span>
+                  <input
+                    className={inputClass}
+                    maxLength={500}
+                    placeholder="https://…"
+                    value={form.ctaUrl}
+                    onChange={(e) => set("ctaUrl")(e.target.value)}
+                  />
+                </label>
+              </div>
+
               <label className="block">
                 <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
                   Mensaje para el cliente
@@ -905,15 +1293,25 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
                 </p>
               </div>
 
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-dashed border-border-strong bg-background px-3 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent disabled:opacity-60"
-                onClick={() => fileInput.current?.click()}
-                disabled={subiendo || media.length >= MAX_MEDIA}
-              >
-                {subiendo ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
-                {subiendo ? "Subiendo…" : "Elegir archivos"}
-              </button>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-md border border-dashed border-border-strong bg-background px-3 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent disabled:opacity-60"
+                  onClick={() => fileInput.current?.click()}
+                  disabled={subiendo || media.length >= MAX_MEDIA}
+                >
+                  {subiendo ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
+                  {subiendo ? "Subiendo…" : "Elegir archivos"}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-md border border-dashed border-border-strong bg-background px-3 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent disabled:opacity-60"
+                  onClick={() => setPickerTarget("media")}
+                  disabled={subiendo || media.length >= MAX_MEDIA}
+                >
+                  <FolderOpen size={14} /> Elegir del contenedor
+                </button>
+              </div>
               <input
                 ref={fileInput}
                 type="file"
@@ -962,6 +1360,63 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
                   Sin archivos la publicación igual funciona: queda el texto y el beneficio.
                 </p>
               )}
+
+              {/* Logo del emisor (opcional) — subida propia o del contenedor. */}
+              <div className="rounded-lg border bg-background p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[12px] font-semibold">Logo del emisor (opcional)</p>
+                    <p className="text-[11px] text-text-3">
+                      Va arriba de la pieza en la página pública, junto a la marca.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong bg-card px-2.5 text-[11.5px] font-semibold text-text-2 transition-colors hover:bg-accent disabled:opacity-60"
+                      onClick={() => logoInput.current?.click()}
+                      disabled={subiendoLogo}
+                    >
+                      {subiendoLogo ? <Loader2 size={12} className="animate-spin" /> : <ImagePlus size={12} />}
+                      {subiendoLogo ? "Subiendo…" : "Subir logo"}
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong bg-card px-2.5 text-[11.5px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                      onClick={() => setPickerTarget("logo")}
+                    >
+                      <FolderOpen size={12} /> Del contenedor
+                    </button>
+                  </div>
+                </div>
+                <input
+                  ref={logoInput}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => void subirLogo(e.target.files?.[0])}
+                />
+                {logoPreview && (
+                  <div className="mt-2 flex items-center gap-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      className="h-10 w-10 rounded-md border bg-card object-contain p-0.5"
+                      src={logoPreview}
+                      alt="Logo del emisor"
+                    />
+                    <button
+                      type="button"
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-border-strong bg-card px-2 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                      onClick={() => {
+                        setLogoAssetId(null);
+                        setLogoPreview(null);
+                      }}
+                    >
+                      <Trash2 size={11} /> Quitar
+                    </button>
+                  </div>
+                )}
+              </div>
             </section>
           )}
 
@@ -1020,8 +1475,8 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
             <button
               type="button"
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong px-3 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent disabled:opacity-40"
-              onClick={() => setPaso((p) => Math.max(0, p - 1))}
-              disabled={paso === 0}
+              onClick={() => setPaso((p) => Math.max(pasoInicial, p - 1))}
+              disabled={paso === pasoInicial}
             >
               <ArrowLeft size={13} />
               Atrás
@@ -1100,6 +1555,20 @@ export function ConstructorPanel({ onGoToProposals }: { onGoToProposals?: () => 
           </p>
         </aside>
       </div>
+
+      {/* Contenedor universal — elegir fotos/video o el logo desde el estante compartido. */}
+      {pickerTarget && (
+        <LibraryPicker
+          title={
+            pickerTarget === "media"
+              ? "Elegir del contenedor — fotos y video"
+              : "Elegir del contenedor — logo"
+          }
+          kind={pickerTarget === "media" ? "all" : "image"}
+          onPick={(asset) => pickFromLibrary({ id: asset.id, mime: asset.mime })}
+          onClose={() => setPickerTarget(null)}
+        />
+      )}
     </div>
   );
 }

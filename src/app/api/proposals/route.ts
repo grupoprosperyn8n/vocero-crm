@@ -40,7 +40,8 @@ export const GET = withAuth(async (session, req: Request) => {
 
 const createSchema = z.object({
   kind: z.string().trim().min(1).max(40),
-  clientRef: z.string().trim().min(4).max(40),
+  /** Puede venir vacío: publicaciones para un grupo o alguien sin ficha en el sistema. */
+  clientRef: z.string().trim().max(40).optional().nullable(),
   clientName: z.string().trim().min(1).max(160),
   clientDni: z.string().trim().max(20).optional().nullable(),
   clientPhone: z.string().trim().max(30).optional().nullable(),

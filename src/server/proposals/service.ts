@@ -751,7 +751,8 @@ export async function createProposal(input: {
   organizationId: string;
   userId: string;
   kind: string;
-  clientRef: string;
+  /** Vacío/null = destinatario libre (grupo o persona sin ficha). */
+  clientRef?: string | null;
   clientName: string;
   clientDni?: string | null;
   clientPhone?: string | null;
@@ -785,7 +786,8 @@ export async function createProposal(input: {
   ) {
     throw new ProposalError("Tipo de propuesta desconocido", 400, "bad_kind");
   }
-  if (!/^rec[A-Za-z0-9]{4,30}$/.test(input.clientRef)) {
+  /* Puede ser para un grupo o alguien sin ficha: sin recordId, con nombre libre. */
+  if (input.clientRef && !/^rec[A-Za-z0-9]{4,30}$/.test(input.clientRef)) {
     throw new ProposalError("Cliente inválido", 400, "bad_client");
   }
   const tpl = await getTemplate(input.organizationId, input.kind);
@@ -829,7 +831,7 @@ export async function createProposal(input: {
     organizationId: input.organizationId,
     token,
     kind: input.kind,
-    clientRef: input.clientRef,
+    clientRef: input.clientRef ?? "",
     clientName: cleanText(input.clientName, 160) ?? "Cliente",
     clientDni: cleanText(input.clientDni, 20),
     clientPhone: cleanText(input.clientPhone, 30),

@@ -15,25 +15,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
-  Building2,
   CalendarClock,
   ClipboardCopy,
   ExternalLink,
   FileText,
-  FolderOpen,
   History as HistoryIcon,
-  Image as ImageIcon,
-  Lightbulb,
   Loader2,
   MessageCircle,
   PanelRightOpen,
   PauseCircle,
   Pencil,
   Phone,
-  Play,
   PlayCircle,
   RefreshCw,
-  RotateCcw,
   Send,
   Sparkles,
   Target,
@@ -57,22 +51,18 @@ import {
 import {
   PROPOSAL_KINDS,
   type ClientFichaDto,
-  type ProductOptionDto,
   type ProposalDto,
   type ProposalPriority,
-  type ProposalTemplateDto,
   type TeamGroupLiteDto,
   type TeamMemberLiteDto,
 } from "@/lib/types";
 import {
-  ANGLES,
-  ANGLE_IDS,
   TONES,
   TONE_IDS,
   type ProposalAngleId,
   type ProposalToneId,
 } from "@/lib/proposals/copy";
-import { LibraryPicker, type PickerAsset } from "./library-picker";
+import { ConstructorPanel } from "./constructor-panel";
 import {
   ProposalEditModal,
   ProposalHistoryModal,
@@ -880,31 +870,9 @@ function ProposalFlow({
   onProposalChange: () => void;
   onRefreshFicha: () => Promise<void>;
 }) {
-  const [templates, setTemplates] = useState<ProposalTemplateDto[]>([]);
-  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
-  // 042f — «Tipo de producto»: del sistema (Airtable) + los propios del CRM.
-  const [products, setProducts] = useState<ProductOptionDto[]>([]);
-  const [productsOk, setProductsOk] = useState(true);
   const [directory, setDirectory] = useState<TeamMemberLiteDto[] | null>(null);
 
-  const [kind, setKind] = useState(kindDefault);
-  const [form, setForm] = useState({
-    title: "",
-    subtitle: "",
-    body: "",
-    productName: "",
-    productRef: "",
-    offer: "",
-    benefit: "",
-    ctaLabel: "",
-    ctaUrl: "",
-    ctaKind: "link" as "link" | "pdf" | "agenda",
-    companyRef: "",
-    assetId: null as string | null,
-    logoAssetId: null as string | null,
-  });
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [busy, setBusy] = useState<null | "save" | "derive" | "send">(null);
+  const [busy, setBusy] = useState<null | "derive" | "send">(null);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<ProposalDto | null>(null);
   const [deriveOpen, setDeriveOpen] = useState(false);
@@ -918,95 +886,23 @@ function ProposalFlow({
   const [targetKind, setTargetKind] = useState<"ia" | "employee" | "group">("ia");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [draftText, setDraftText] = useState("");
-  // 041c — asistente de redacción: tono + concepto de venta.
-  const [tone, setTone] = useState<ProposalToneId>("cercana");
-  const [angle, setAngle] = useState<ProposalAngleId | null>("beneficio");
-  const [aiInstructions, setAiInstructions] = useState("");
-  const [aiBusy, setAiBusy] = useState<null | "pieza" | "mensaje">(null);
+  // 041c — el mensaje se reescribe con IA por tono (concepto de venta «beneficio»).
+  const angle: ProposalAngleId | null = "beneficio";
+  const aiInstructions = "";
+  const [aiBusy, setAiBusy] = useState<null | "mensaje">(null);
   const [aiNotes, setAiNotes] = useState<string | null>(null);
-  const [prevForm, setPrevForm] = useState<typeof form | null>(null);
   const [msgTone, setMsgTone] = useState<ProposalToneId>("cercana");
-  // 041d — elegir la imagen desde el contenedor universal.
-  // 042 — "media": el carrusel de fotos + video de la publicidad.
-  const [pickerTarget, setPickerTarget] = useState<null | "media" | "logoAssetId">(null);
-  // 042 — medios de la publicidad EN ORDEN (fotos y un video mp4/webm).
-  const [media, setMedia] = useState<{ id: string; url: string; mime: string }[]>([]);
-  const [mediaBusy, setMediaBusy] = useState(false);
 
   // 041b — derivan (y ven todo el seguimiento) propietario, administrador y
   // gerente, los mismos roles que en las alertas.
   const canDerive =
     viewerRole === "owner" || viewerRole === "admin" || viewerRole === "manager";
 
-  const tpl = templates.find((t) => t.kind === kind);
-
-  // Prefill desde la plantilla del tipo
-  const applyTemplate = useCallback(
-    (t: ProposalTemplateDto | undefined) => {
-      if (!t) return;
-      setForm((f) => ({
-        ...f,
-        title: t.title,
-        subtitle: t.subtitle ?? "",
-        body: t.body,
-        productName: t.productName ?? "",
-        productRef: t.productRef ?? "",
-        offer: t.offer ?? "",
-        benefit: t.benefit ?? "",
-        ctaLabel: t.ctaLabel ?? "",
-        ctaUrl: t.ctaUrl ?? "",
-        ctaKind: t.ctaKind,
-        assetId: null,
-        logoAssetId: null,
-      }));
-      setMedia(
-        t.assetId
-          ? [{ id: t.assetId, url: `/api/public/propuesta/img/${t.assetId}`, mime: "image/*" }]
-          : []
-      );
-      setLogoPreview(t.logoAssetId ? `/api/public/propuesta/img/${t.logoAssetId}` : null);
-    },
-    []
-  );
 
   // 042f — al elegir del menú de productos queda el vínculo al sistema/CRM;
   // texto libre sigue permitido (sin vínculo).
-  const syncProductName = useCallback(
-    (value: string) => {
-      const match = products.find((p) => p.name === value.trim());
-      setForm((f) => ({ ...f, productName: value, productRef: match ? match.ref : "" }));
-    },
-    [products]
-  );
 
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      const [tRes, cRes, pRes] = await Promise.all([
-        fetch("/api/proposals/templates", { cache: "no-store" }).catch(() => null),
-        fetch("/api/proposals/companies", { cache: "no-store" }).catch(() => null),
-        fetch("/api/proposals/products", { cache: "no-store" }).catch(() => null),
-      ]);
-      if (!alive) return;
-      const tData = tRes ? ((await tRes.json().catch(() => ({}))) as { templates?: ProposalTemplateDto[] }) : {};
-      const cData = cRes ? ((await cRes.json().catch(() => ({}))) as { companies?: { id: string; name: string }[] }) : {};
-      const pData = pRes
-        ? ((await pRes.json().catch(() => ({}))) as { products?: ProductOptionDto[]; systemOk?: boolean })
-        : {};
-      setTemplates(tData.templates ?? []);
-      setCompanies(cData.companies ?? []);
-      setProducts(pData.products ?? []);
-      setProductsOk(pData.systemOk !== false);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
 
-  useEffect(() => {
-    if (templates.length && !form.title) applyTemplate(templates.find((t) => t.kind === kind));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templates]);
 
   // 041b — directorio (empleados), grupos del chat y mi rol: quién deriva.
   useEffect(() => {
@@ -1028,213 +924,21 @@ function ProposalFlow({
     };
   }, []);
 
-  const uploadImage = async (file: File) => {
-    setError(null);
-    if (file.size > 8_000_000) {
-      setError("La imagen no puede pasar de 8 MB");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = String(reader.result ?? "");
-      const base64 = dataUrl.split(",")[1] ?? "";
-      const res = await fetch("/api/proposals/assets", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mime: file.type || "image/png", filename: file.name, data: base64 }),
-      }).catch(() => null);
-      const data = res ? ((await res.json().catch(() => ({}))) as { id?: string; message?: string }) : null;
-      if (!res?.ok || !data?.id) {
-        setError(data?.message ?? "No se pudo subir la imagen");
-        return;
-      }
-      setForm((f) => ({ ...f, logoAssetId: data.id! }));
-      setLogoPreview(dataUrl);
-    };
-    reader.readAsDataURL(file);
-  };
 
   // 042 — medios de la publicidad: sube fotos y UN video (mp4/webm, hasta
   // 40 MB). Uno por uno para que el error sea del archivo puntual y el resto
   // entre igual. Quedan en orden: carrusel.
-  const uploadMediaFiles = async (files: FileList) => {
-    setError(null);
-    setMediaBusy(true);
-    const agregados: { id: string; url: string; mime: string }[] = [];
-    const yaHayVideo = media.some((m) => m.mime.startsWith("video/"));
-    let videoEnLote = false;
-    for (const file of Array.from(files)) {
-      const esVideo =
-        file.type.startsWith("video/") || /\.(mp4|webm|mov)$/i.test(file.name);
-      if (esVideo && (yaHayVideo || videoEnLote)) {
-        setError("La publicidad lleva UN video: quitá el que está para cambiarlo");
-        continue;
-      }
-      const tope = esVideo ? 40 * 1024 * 1024 : 8 * 1024 * 1024;
-      if (file.size > tope) {
-        setError(
-          esVideo
-            ? "El video no puede pasar de 40 MB"
-            : "La imagen no puede pasar de 8 MB"
-        );
-        continue;
-      }
-      const base64 = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result ?? "").split(",")[1] ?? "");
-        reader.readAsDataURL(file);
-      });
-      const res = await fetch("/api/proposals/assets", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          mime: file.type || (esVideo ? "video/mp4" : "image/png"),
-          filename: file.name,
-          data: base64,
-          purpose: "media",
-        }),
-      }).catch(() => null);
-      const data = res
-        ? ((await res.json().catch(() => ({}))) as { id?: string; mime?: string; message?: string })
-        : null;
-      if (!res?.ok || !data?.id) {
-        setError(data?.message ?? "No se pudo subir el archivo");
-        continue;
-      }
-      agregados.push({
-        id: data.id,
-        url: `/api/public/propuesta/img/${data.id}`,
-        mime: data.mime ?? (file.type || "image/png"),
-      });
-      if (esVideo) videoEnLote = true;
-    }
-    setMediaBusy(false);
-    if (agregados.length) {
-      setMedia((prev) => [...prev, ...agregados].slice(0, 8));
-      setError(null);
-    }
-  };
 
-  const removeMedia = (id: string) => {
-    setMedia((prev) => prev.filter((m) => m.id !== id));
-  };
 
   // 041c — la IA escribe la pieza con el tono y el concepto elegidos. Nunca
   // pisa el texto sin vuelta atrás: guarda el anterior para «Deshacer».
-  const aiWrite = async () => {
-    setAiBusy("pieza");
-    setError(null);
-    const companyName =
-      companies.find((c) => c.id === form.companyRef)?.name ?? "";
-    const res = await fetch("/api/proposals/copy", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        target: "pieza",
-        tone,
-        angle,
-        instructions: aiInstructions.trim() || null,
-        clientName: customer.name,
-        kind,
-        productName: form.productName,
-        companyName,
-        title: form.title,
-        subtitle: form.subtitle,
-        body: form.body,
-        offer: form.offer,
-        benefit: form.benefit,
-        ctaLabel: form.ctaLabel,
-      }),
-    }).catch(() => null);
-    const data = res
-      ? ((await res.json().catch(() => ({}))) as {
-          copy?: {
-            title?: string;
-            subtitle?: string;
-            body?: string;
-            offer?: string;
-            benefit?: string;
-            ctaLabel?: string;
-            notes?: string;
-          };
-          message?: string;
-        })
-      : null;
-    setAiBusy(null);
-    if (!res?.ok || !data?.copy) {
-      setError(data?.message ?? "No se pudo escribir con IA");
-      return;
-    }
-    const copy = data.copy;
-    setPrevForm(form);
-    setForm((f) => ({
-      ...f,
-      title: copy.title ?? f.title,
-      subtitle: copy.subtitle ?? f.subtitle,
-      body: copy.body ?? f.body,
-      offer: copy.offer ?? f.offer,
-      benefit: copy.benefit ?? f.benefit,
-      ctaLabel: copy.ctaLabel ?? f.ctaLabel,
-    }));
-    setAiNotes(copy.notes ?? null);
-  };
 
   // 041c — reescribir el mensaje de WhatsApp con otro tono, antes de mandarlo.
-  const pickFromLibrary = async (asset: PickerAsset) => {
-    if (!pickerTarget) return;
-
-    setError(null);
-
-    const esMedia = pickerTarget === "media";
-
-    const res = await fetch("/api/proposals/assets", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        libraryId: asset.id,
-        purpose: esMedia ? "media" : "logo",
-      }),
-    });
-    const data = (await res.json().catch(() => null)) as
-      | { id?: string; mime?: string; error?: { message?: string } }
-      | null;
-
-    if (!res.ok || !data?.id) {
-      setError(
-        data?.error?.message ??
-          `No se pudo usar ${esMedia ? "el archivo" : "la imagen"} del contenedor`
-      );
-      setPickerTarget(null);
-      return;
-    }
-
-    const copiada = data.id;
-
-    if (esMedia) {
-      const mime = data.mime ?? asset.mime;
-      if (mime.startsWith("video/") && media.some((m) => m.mime.startsWith("video/"))) {
-        setError("La publicidad lleva UN video: quitá el que está para cambiarlo");
-        setPickerTarget(null);
-        return;
-      }
-      setMedia((prev) => [
-        ...prev,
-        { id: copiada, url: `/api/public/propuesta/img/${copiada}`, mime },
-      ]);
-    } else {
-      setForm((f) => ({ ...f, logoAssetId: copiada }));
-      setLogoPreview(`/api/public/propuesta/img/${copiada}`);
-    }
-
-    setPickerTarget(null);
-  };
 
   const rewriteMessage = async (targetTone: ProposalToneId) => {
     if (!created) return;
     setAiBusy("mensaje");
     setError(null);
-    const companyName =
-      companies.find((c) => c.id === form.companyRef)?.name ?? "";
     const res = await fetch("/api/proposals/copy", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1244,15 +948,15 @@ function ProposalFlow({
         angle,
         instructions: aiInstructions.trim() || null,
         clientName: customer.name,
-        kind,
-        productName: form.productName,
-        companyName,
-        title: form.title,
-        subtitle: form.subtitle,
-        body: form.body,
-        offer: form.offer,
-        benefit: form.benefit,
-        ctaLabel: form.ctaLabel,
+        kind: created.kind,
+        productName: created.productName ?? "",
+        companyName: created.companyName ?? "",
+        title: created.title ?? "",
+        subtitle: created.subtitle ?? "",
+        body: created.body ?? "",
+        offer: created.offer ?? "",
+        benefit: created.benefit ?? "",
+        ctaLabel: created.ctaLabel ?? "",
         draftMessage: draftText,
       }),
     }).catch(() => null);
@@ -1273,45 +977,6 @@ function ProposalFlow({
     setAiNotes(data.copy.notes ?? null);
   };
 
-  const save = async () => {
-    setBusy("save");
-    setError(null);
-    const res = await fetch("/api/proposals", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        kind,
-        clientRef: customer.id,
-        clientName: customer.name,
-        clientDni: ficha.dni ?? customer.dni ?? null,
-        clientPhone: ficha.telefono ?? customer.phone ?? null,
-        title: form.title,
-        subtitle: form.subtitle || null,
-        body: form.body,
-        productName: form.productName || null,
-        productRef: form.productRef || null,
-        offer: form.offer || null,
-        benefit: form.benefit || null,
-        ctaLabel: form.ctaLabel || null,
-        ctaUrl: form.ctaUrl || null,
-        ctaKind: form.ctaKind,
-        companyRef: form.companyRef || null,
-        assetId: media.find((m) => m.mime.startsWith("image/"))?.id ?? null,
-        mediaIds: media.map((m) => m.id),
-        logoAssetId: form.logoAssetId,
-        tone,
-        angle,
-      }),
-    }).catch(() => null);
-    const data = res ? ((await res.json().catch(() => ({}))) as { proposal?: ProposalDto; message?: string }) : null;
-    setBusy(null);
-    if (!res?.ok || !data?.proposal) {
-      setError(data?.message ?? "No se pudo crear la propuesta");
-      return;
-    }
-    setCreated(data.proposal);
-    onProposalChange();
-  };
 
   const openDerive = async () => {
     setDeriveOpen(true);
@@ -1390,352 +1055,25 @@ function ProposalFlow({
 
   return (
     <div className="mt-3 space-y-3 rounded-xl border bg-card p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="text-[11.5px] font-bold text-text-2">Tipo:</label>
-        <select
-          value={kind}
-          onChange={(e) => {
-            const k = e.target.value;
-            setKind(k);
-            applyTemplate(templates.find((t) => t.kind === k));
+      {!created && (
+        <ConstructorPanel
+          clienteFijo={{
+            recordId: customer.id,
+            nombre: customer.name,
+            apellido: null,
+            dni: ficha.dni ?? customer.dni ?? null,
+            telefono: ficha.telefono ?? customer.phone ?? null,
           }}
-          className="rounded-lg border bg-card px-2 py-1.5 text-[12.5px] font-semibold text-text-1"
-        >
-          {(templates.length
-            ? templates.map((t) => ({
-                id: t.kind,
-                label: t.label?.trim() || kindTag(t.kind).label,
-                emoji: kindTag(t.kind).emoji,
-              }))
-            : PROPOSAL_KINDS.map((k) => ({ id: k.id, label: k.label, emoji: k.emoji }))
-          ).map((k) => (
-            <option key={k.id} value={k.id}>
-              {k.emoji} {k.label}
-              {k.id === kindDefault ? " (sugerida)" : ""}
-            </option>
-          ))}
-        </select>
-        {tpl?.updatedAt === null && (
-          <span className="text-[11px] text-text-3">usando textos base de fábrica</span>
-        )}
-        <span className="ml-auto text-[11px] text-text-3">
-          La pieza pública se genera al guardar
-        </span>
-      </div>
-
-      <div className="grid gap-2 md:grid-cols-2">
-        <input
-          value={form.title}
-          onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-          placeholder="Título"
-          className="rounded-lg border bg-card px-3 py-2 text-[13px] font-semibold"
-        />
-        <input
-          value={form.subtitle}
-          onChange={(e) => setForm((f) => ({ ...f, subtitle: e.target.value }))}
-          placeholder="Subtítulo"
-          className="rounded-lg border bg-card px-3 py-2 text-[13px]"
-        />
-      </div>
-      {/* 041c — Escribir con IA: tono (cercana ↔ formal…) + concepto de venta */}
-      <div className="space-y-2 rounded-xl border border-border-strong bg-subtle/60 p-2.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="flex items-center gap-1 text-[12px] font-bold text-text-2">
-            <Wand2 size={13} /> Tono
-          </span>
-          {TONE_IDS.map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTone(id)}
-              aria-pressed={tone === id}
-              title={TONES[id].hint}
-              className={
-                tone === id
-                  ? "rounded-full border border-brand bg-brand px-2.5 py-1 text-[12px] font-semibold text-white"
-                  : "rounded-full border bg-card px-2.5 py-1 text-[12px] font-semibold text-text-2 hover:bg-subtle"
-              }
-            >
-              {TONES[id].label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="flex items-center gap-1 text-[12px] font-bold text-text-2">
-            <Lightbulb size={13} /> Concepto de venta
-          </span>
-          {ANGLE_IDS.map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setAngle((a) => (a === id ? null : id))}
-              aria-pressed={angle === id}
-              title={ANGLES[id].hint}
-              className={
-                angle === id
-                  ? "rounded-full border border-brand bg-brand px-2.5 py-1 text-[12px] font-semibold text-white"
-                  : "rounded-full border bg-card px-2.5 py-1 text-[12px] font-semibold text-text-2 hover:bg-subtle"
-              }
-            >
-              {ANGLES[id].label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <input
-            value={aiInstructions}
-            onChange={(e) => setAiInstructions(e.target.value)}
-            placeholder="Indicaciones para la IA (opcional): «mencioná el 20%», «hablale de la familia»…"
-            className="min-w-0 flex-1 rounded-lg border bg-card px-3 py-2 text-[12.5px]"
-          />
-          <button
-            type="button"
-            onClick={() => void aiWrite()}
-            disabled={aiBusy !== null || !form.title.trim()}
-            className="flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[12.5px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {aiBusy === "pieza" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-            Escribir con IA
-          </button>
-          {prevForm && (
-            <button
-              type="button"
-              onClick={() => {
-                setForm(prevForm);
-                setPrevForm(null);
-                setAiNotes(null);
-              }}
-              className="flex items-center justify-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-[12.5px] font-semibold text-text-2 hover:bg-subtle"
-            >
-              <RotateCcw size={13} /> Deshacer
-            </button>
-          )}
-        </div>
-        {aiNotes && <p className="text-[11.5px] text-text-3">💡 {aiNotes}</p>}
-      </div>
-      <textarea
-        value={form.body}
-        onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-        rows={3}
-        placeholder="Mensaje de la propuesta"
-        className="w-full rounded-lg border bg-card px-3 py-2 text-[13px]"
-      />
-      <div className="grid gap-2 md:grid-cols-3">
-        <div className="min-w-0">
-          <input
-            value={form.productName}
-            onChange={(e) => syncProductName(e.target.value)}
-            placeholder="Tipo de producto"
-            list="publicidad-productos"
-            className="w-full rounded-lg border bg-card px-3 py-2 text-[12.5px]"
-          />
-          <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
-            {(() => {
-              const sel = products.find((p) => p.ref === form.productRef);
-              if (sel) {
-                return `${sel.icon ? sel.icon + " " : ""}${
-                  sel.source === "crm" ? "Producto del CRM" : "Producto del sistema"
-                }`;
-              }
-              return productsOk
-                ? `${products.length} productos: sistema + CRM`
-                : "El sistema no respondió: se muestran solo los del CRM";
-            })()}
-          </p>
-          <datalist id="publicidad-productos">
-            {products.map((p) => (
-              <option key={p.ref} value={p.name}>
-                {p.source === "crm" ? "CRM" : "Sistema"}
-              </option>
-            ))}
-          </datalist>
-        </div>
-        <input
-          value={form.offer}
-          onChange={(e) => setForm((f) => ({ ...f, offer: e.target.value }))}
-          placeholder="Oferta"
-          className="rounded-lg border bg-card px-3 py-2 text-[12.5px]"
-        />
-        <input
-          value={form.benefit}
-          onChange={(e) => setForm((f) => ({ ...f, benefit: e.target.value }))}
-          placeholder="Descuento o beneficio (CTA)"
-          className="rounded-lg border bg-card px-3 py-2 text-[12.5px]"
-        />
-      </div>
-      <div className="grid gap-2 md:grid-cols-3">
-        <input
-          value={form.ctaLabel}
-          onChange={(e) => setForm((f) => ({ ...f, ctaLabel: e.target.value }))}
-          placeholder="Texto del botón (CTA)"
-          className="rounded-lg border bg-card px-3 py-2 text-[12.5px]"
-        />
-        <input
-          value={form.ctaUrl}
-          onChange={(e) => setForm((f) => ({ ...f, ctaUrl: e.target.value }))}
-          placeholder="URL del CTA (https://… o link a PDF)"
-          className="rounded-lg border bg-card px-3 py-2 text-[12.5px]"
-        />
-        <select
-          value={form.ctaKind}
-          onChange={(e) => {
-            const v = e.target.value as "link" | "pdf" | "agenda";
-            setForm((f) => ({
-              ...f,
-              ctaKind: v,
-              // 042d — al elegir videollamada, invitar a reservar (editable).
-              ctaLabel:
-                v === "agenda" && !f.ctaLabel.trim()
-                  ? "Agendar videollamada"
-                  : f.ctaLabel,
-            }));
+          kindDefault={kindDefault}
+          embebido
+          onCreated={(p) => {
+            setCreated(p as unknown as ProposalDto);
+            onProposalChange();
+            void onRefreshFicha();
           }}
-          className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
-        >
-          <option value="link">Enlace web</option>
-          <option value="pdf">URL de PDF</option>
-          <option value="agenda">Videollamada (agenda)</option>
-        </select>
-      </div>
-      <div className="grid gap-2 md:grid-cols-2">
-        <label className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2">
-          <Building2 size={14} className="text-text-3" />
-          <select
-            value={form.companyRef}
-            onChange={(e) => setForm((f) => ({ ...f, companyRef: e.target.value }))}
-            className="w-full bg-transparent text-[12.5px]"
-          >
-            <option value="">Compañía auspiciada (opcional)…</option>
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed bg-card px-3 py-2 text-[12px] font-semibold text-text-2 hover:bg-subtle">
-          <ImageIcon size={14} />
-          {media.length ? "Sumar fotos o video" : "Fotos o video (carrusel)"}
-          <input
-            type="file"
-            accept="image/*,video/mp4,video/webm"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              const list = e.target.files;
-              if (list?.length) void uploadMediaFiles(list);
-              e.target.value = "";
-            }}
-          />
-        </label>
-        <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed bg-card px-3 py-2 text-[12px] font-semibold text-text-2 hover:bg-subtle">
-          <ImageIcon size={14} /> {logoPreview ? "Cambiar logo" : "Logo del emisor"}
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void uploadImage(f);
-            }}
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => setPickerTarget("media")}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed bg-subtle/40 px-3 py-2 text-[12px] font-semibold text-text-2 hover:bg-subtle"
-        >
-          <FolderOpen size={14} /> Elegir del contenedor (fotos o video)
-        </button>
-      </div>
-
-      {/* 042 — los medios en orden: así se ven el carrusel y el video */}
-      {(media.length > 0 || logoPreview || mediaBusy) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {logoPreview && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoPreview} alt="Logo" className="h-10 max-w-[140px] rounded border object-contain" />
-          )}
-          {media.map((m, i) => (
-            <div key={m.id} className="relative">
-              {m.mime.startsWith("video/") ? (
-                <span className="relative block">
-                  <video
-                    src={m.url}
-                    muted
-                    playsInline
-                    preload="metadata"
-                    className="h-16 w-24 rounded-lg border object-cover"
-                  />
-                  {/* 042d — miniaturas fundidas al diseño: botón play glass */}
-                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-black/10">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-sky-700 shadow-md">
-                      <Play size={12} fill="currentColor" />
-                    </span>
-                  </span>
-                </span>
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={m.url}
-                  alt={`Medio ${i + 1}`}
-                  className="h-16 w-24 rounded border object-cover"
-                />
-              )}
-              <span className="absolute top-1 left-1 rounded bg-black/60 px-1 py-px text-[9px] font-bold text-white">
-                {i + 1}
-                {m.mime.startsWith("video/") ? " · VIDEO" : ""}
-              </span>
-              <button
-                type="button"
-                aria-label={`Quitar medio ${i + 1}`}
-                onClick={() => removeMedia(m.id)}
-                className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-rose-600 text-[11px] font-bold text-white shadow hover:bg-rose-700"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          {mediaBusy && (
-            <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-text-2">
-              <Loader2 size={13} className="animate-spin" /> Subiendo…
-            </span>
-          )}
-          {media.length > 0 && (
-            <span className="text-[11px] text-text-3">
-              {media.length} medio{media.length > 1 ? "s" : ""} · carrusel
-              {media.some((m) => m.mime.startsWith("video/")) ? " + video" : ""}
-            </span>
-          )}
-        </div>
-      )}
-
-      {error && <p className="text-[12px] font-semibold text-rose-600">{error}</p>}
-
-      {pickerTarget !== null && (
-        <LibraryPicker
-          title={
-            pickerTarget === "media"
-              ? "Elegir fotos o video del contenedor"
-              : "Elegir el logo del contenedor"
-          }
-          kind={pickerTarget === "media" ? "all" : "image"}
-          onPick={pickFromLibrary}
-          onClose={() => setPickerTarget(null)}
         />
       )}
-
-      {!created ? (
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={busy === "save" || !form.title.trim()}
-          className="flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-[13px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {busy === "save" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-          Generar propuesta
-        </button>
-      ) : (
+      {created && (
         <div className="space-y-3 rounded-xl border border-brand-soft bg-brand-tint/40 p-3">
           <p className="text-[12.5px] font-bold text-text-1">
             ✓ Propuesta creada — página pública lista para abrir desde cualquier computadora
@@ -1745,15 +1083,21 @@ function ProposalFlow({
             <span className="rounded-full border bg-card px-2 py-0.5">🌐 Página pública</span>
             <span className="rounded-full border bg-card px-2 py-0.5">
               🖼️{" "}
-              {media.length
-                ? `${media.length} medio${media.length > 1 ? "s" : ""}${media.some((m) => m.mime.startsWith("video/")) ? " (con video)" : ""}`
+              {(created.mediaIds?.length ?? 0)
+                ? `${created.mediaIds?.length ?? 0} medio${(created.mediaIds?.length ?? 0) > 1 ? "s" : ""}`
                 : "sin medios"}
             </span>
             <span className="rounded-full border bg-card px-2 py-0.5">
-              {form.ctaUrl ? "🔗 con botón CTA" : "🔗 sin CTA — se carga en Ajustes → Propuestas"}
+              {created.ctaUrl ? "🔗 con botón CTA" : "🔗 sin CTA — se carga en Ajustes → Propuestas"}
             </span>
             <span className="rounded-full border bg-card px-2 py-0.5">📲 mensaje con tono a elección</span>
           </div>
+          {error && (
+            <p className="rounded-md border border-danger-soft bg-card px-3 py-2 text-[11.5px] text-danger-text">
+              {error}
+            </p>
+          )}
+          {aiNotes && <p className="text-[11px] text-text-3">{aiNotes}</p>}
           <div className="flex flex-wrap items-center gap-2">
             <a
               href={created.publicUrl}
@@ -1890,7 +1234,7 @@ function ProposalFlow({
                 onClick={() => {
                   const absUrl = `${window.location.origin}${created.publicUrl}`;
                   setDraftText(
-                    `¡Hola ${customer.name}! 👋 Te preparé una propuesta pensada para vos${form.benefit ? `: ${form.benefit}` : ""}. Miralá acá 👉 ${absUrl}`
+                    `¡Hola ${customer.name}! 👋 Te preparé una propuesta pensada para vos${created.benefit ? `: ${created.benefit}` : ""}. Miralá acá 👉 ${absUrl}`
                   );
                   setPreviewOpen(true);
                 }}
@@ -1912,7 +1256,7 @@ function ProposalFlow({
                     if (!previewOpen) {
                       const absUrl = `${window.location.origin}${created.publicUrl}`;
                       setDraftText(
-                        `¡Hola ${customer.name}! 👋 Te preparé una propuesta pensada para vos${form.benefit ? `: ${form.benefit}` : ""}. Miralá acá 👉 ${absUrl}`
+                        `¡Hola ${customer.name}! 👋 Te preparé una propuesta pensada para vos${created.benefit ? `: ${created.benefit}` : ""}. Miralá acá 👉 ${absUrl}`
                       );
                       setPreviewOpen(true);
                     }
@@ -1941,10 +1285,10 @@ function ProposalFlow({
                 Así le llega por WhatsApp — revisalo antes de abrir el chat
               </p>
               <div className="flex flex-col gap-3 sm:flex-row">
-                {(media.find((m) => m.mime.startsWith("image/"))?.url ?? created.imageUrl) && (
+                {created.imageUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={media.find((m) => m.mime.startsWith("image/"))?.url ?? created.imageUrl ?? ""}
+                    src={created.imageUrl ?? ""}
                     alt="Imagen de la propuesta"
                     className="h-32 w-32 shrink-0 self-start rounded-lg border object-cover"
                   />
