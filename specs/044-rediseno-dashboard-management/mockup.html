@@ -1,0 +1,1857 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MAQUETA · Dashboard Management — rediseño (044)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@1&display=swap" rel="stylesheet">
+<style>
+/* ====== Tokens copiados de src/app/globals.css (Vocero) ====== */
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --bg-subtle:#f6f8fc; --bg-panel:#eef2f9; --bg-hover:#e9eef8;
+  --text:#0a1730; --text-2:#42506b; --text-3:#8391aa; --text-4:#aab4c8;
+  --border:#e8edf6; --border-strong:#dde5f1;
+  --accent:#0d5bff; --accent-hover:#0a4de6; --accent-soft:#d3e2ff; --accent-tint:#ebf1ff; --accent-text:#0038d8; --accent-fg:#ffffff;
+  --success:#1fb35b; --success-tint:#e9f7ee; --success-soft:#c9ebd6; --success-text:#157a41;
+  --warning:#f2a71b; --warning-tint:#fef6e6; --warning-soft:#f8e3b5; --warning-text:#935f0b;
+  --danger:#d94a4a; --danger-tint:#fdf0f0; --danger-soft:#f5cccc; --danger-text:#b73535;
+  --radius-sm:9px; --radius:12px; --radius-lg:16px;
+  --shadow-sm:0 1px 2px rgba(8,27,82,.06);
+  --shadow-md:0 14px 40px -16px rgba(8,27,82,.16);
+  --shadow-pop:0 30px 80px -20px rgba(8,27,82,.22), 0 8px 24px -12px rgba(8,27,82,.12);
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0b1327; --bg-subtle:#070e20; --bg-panel:#111b36; --bg-hover:#172346;
+  --text:#e8eefc; --text-2:#a9b8dc; --text-3:#7688b0; --text-4:#55648a;
+  --border:#1a2748; --border-strong:#26376a;
+  --accent:#256bff; --accent-hover:#4883ff; --accent-soft:#122c64; --accent-tint:#0e1e41; --accent-text:#6294ff; --accent-fg:#ffffff;
+  --success:#4fd07f; --success-tint:#0f2418; --success-soft:#1c3d29; --success-text:#7fe0a3;
+  --warning:#f5b74a; --warning-tint:#2a1f0c; --warning-soft:#4a3714; --warning-text:#f7c86f;
+  --danger:#ef6b6b; --danger-tint:#2a1216; --danger-soft:#4a1f26; --danger-text:#f59a9a;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+  --shadow-md:0 14px 40px -16px rgba(0,0,0,.5);
+  --shadow-pop:0 30px 80px -20px rgba(0,0,0,.6), 0 8px 24px -12px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg-subtle); color:var(--text);
+  font-family:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:14px; line-height:1.45; -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.serif-i{font-family:"Instrument Serif",Georgia,serif;font-style:italic}
+
+/* ====== Banner de maqueta ====== */
+#banner{
+  position:sticky; top:0; z-index:60;
+  background:var(--accent-tint); border-bottom:1px solid var(--accent-soft);
+  padding:10px 20px; display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+}
+#banner .tag{
+  font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.12em;
+  background:var(--accent); color:var(--accent-fg); padding:3px 8px; border-radius:999px;
+}
+#banner b{font-weight:600}
+#banner .hint{color:var(--text-2); font-size:12.5px}
+#banner .spacer{flex:1}
+#banner button{
+  font:inherit; font-size:12px; font-weight:600; cursor:pointer;
+  background:var(--bg); color:var(--text); border:1px solid var(--border-strong);
+  padding:6px 12px; border-radius:999px; box-shadow:var(--shadow-sm);
+}
+#banner button:hover{background:var(--bg-hover)}
+
+/* ====== Encabezado tipo cockpit ====== */
+.wrap{max-width:none; width:100%; padding:22px 24px 60px}
+.titulo h1{margin:2px 0 4px; font-size:26px; line-height:1.15; font-weight:600; letter-spacing:-.01em}
+.titulo .kicker{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.14em; color:var(--accent-text); text-transform:uppercase}
+.titulo p{margin:4px 0 0; color:var(--text-2); font-size:13.5px}
+.head-row{display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap}
+.head-row .spacer{flex:1}
+.btn{
+  font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; border-radius:999px;
+  padding:8px 14px; border:1px solid var(--border-strong); background:var(--bg); color:var(--text);
+  box-shadow:var(--shadow-sm); white-space:nowrap;
+}
+.btn:hover{background:var(--bg-hover)}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:var(--accent-fg)}
+.btn.primary:hover{background:var(--accent-hover)}
+.btn.tiny{padding:4px 10px; font-size:11.5px; font-weight:600}
+
+/* chips de sugerencias */
+#sugerencias{display:flex; gap:8px; flex-wrap:wrap; margin-top:14px}
+.chip{
+  display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:500;
+  border-radius:999px; padding:5px 11px; border:1px solid var(--border-strong);
+  background:var(--bg); color:var(--text-2); cursor:pointer;
+}
+.chip .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.chip:hover{border-color:var(--accent-soft); background:var(--accent-tint); color:var(--text)}
+
+/* ====== Navegación: grupos + subs ====== */
+#grupos{
+  display:flex; gap:8px; margin-top:18px; flex-wrap:wrap;
+  border-bottom:1px solid var(--border); padding-bottom:0;
+}
+.grupo-btn{
+  font:inherit; font-size:14px; font-weight:600; color:var(--text-2); cursor:pointer;
+  background:none; border:none; padding:9px 4px 12px; margin-right:16px;
+  border-bottom:2.5px solid transparent; display:flex; align-items:center; gap:8px;
+}
+.grupo-btn:hover{color:var(--text)}
+.grupo-btn.on{color:var(--text); border-bottom-color:var(--accent)}
+.grupo-btn .n{
+  font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--text-3);
+  background:var(--bg-panel); border:1px solid var(--border); border-radius:999px; padding:1px 7px;
+}
+.grupo-btn.on .n{background:var(--accent-tint); border-color:var(--accent-soft); color:var(--accent-text)}
+#subs{display:flex; gap:6px; margin-top:12px; flex-wrap:wrap; align-items:center}
+.sub-btn{
+  font:inherit; font-size:12.5px; font-weight:500; cursor:pointer; color:var(--text-2);
+  background:var(--bg); border:1px solid var(--border); border-radius:999px; padding:6px 13px;
+}
+.sub-btn:hover{border-color:var(--border-strong); color:var(--text)}
+.sub-btn.on{background:var(--text); border-color:var(--text); color:var(--bg-subtle); font-weight:600}
+#sub-guia{margin-left:auto}
+
+/* ====== Barra de filtros contextual ====== */
+#filtros{
+  margin-top:14px; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius);
+  padding:10px 12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; box-shadow:var(--shadow-sm);
+}
+#filtros .lbl{font-family:"IBM Plex Mono",monospace; font-size:9.5px; letter-spacing:.1em; color:var(--text-3); text-transform:uppercase; margin-right:2px}
+.preset{display:flex; gap:2px; background:var(--bg-subtle); border:1px solid var(--border); border-radius:999px; padding:2px}
+.preset button{font:inherit; font-size:12px; font-weight:500; border:none; background:none; color:var(--text-2); padding:5px 11px; border-radius:999px; cursor:pointer}
+.preset button.on{background:var(--bg); color:var(--text); font-weight:600; box-shadow:var(--shadow-sm)}
+.combo{position:relative}
+.combo.open{z-index:64}
+.combo input{
+  font:inherit; font-size:12.5px; color:var(--text); background:var(--bg);
+  border:1px solid var(--border-strong); border-radius:999px; padding:7px 12px 7px 30px; width:190px; outline:none;
+}
+.combo input:focus{border-color:var(--accent-soft); box-shadow:0 0 0 3px var(--accent-tint)}
+.combo .lupa{position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--text-3); font-size:12px}
+.combo .opts{
+  display:none; position:absolute; z-index:64; top:calc(100% + 6px); left:0; min-width:260px; max-height:280px; overflow:auto;
+  background:var(--bg); border:1px solid var(--border-strong); border-radius:var(--radius);
+  box-shadow:var(--shadow-pop), 0 0 0 1px var(--border-strong); padding:5px;
+}
+.combo.open .opts{display:block}
+.combo .opt{padding:7px 10px; border-radius:8px; font-size:12.5px; cursor:pointer; color:var(--text-2)}
+.combo .opt:hover{background:var(--bg-hover); color:var(--text)}
+#filtros .nota{font-size:11.5px; color:var(--text-3); margin-left:auto}
+
+/* ====== Bloques (pisos) ====== */
+#contenido{margin-top:16px; display:flex; flex-direction:column; gap:12px}
+.bloque{
+  background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-sm); overflow:hidden; scroll-margin-top:80px;
+}
+.bloque-head{
+  display:flex; align-items:center; gap:10px; padding:12px 14px; cursor:pointer; user-select:none;
+}
+.bloque-head:hover{background:var(--bg-subtle)}
+.bloque-head .piso{
+  width:24px; height:24px; border-radius:8px; flex:none;
+  background:var(--accent-tint); color:var(--accent-text); border:1px solid var(--accent-soft);
+  display:flex; align-items:center; justify-content:center;
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; font-weight:600;
+}
+.bloque-head h2{margin:0; font-size:14.5px; font-weight:600; letter-spacing:-.005em}
+.bloque-head .sub{color:var(--text-3); font-size:12px; margin-left:2px}
+.bloque-head .spacer{flex:1}
+.badge{
+  font-family:"IBM Plex Mono",monospace; font-size:9.5px; letter-spacing:.09em; text-transform:uppercase;
+  padding:2.5px 8px; border-radius:999px; border:1px solid var(--border-strong); color:var(--text-3); background:var(--bg-subtle);
+}
+.badge.esquema{color:var(--warning-text); background:var(--warning-tint); border-color:var(--warning-soft)}
+.badge.ok{color:var(--success-text); background:var(--success-tint); border-color:var(--success-soft)}
+.handle{
+  cursor:grab; color:var(--text-4); font-size:15px; padding:2px 6px; border-radius:6px; line-height:1;
+}
+.handle:hover{background:var(--bg-panel); color:var(--text-2)}
+.chev{color:var(--text-3); font-size:11px; transition:transform .15s ease; width:14px; text-align:center}
+.bloque.collapsed .chev{transform:rotate(-90deg)}
+.bloque.collapsed .bloque-body{display:none}
+.bloque.dragging{opacity:.45; outline:2px dashed var(--accent-soft)}
+.bloque.drop-target{box-shadow:0 0 0 3px var(--accent-tint), var(--shadow-sm)}
+.bloque-body{padding:4px 14px 14px; border-top:1px solid var(--border)}
+
+/* KPIs */
+.kpis{display:grid; grid-template-columns:repeat(auto-fill, minmax(158px,1fr)); gap:10px; margin-top:10px}
+.kpi{border:1px solid var(--border); border-radius:var(--radius); padding:11px 12px; background:var(--bg-subtle)}
+.kpi .v{font-size:21px; font-weight:600; letter-spacing:-.02em}
+.kpi .l{font-family:"IBM Plex Mono",monospace; font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--text-3); margin-bottom:3px}
+.kpi .s{font-size:11.5px; color:var(--text-3); margin-top:2px}
+.kpi.pos .v{color:var(--success-text)}
+.kpi.hot .v{color:var(--danger-text)}
+.kpi.acc .v{color:var(--accent-text)}
+
+/* Listas de módulo (tarjetas con "Ver lista") */
+.listas{display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:10px; margin-top:10px}
+.lista-card{border:1px solid var(--border); border-radius:var(--radius); padding:11px 12px; background:var(--bg-subtle); display:flex; flex-direction:column; gap:2px}
+.lista-card .v{font-size:18px; font-weight:600}
+.lista-card .l{font-size:12px; color:var(--text-2); font-weight:500}
+.lista-card .s{font-size:11px; color:var(--text-3)}
+.lista-card a{margin-top:7px; font-size:12px; font-weight:600; color:var(--accent-text); text-decoration:none; cursor:pointer}
+.lista-card a:hover{text-decoration:underline}
+
+/* Tablas */
+.tabla{width:100%; border-collapse:collapse; margin-top:10px; font-size:12.5px}
+.tabla th{
+  text-align:left; font-family:"IBM Plex Mono",monospace; font-size:9.5px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--text-3); font-weight:500; padding:7px 10px; border-bottom:1px solid var(--border-strong);
+}
+.tabla td{padding:8px 10px; border-bottom:1px solid var(--border); color:var(--text-2)}
+.tabla tr:hover td{background:var(--bg-subtle)}
+.tabla .num{font-variant-numeric:tabular-nums; white-space:nowrap}
+.tabla-wrap{overflow-x:auto}
+
+/* Señales */
+.senales{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-top:10px}
+.senal{border:1px solid var(--border); border-left:3px solid var(--text-4); border-radius:var(--radius); padding:10px 12px; background:var(--bg-subtle)}
+.senal .t{font-weight:600; font-size:13px}
+.senal .d{font-size:12px; color:var(--text-2); margin-top:3px}
+.senal.rojo{border-left-color:var(--danger)}
+.senal.amar{border-left-color:var(--warning)}
+.senal.verde{border-left-color:var(--success)}
+.senal.azul{border-left-color:var(--accent)}
+
+/* Charts simples */
+.charts{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; margin-top:10px}
+.chart{border:1px solid var(--border); border-radius:var(--radius); padding:12px; background:var(--bg-subtle)}
+.chart .ct{font-weight:600; font-size:13px}
+.chart .cs{font-size:11.5px; color:var(--text-3); margin-bottom:10px}
+.barras{display:flex; align-items:flex-end; gap:6px; height:110px}
+.barra{flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; height:100%; justify-content:flex-end}
+.barra .b{width:100%; border-radius:5px 5px 2px 2px; background:var(--accent); min-height:3px; opacity:.85}
+.barra .b.gris{background:var(--text-4)}
+.barra .b.verde{background:var(--success)}
+.barra .b.rojo{background:var(--danger)}
+.barra .n{font-family:"IBM Plex Mono",monospace; font-size:9px; color:var(--text-3)}
+.hbarras{margin-top:8px; display:flex; flex-direction:column; gap:7px}
+.hbarra{display:grid; grid-template-columns:130px 1fr 52px; gap:8px; align-items:center; font-size:12px}
+.hbarra .hb{height:10px; border-radius:999px; background:var(--accent); opacity:.8; min-width:4px}
+.hbarra .hn{font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--text-3); text-align:right}
+
+/* Jugadas (Cola de hoy) */
+.jugada{border:1px solid var(--border); border-radius:var(--radius); margin-top:10px; overflow:hidden}
+.jugada-head{display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--bg-subtle); cursor:pointer}
+.jugada-head:hover{background:var(--bg-hover)}
+.jugada-head .jt{font-weight:600; font-size:13px}
+.jugada-head .jd{font-size:11.5px; color:var(--text-3)}
+.jugada-head .cnt{
+  font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:600;
+  background:var(--accent-tint); color:var(--accent-text); border:1px solid var(--accent-soft);
+  border-radius:999px; padding:2px 9px; margin-left:auto; white-space:nowrap;
+}
+.jugada.peligro .jugada-head .cnt{background:var(--danger-tint); color:var(--danger-text); border-color:var(--danger-soft)}
+.jugada-body{display:none; padding:4px 12px 12px}
+.jugada.open .jugada-body{display:block}
+.fila-cliente{display:flex; align-items:center; gap:12px; padding:10px 2px; border-bottom:1px solid var(--border); flex-wrap:wrap}
+.fila-cliente:last-child{border-bottom:none}
+.fila-cliente .nom{font-weight:600; font-size:13px; min-width:210px}
+.fila-cliente .doc{font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--text-3)}
+.fila-cliente .pol{font-size:12px; color:var(--text-2)}
+.fila-cliente .ven{font-family:"IBM Plex Mono",monospace; font-size:11px; white-space:nowrap}
+.fila-cliente .ven.hoy{color:var(--danger-text); font-weight:600}
+.fila-cliente .spacer{flex:1}
+.acciones{display:flex; gap:6px; flex-wrap:wrap}
+.vermas{display:block; text-align:center; padding:9px; margin-top:6px; font-size:12.5px; font-weight:600; color:var(--accent-text); cursor:pointer; border:1px dashed var(--border-strong); border-radius:var(--radius-sm)}
+.vermas:hover{background:var(--accent-tint)}
+
+/* Motor IA + Análisis IA por sección */
+.motor{display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap}
+.motor .pills{display:flex; gap:2px; background:var(--bg-subtle); border:1px solid var(--border); border-radius:999px; padding:2px}
+.motor .pills button{font:inherit; font-size:11.5px; font-weight:500; border:none; background:none; color:var(--text-2); padding:4px 10px; border-radius:999px; cursor:pointer}
+.motor .pills button.on{background:var(--bg); color:var(--text); font-weight:600; box-shadow:var(--shadow-sm)}
+.motor .estado{font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--text-3)}
+.motor .spacer{flex:1}
+.ia-result{margin-top:10px; border:1px solid var(--accent-soft); background:var(--accent-tint); border-radius:var(--radius); padding:11px 12px; font-size:12.5px; color:var(--text-2); display:none}
+.ia-result.on{display:block}
+.ia-result .tt{font-weight:600; color:var(--accent-text); font-size:12px; margin-bottom:4px}
+
+/* Constructor de publicidad */
+.pasos{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; margin-top:10px}
+.paso{border:1px solid var(--border); border-radius:var(--radius); padding:10px 12px; background:var(--bg-subtle)}
+.paso .pn{font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--accent-text); letter-spacing:.08em}
+.paso .pt{font-weight:600; font-size:12.5px; margin:2px 0}
+.paso .pd{font-size:11.5px; color:var(--text-2)}
+
+/* Línea de tiempo (Seguimiento) */
+.timeline{margin-top:10px}
+.tl{display:flex; gap:10px; padding:9px 2px; border-bottom:1px solid var(--border); align-items:baseline}
+.tl:last-child{border-bottom:none}
+.tl .ic{font-size:14px}
+.tl .tt{font-weight:600; font-size:12.5px}
+.tl .tm{font-size:11.5px; color:var(--text-3)}
+.tl .sp{flex:1}
+.tl .ab{font-size:11.5px; font-weight:600; color:var(--accent-text); cursor:pointer; white-space:nowrap}
+
+/* Migas de orientación */
+#migas{margin-top:14px; font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.09em; color:var(--text-3); text-transform:uppercase}
+#migas b{color:var(--accent-text); font-weight:600}
+
+/* Badge «mejorado» */
+.badge.mejora{color:var(--accent-text); background:var(--accent-tint); border-color:var(--accent-soft)}
+
+/* Constructor de publicidad guiado (el MEJORADO) */
+.ctor{display:grid; grid-template-columns:1.35fr .85fr; gap:16px; margin-top:12px; align-items:start}
+@media (max-width:900px){ .ctor{grid-template-columns:1fr} }
+.ctor-tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px}
+.ctor-tab{font:inherit; font-size:12px; font-weight:500; color:var(--text-2); background:var(--bg-subtle); border:1px solid var(--border); border-radius:999px; padding:5px 11px; cursor:pointer}
+.ctor-tab.on{background:var(--text); color:var(--bg-subtle); border-color:var(--text); font-weight:600}
+.ctor-panel{border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-subtle); padding:12px 13px}
+.ctor-panel h4{margin:0 0 6px; font-size:13.5px}
+.ctor-panel .pd{font-size:12px; color:var(--text-2)}
+.ctor-row{display:flex; gap:8px; flex-wrap:wrap; margin:9px 0; align-items:center}
+.opt-chip{font:inherit; font-size:11.5px; font-weight:500; color:var(--text-2); background:var(--bg); border:1px solid var(--border-strong); border-radius:999px; padding:4px 10px; cursor:pointer}
+.opt-chip.on{background:var(--accent-tint); border-color:var(--accent-soft); color:var(--accent-text); font-weight:600}
+.slot{width:78px; height:60px; border:1.5px dashed var(--border-strong); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--text-3); cursor:pointer; background:var(--bg); padding:0 6px; text-align:center}
+.slot.on{border-style:solid; border-color:var(--accent-soft); background:var(--accent-tint); color:var(--accent-text)}
+.ctor textarea{width:100%; font:inherit; font-size:12.5px; border:1px solid var(--border-strong); border-radius:var(--radius-sm); background:var(--bg); color:var(--text); padding:9px 10px; resize:vertical; min-height:56px; outline:none; margin-top:6px}
+.ctor textarea:focus{border-color:var(--accent-soft); box-shadow:0 0 0 3px var(--accent-tint)}
+/* ===== Vista demo de la publicación (marco de celular) ===== */
+.pv-head{display:flex; align-items:center; gap:8px; margin-bottom:9px; flex-wrap:wrap}
+.pv-lbl{font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.09em; color:var(--text-3); text-transform:uppercase}
+.pv-btn{margin-left:auto; font:inherit; font-size:11.5px; font-weight:600; color:var(--accent-text); background:var(--accent-tint); border:1px solid var(--accent-soft); border-radius:999px; padding:5px 11px; cursor:pointer}
+.pv-frame{width:238px; max-width:100%; margin:0 auto; border:3px solid var(--text-4); border-radius:32px; padding:5px; background:var(--bg-panel); box-shadow:var(--shadow-md)}
+.pv-notch{width:64px; height:5px; border-radius:999px; background:var(--text-4); margin:3px auto 6px}
+.pv-clip{border-radius:24px; overflow:hidden; height:612px; background:#fff; position:relative}
+.pv-clip .pz-wrap{transform-origin:top left; margin-left:3px}
+/* Barra del marco (tablet/web/16:9) */
+.pv-bar{display:none; align-items:center; gap:4px; height:20px; padding:0 4px}
+.pv-frame:not(.f-cel) .pv-bar{display:flex}
+.pv-frame:not(.f-cel) .pv-notch{display:none}
+.pv-bar .dotg{width:7px;height:7px;border-radius:999px;background:var(--text-4);opacity:.6}
+.pv-bar .urlbox{flex:1; height:13px; border-radius:999px; background:var(--bg-subtle); font-size:8px; line-height:13px; color:var(--text-3); text-align:center; white-space:nowrap; overflow:hidden}
+.f-tab{border-radius:26px}
+.f-web{border-radius:14px; border-width:2px}
+.f-web .pv-clip{border-radius:10px}
+.f-cel .pv-clip{overflow-y:auto}
+.f-tab .pv-clip::after,.f-web .pv-clip::after{content:""; position:absolute; left:0; right:0; bottom:0; height:34px; background:linear-gradient(180deg, transparent, rgba(255,255,255,.94)); pointer-events:none}
+/* Selector de formato de la demo */
+.fmt-row{display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px}
+.fmt{font:inherit; font-size:11px; font-weight:600; color:var(--text-2); background:var(--bg-subtle); border:1px solid var(--border); border-radius:999px; padding:4px 10px; cursor:pointer}
+.fmt.on{background:var(--text); color:var(--bg-subtle); border-color:var(--text)}
+
+/* ===== LA PUBLICACIÓN (la misma pieza para demo y pantalla original) ===== */
+.pz-wrap{container-type:inline-size; background:linear-gradient(180deg,#e0f2fe 0%,#ffffff 46%,#eef2ff 100%); font-family:Inter,-apple-system,"Segoe UI",sans-serif}
+.pz{position:relative; min-height:100%; padding:26px 10px 16px; overflow:hidden}
+.pz-blob{position:absolute; border-radius:999px; filter:blur(46px); pointer-events:none}
+.pz-b1{width:150px;height:150px;left:-46px;top:-40px;background:rgba(103,232,249,.55);animation:pz-blob 18s ease-in-out infinite}
+.pz-b2{width:180px;height:180px;right:-60px;top:28%;background:rgba(165,180,252,.5);animation:pz-blob 22s ease-in-out infinite reverse}
+.pz-b3{width:140px;height:140px;left:22%;bottom:-40px;background:rgba(186,230,253,.6);animation:pz-blob 26s ease-in-out infinite}
+@keyframes pz-blob{0%,100%{transform:translate(0,0)}33%{transform:translate(14px,-10px) scale(1.06)}66%{transform:translate(-10px,9px) scale(.96)}}
+@keyframes pz-dot{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes pz-shine{0%{transform:translateX(-130%) skewX(-16deg)}55%,100%{transform:translateX(240%) skewX(-16deg)}}
+.pz-card{position:relative; max-width:576px; margin:0 auto; border-radius:24px; overflow:hidden; border:1px solid rgba(255,255,255,.8); box-shadow:0 26px 70px -30px rgba(30,64,175,.4)}
+.pz-head{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:13px 14px; background:rgba(255,255,255,.74); backdrop-filter:blur(12px)}
+.pz-hl{display:flex; align-items:center; gap:9px; min-width:0}
+.pz-logo-c{width:37px; height:37px; flex:none; border-radius:999px; background:linear-gradient(135deg,#22d3ee,#2563eb); color:#fff; display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:800; box-shadow:0 8px 18px -6px rgba(34,211,238,.6)}
+.pz-nm{font-size:13px; font-weight:800; color:#171717; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.pz-kd{font-size:10.5px; color:#737373}
+.pz-chipc{flex:none; border:1px solid #a5f3fc; background:#ecfeff; color:#0369a1; font-size:10px; font-weight:800; border-radius:999px; padding:4px 9px; white-space:nowrap}
+.pz-media{position:relative; height:186px; display:flex; align-items:center; justify-content:center; gap:10px; font-size:30px; background:linear-gradient(135deg,#bae6fd,#e0e7ff); overflow:hidden}
+.pz-shine{position:absolute; top:0; bottom:0; left:0; width:34%; background:rgba(255,255,255,.35); filter:blur(10px); animation:pz-shine 3.4s ease-in-out infinite}
+.pz-dots{position:absolute; bottom:8px; left:0; right:0; display:flex; justify-content:center; gap:5px}
+.pz-dots i{width:6px;height:6px;border-radius:999px;background:rgba(255,255,255,.9);opacity:.65}
+.pz-dots i.on{opacity:1; width:14px}
+.pz-body{display:flex; flex-direction:column; gap:12px; padding:15px 14px 16px; background:rgba(255,255,255,.76); backdrop-filter:blur(12px)}
+.pz-asesor{display:flex; align-items:center; gap:9px; border:1px solid rgba(165,243,252,.8); border-radius:14px; padding:8px 10px; background:linear-gradient(90deg,rgba(255,255,255,.92),rgba(240,249,255,.86)); box-shadow:0 3px 10px -4px rgba(30,64,175,.12)}
+.pz-av{width:30px;height:30px;flex:none;border-radius:999px;background:linear-gradient(135deg,#22d3ee,#2563eb);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;box-shadow:0 6px 14px -6px rgba(34,211,238,.65)}
+.pz-asesor .t1{font-size:12px;font-weight:800;color:#171717}
+.pz-asesor .t2{font-size:10.5px;color:#737373}
+.pz-tit{font-family:Georgia,"Times New Roman",serif; font-size:21px; line-height:1.24; color:#171717; font-weight:400}
+.pz-sub{font-size:12.5px; color:#525252}
+.pz-benef{display:flex; align-items:center; gap:9px; border:1px solid #a5f3fc; border-radius:14px; padding:9px 12px; background:linear-gradient(90deg,#ecfeff,#e0f2fe)}
+.pz-benef .em{font-size:20px; animation:pz-dot 2.4s ease-in-out infinite}
+.pz-benef .tx{font-size:13px; font-weight:800; color:#075985}
+.pz-prod{align-self:flex-start; border:1px solid #e5e5e5; background:rgba(255,255,255,.85); border-radius:999px; padding:4px 10px; font-size:11px; font-weight:700; color:#525252}
+.pz-p{font-size:12.5px; line-height:1.6; color:#525252}
+.pz-oferta{border:1px solid rgba(255,255,255,.9); background:rgba(255,255,255,.68); border-radius:14px; padding:9px 12px; box-shadow:inset 0 1px 5px rgba(0,0,0,.05)}
+.pz-oferta .lb{font-size:9.5px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:#a3a3a3}
+.pz-oferta .tx{font-size:12.5px; color:#262626; margin-top:3px}
+.pz-btns{display:flex; flex-direction:column; gap:8px; padding-top:2px}
+.pz-agenda{position:relative; overflow:hidden; border:1px solid rgba(221,214,254,.9); border-radius:17px; padding:11px; background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(245,243,255,.9) 45%,rgba(253,244,255,.86)); box-shadow:0 14px 34px -16px rgba(139,92,246,.5)}
+.pz-agenda .tt{font-size:13px; font-weight:800; color:#171717; display:flex; align-items:center; gap:7px}
+.pz-agenda .td{font-size:10.5px; color:#525252; margin-top:2px}
+.pz-agenda .cta{position:relative; overflow:hidden; margin-top:9px; display:flex; align-items:center; justify-content:center; gap:7px; min-height:46px; border-radius:13px; background:linear-gradient(90deg,#7c3aed,#d946ef,#7c3aed); color:#fff; font-size:13px; font-weight:800}
+.pz-wa{display:flex; align-items:center; justify-content:center; gap:8px; min-height:46px; border-radius:15px; background:linear-gradient(90deg,#22d3ee,#2563eb); color:#fff; font-size:13.5px; font-weight:800; box-shadow:0 12px 28px -10px rgba(0,132,255,.6)}
+.pz-at{display:flex; align-items:center; justify-content:center; gap:6px; font-size:10px; color:#737373}
+.pz-at .pt{width:7px;height:7px;border-radius:999px;background:#10b981;animation:pz-dot 1.8s ease-in-out infinite}
+.pz-ausp{display:flex; align-items:center; justify-content:center; gap:8px; border-top:1px solid rgba(212,212,212,.75); padding-top:11px}
+.pz-ausp .lb{font-size:9.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:#a3a3a3}
+.pz-ausp b{font-size:12px; color:#525252}
+.pz-foot{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 14px; background:rgba(255,255,255,.6); backdrop-filter:blur(12px); font-size:10px; color:#737373}
+.pz-print{border:1px solid #e5e5e5; background:#fff; border-radius:999px; padding:4px 10px; font-size:10px; font-weight:700; color:#525252}
+.pz-nota{position:relative; text-align:center; font-size:10px; color:#a3a3a3; margin-top:9px}
+.pz [data-z].hl{box-shadow:0 0 0 2.5px rgba(59,130,246,.45); border-radius:10px}
+@container (min-width:560px){
+  .pz{padding:34px 18px 20px}
+  .pz-head{padding:15px 20px}
+  .pz-media{height:240px; font-size:38px}
+  .pz-body{padding:20px 20px 22px; gap:14px}
+  .pz-tit{font-size:25px}
+  .pz-sub{font-size:13.5px}
+  .pz-p{font-size:13.5px}
+  .pz-wa{min-height:52px; font-size:15px}
+  .pz-agenda .cta{min-height:54px; font-size:15px}
+  .pz-benef .tx{font-size:14px}
+  .pz-foot{padding:11px 20px}
+}
+/* ===== Pantalla original (overlay 1:1) ===== */
+.orig{position:fixed; inset:0; z-index:75; background:rgba(6,10,18,.78); backdrop-filter:blur(5px); display:none; flex-direction:column}
+.orig.open{display:flex}
+.orig-bar{display:flex; align-items:center; gap:10px; padding:10px 14px; color:#e5e7eb; flex-wrap:wrap}
+.orig-bar .tt{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:#9ca3af}
+.orig-toggle{display:flex; gap:2px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); border-radius:999px; padding:2px}
+.orig-toggle button{font:inherit; font-size:11.5px; font-weight:600; color:#cbd5e1; background:none; border:none; border-radius:999px; padding:5px 12px; cursor:pointer}
+.orig-toggle button.on{background:#fff; color:#0f172a}
+.orig-x{margin-left:auto; font-size:12px; font-weight:700; color:#e5e7eb; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.18); border-radius:999px; padding:6px 13px; cursor:pointer}
+.orig-wrap{flex:1; overflow:auto; padding:6px 14px 22px}
+#orig-stage{border-radius:26px; overflow:hidden; margin:0 auto; box-shadow:0 40px 120px -40px rgba(0,0,0,.8)}
+#orig-stage.cel{width:390px; height:844px; overflow-y:auto}
+#orig-stage.tab{width:768px; height:1024px; overflow-y:auto}
+#orig-stage.web{width:min(1280px,100%); height:800px; overflow-y:auto}
+.ctor-toast{margin-top:9px; font-size:12px; color:var(--success-text); background:var(--success-tint); border:1px solid var(--success-soft); border-radius:var(--radius-sm); padding:7px 10px; display:none}
+.ctor-toast.on{display:block}
+
+/* Fichas Cliente 360 */
+.buscador360{display:flex; gap:10px; margin-top:10px}
+.buscador360 input{
+  flex:1; font:inherit; font-size:13.5px; padding:11px 14px; border-radius:var(--radius);
+  border:1px solid var(--border-strong); background:var(--bg); color:var(--text); outline:none;
+}
+.buscador360 input:focus{border-color:var(--accent-soft); box-shadow:0 0 0 3px var(--accent-tint)}
+.fichas{display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; margin-top:12px}
+.ficha{border:1px solid var(--border); border-radius:var(--radius); padding:12px; background:var(--bg-subtle); display:flex; flex-direction:column; gap:4px}
+.ficha .fn{font-weight:600; font-size:13.5px}
+.ficha .fd{font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--text-3)}
+.ficha .stats{display:flex; gap:14px; margin-top:6px; font-size:12px; color:var(--text-2)}
+.ficha .stats b{font-weight:600; color:var(--text)}
+.ficha .accion{margin-top:8px; font-size:12px; font-weight:600}
+.ficha .accion.azul{color:var(--accent-text)} .ficha .accion.verde{color:var(--success-text)} .ficha .accion.gris{color:var(--text-3)}
+.ficha .filo{display:flex; gap:6px; margin-top:9px; flex-wrap:wrap}
+
+/* Guía (drawer) */
+#guia{
+  position:fixed; top:0; right:-460px; width:440px; max-width:94vw; height:100dvh; z-index:70;
+  background:var(--bg); border-left:1px solid var(--border-strong); box-shadow:var(--shadow-pop);
+  padding:18px 20px; overflow:auto; transition:right .22s ease;
+}
+#guia.open{right:0}
+#guia h3{margin:2px 0 4px; font-size:17px}
+#guia .gsec{margin-top:14px}
+#guia .gsec .t{font-family:"IBM Plex Mono",monospace; font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3)}
+#guia .gsec ul{margin:6px 0 0; padding-left:18px; color:var(--text-2); font-size:13px}
+#guia .gsec li{margin:4px 0}
+#guia .cerrar{float:right}
+#guia-backdrop{position:fixed; inset:0; z-index:65; background:rgba(4,16,46,.35); display:none}
+#guia-backdrop.open{display:block}
+
+footer.credito{margin-top:34px; color:var(--text-3); font-size:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+footer.credito .spacer{flex:1}
+
+details.resumen{margin-top:22px; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:10px 14px}
+details.resumen summary{cursor:pointer; font-weight:600}
+details.resumen ul{margin:8px 0 4px; color:var(--text-2); font-size:13px}
+details.resumen li{margin:5px 0}
+
+@media (max-width:760px){
+  .wrap{padding:16px 14px 48px}
+  .titulo h1{font-size:21px}
+  #grupos{gap:2px} .grupo-btn{margin-right:8px; font-size:12.5px}
+  #subs{overflow-x:auto; flex-wrap:nowrap; padding-bottom:4px}
+  .sub-btn{white-space:nowrap}
+  .combo input{width:150px}
+  .fila-cliente .nom{min-width:100%}
+  .hbarras .hb {min-width:2px}
+  .hbarra{grid-template-columns:96px 1fr 46px}
+}
+
+/* ===================== PULIDO UI · v10 (aditivo — no quita nada) ===================== */
+/* 1 · Contraste AA: grises legibles (text-3/text-4) + anillo de foco */
+:root{ --text-3:#66738d; --text-4:#7f8ca6; --ring:rgba(13,91,255,.22); }
+:root[data-theme="dark"]{ --text-3:#93a4cc; --text-4:#6f80a8; --ring:rgba(96,146,255,.32); }
+
+/* 2 · Accesibilidad: foco de teclado visible + inputs con anillo consistente */
+:where(button,a,[tabindex]):focus-visible{ outline:2.5px solid var(--accent); outline-offset:2px; }
+.combo input:focus,.buscador360 input:focus,.ctor textarea:focus{ border-color:var(--accent); box-shadow:0 0 0 3px var(--ring); }
+::selection{ background:var(--accent-soft); color:var(--text); }
+button{ touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+button:disabled{ opacity:.5; cursor:not-allowed; }
+
+/* 3 · Scrollbars finas y consistentes */
+*{ scrollbar-width:thin; scrollbar-color:var(--border-strong) transparent; }
+::-webkit-scrollbar{ width:10px; height:10px; }
+::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:999px; border:2px solid transparent; background-clip:padding-box; }
+::-webkit-scrollbar-thumb:hover{ background:var(--text-4); }
+::-webkit-scrollbar-track{ background:transparent; }
+
+/* 4 · Micro-interacciones: transiciones y «presionado» */
+body{ transition:background-color .25s ease, color .25s ease; }
+.btn,.chip,.sub-btn,.grupo-btn,#banner button,.ctor-tab,.opt-chip,.fmt,.preset button,.pv-btn,.orig-toggle button,.orig-x,.vermas,.tl .ab,.lista-card a{
+  transition:background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .12s ease;
+}
+.bloque,.kpi,.lista-card,.ficha,.chart,.paso,.senal,.jugada,#filtros,#banner{ transition:background-color .25s ease, border-color .18s ease, box-shadow .18s ease; }
+.btn:active,.chip:active,.sub-btn:active,.ctor-tab:active,.opt-chip:active,.fmt:active{ transform:translateY(1px); }
+.pv-btn:hover{ background:var(--accent-soft); }
+.fmt:hover{ border-color:var(--border-strong); }
+.tl .ab:hover,.lista-card a:hover{ text-decoration:underline; }
+
+/* 5 · Superficies: hover sutil */
+.bloque:hover{ border-color:var(--border-strong); }
+.kpi:hover,.lista-card:hover,.chart:hover,.paso:hover,.senal:hover{ border-color:var(--border-strong); }
+.ficha:hover{ border-color:var(--border-strong); box-shadow:var(--shadow-sm); }
+.slot:hover{ border-color:var(--accent-soft); color:var(--accent-text); }
+.jugada-head,.bloque-head{ transition:background-color .15s ease; }
+
+/* 6 · Jerarquía y números */
+.titulo h1,.bloque-head h2,#guia h3,.ctor-panel h4{ text-wrap:balance; }
+.kpi .v,.lista-card .v,.jugada-head .cnt,.fila-cliente .ven,.tl .tm,.chart .n{ font-variant-numeric:tabular-nums; }
+.kpi .v{ font-size:22px; }
+.badge{ color:var(--text-2); }
+
+/* 7 · Tablas: zebra sutil + hover consistente */
+.tabla tbody tr:nth-child(even) td{ background:var(--bg-subtle); }
+.tabla tbody tr:hover td{ background:var(--bg-hover); }
+.tabla-wrap{ border-radius:var(--radius-sm); }
+
+/* 8 · Animaciones de entrada (abrir bloque/jugada/combo/visor) */
+@keyframes v10-fade{ from{ opacity:.55; transform:translateY(-3px); } to{ opacity:1; transform:none; } }
+@keyframes v10-fadein{ from{ opacity:0; } to{ opacity:1; } }
+@keyframes v10-pop{ from{ opacity:0; transform:translateY(-4px) scale(.99); } to{ opacity:1; transform:none; } }
+@keyframes v10-rise{ from{ opacity:0; transform:scale(.985); } to{ opacity:1; transform:none; } }
+.bloque:not(.collapsed) .bloque-body{ animation:v10-fade .16s ease; }
+.jugada.open .jugada-body{ animation:v10-fade .16s ease; }
+.combo.open .opts{ animation:v10-pop .15s cubic-bezier(.2,.9,.3,1); }
+.orig.open{ animation:v10-fadein .18s ease; }
+#orig-stage{ animation:v10-rise .22s cubic-bezier(.2,.9,.3,1); }
+#orig-stage{ box-shadow:0 40px 120px -40px rgba(0,0,0,.85), 0 0 0 1px rgba(255,255,255,.09); }
+.orig-toggle button:hover{ background:rgba(255,255,255,.14); }
+.orig-x:hover{ background:rgba(255,255,255,.2); }
+
+/* 8b · Bloque IA: resultado por algoritmo + pills del motor */
+.ia-result .ia-hint{ font-size:11px; color:var(--text-3); margin:2px 0 6px; }
+.ia-result .algo-r{ font-size:12.5px; margin:4px 0; line-height:1.5; }
+.pills button{ transition:color .15s ease, background-color .15s ease, box-shadow .15s ease; }
+.pills button:not(.on):hover{ color:var(--text); }
+
+/* 9 · Guía (drawer): secciones separadas y respiración */
+#guia .gsec+.gsec{ border-top:1px dashed var(--border); padding-top:12px; }
+#guia .gsec li{ margin:5px 0; }
+
+/* 10 · Barras con transición al cambiar datos */
+.barra .b,.hbarra .hb{ transition:width .3s ease, height .3s ease; }
+
+/* 11 · Móvil fino (320–430) */
+@media (max-width:430px){
+  .titulo h1{ font-size:19px; }
+  .fichas{ grid-template-columns:1fr; }
+  .kpis{ grid-template-columns:repeat(auto-fill,minmax(138px,1fr)); }
+  .ctor-panel{ padding:10px; }
+  #banner{ padding:8px 12px; gap:8px; }
+  #banner .hint{ font-size:11.5px; }
+  body{ padding-bottom:env(safe-area-inset-bottom); }
+}
+
+/* 12 · Menos movimiento si el sistema lo pide */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{ animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+}
+
+/* ===================== FILTROS v13 (barra liviana + panel) ===================== */
+.fbtn{font:inherit; font-size:12.5px; font-weight:600; color:var(--text-2); background:var(--bg-subtle); border:1px solid var(--border); border-radius:999px; padding:6px 12px; cursor:pointer}
+.fbtn:hover{color:var(--text); border-color:var(--border-strong)}
+.fbtn.on{color:var(--accent-text); background:var(--accent-tint); border-color:transparent}
+.fwrap{position:relative}
+.fwrap.open{z-index:68}
+.fwrap.open .fpop{display:block}
+.fpop{display:none; position:absolute; top:calc(100% + 8px); left:0; width:346px; max-width:92vw; background:var(--bg); border:1px solid var(--border-strong); border-radius:12px; padding:12px 12px 10px; box-shadow:0 22px 60px -22px rgba(6,10,25,.5); animation:v10-pop .15s cubic-bezier(.2,.9,.3,1)}
+.fpop-cond{width:440px}
+.fpop-t{font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text-3); margin-bottom:8px}
+.fpop .ftxt{font-size:12px; color:var(--text-2); margin:2px 0 6px}
+.frow{display:flex; align-items:center; gap:8px; margin:7px 0}
+.flb{width:64px; font-family:"IBM Plex Mono",monospace; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--text-3); flex:none}
+.mdd{position:relative}
+.mdd.open{z-index:74}
+.mdd-btn{font:inherit; font-size:12.5px; color:var(--text-2); background:var(--bg); border:1px dashed var(--border-strong); border-radius:8px; padding:6px 10px; cursor:pointer}
+.mdd-btn.set{color:var(--text); border-style:solid; font-weight:600}
+.mdd.open .mdd-opts{display:block}
+.mdd-opts{display:none; position:absolute; top:calc(100% + 4px); left:0; min-width:175px; max-height:230px; overflow:auto; background:var(--bg); border:1px solid var(--border-strong); border-radius:10px; box-shadow:0 16px 44px -16px rgba(6,10,25,.5); padding:4px; z-index:76}
+.mopt{display:block; width:100%; text-align:left; font:inherit; font-size:12.5px; color:var(--text-2); background:none; border:none; border-radius:7px; padding:7px 9px; cursor:pointer}
+.mopt:hover{background:var(--bg-hover); color:var(--text)}
+.conj{margin:2px 0 2px 14px; font:inherit; font-size:11px; font-weight:800; color:var(--accent-text); background:var(--accent-tint); border:none; border-radius:999px; width:26px; height:20px; cursor:pointer}
+.fila-cond{display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:8px; border:1px solid var(--border); border-radius:10px; background:var(--bg-subtle); margin:5px 0}
+.fila-cond .dtin{min-width:110px}
+.dtin{font:inherit; font-size:12.5px; color:var(--text); background:var(--bg); border:1px solid var(--border-strong); border-radius:8px; padding:6px 9px}
+.rm{font:inherit; font-size:11px; color:var(--text-3); background:none; border:none; border-radius:7px; padding:4px 7px; cursor:pointer}
+.rm:hover{background:rgba(214,64,64,.14); color:#e05252}
+.cfoot{display:flex; align-items:center; gap:8px; margin-top:10px}
+.fcnt{font-size:11px; color:var(--text-3); margin-left:auto}
+.ft-chip{display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--accent-text); background:var(--accent-tint); border-radius:999px; padding:4px 6px 4px 11px}
+.ft-chip .x{cursor:pointer; opacity:.65; font-weight:800; padding:0 3px}
+.ft-chip .x:hover{opacity:1}
+.fpop .spacer{flex:1}
+@media (max-width:430px){
+  .fpop{position:fixed; left:10px; right:10px; width:auto; top:110px; max-height:66vh; overflow:auto}
+}
+
+/* ===================== FILTROS v13: barra liviana + panel + motor de filtrado ===================== */
+/* --- barra de la sección --- */
+.fadd{font:inherit; font-size:12.5px; font-weight:700; color:#fff; background:var(--accent, #4d68f0); border:none; border-radius:999px; padding:6px 13px; cursor:pointer}
+.fadd:hover{filter:brightness(1.07)}
+.fadd.on{background:var(--accent-tint); color:var(--accent-text)}
+.fchip{display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:600; color:var(--text-2); background:var(--bg-subtle); border:1px solid var(--border); border-radius:999px; padding:4px 7px 4px 11px}
+.fchip .x{cursor:pointer; opacity:.6; font-weight:800; padding:0 2px}
+.fchip .x:hover{opacity:1; color:#e05252}
+.flimpiar{font:inherit; font-size:12px; color:var(--text-3); background:none; border:none; text-decoration:underline; cursor:pointer; padding:4px}
+.flimpiar:hover{color:var(--text)}
+.fcnt2{font-size:12px; color:var(--text-3); font-weight:600; font-variant-numeric:tabular-nums}
+/* --- panel lateral --- */
+#fpanel-backdrop{position:fixed; inset:0; background:rgba(8,12,26,.42); opacity:0; pointer-events:none; transition:opacity .18s; z-index:78}
+#fpanel-backdrop.open{opacity:1; pointer-events:auto}
+#fpanel{position:fixed; top:0; right:0; bottom:0; width:408px; max-width:94vw; background:var(--bg); border-left:1px solid var(--border-strong); box-shadow:-26px 0 60px -30px rgba(6,10,25,.55); transform:translateX(105%); transition:transform .22s cubic-bezier(.2,.9,.3,1); z-index:79; display:flex; flex-direction:column}
+#fpanel.open{transform:none}
+.fp-head{display:flex; align-items:center; gap:10px; padding:15px 16px 11px; border-bottom:1px solid var(--border)}
+.fp-head .btn{margin-left:auto; flex:none}
+.fp-t{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.16em; color:var(--text-3); font-weight:700}
+.fp-s{font-size:11.5px; color:var(--text-3); margin-top:2px}
+#fp-body{flex:1; overflow-y:auto; padding:4px 16px 16px}
+.fp-sec{font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-3); font-weight:700; margin:16px 0 6px; padding-top:12px; border-top:1px solid var(--border)}
+#fp-body .fp-sec:first-child{border-top:none; padding-top:2px; margin-top:6px}
+.fp-row{display:flex; align-items:center; gap:10px; margin:9px 0}
+.fp-lbl{width:74px; flex:none; font-size:12px; color:var(--text-2); font-weight:600}
+.fp-row .combo{flex:1; max-width:none}
+.fp-row .combo input{width:100%}
+.fp-inline{display:flex; flex-wrap:wrap; gap:6px; align-items:center}
+.fp-inline .fp-row{margin:5px 0; width:100%}
+.fp-cond{display:flex; flex-direction:column; gap:2px}
+.fp-s2{font-size:12px; color:var(--text-2); margin:2px 0 6px}
+.fp-hintv{font-size:12px; color:var(--text-3); margin:8px 0}
+.fp-foot{display:flex; align-items:center; gap:10px; padding:12px 16px; border-top:1px solid var(--border); background:var(--bg-subtle)}
+.fp-cnt{font-size:12px; font-weight:600; color:var(--text-2); font-variant-numeric:tabular-nums}
+/* --- mini-dropdowns v13: mismo lenguaje que el resto --- */
+.mdd-btn{font:inherit; font-size:12.5px; color:var(--text-3); background:var(--bg-subtle); border:1px solid var(--border); border-radius:8px; padding:6px 10px; cursor:pointer}
+.mdd-btn.set{color:var(--text); border-color:var(--border-strong); background:var(--bg); font-weight:600}
+.mdd.up .mdd-opts{top:auto; bottom:calc(100% + 4px)}
+.combo.up .opts{bottom:calc(100% + 6px); top:auto}
+.combo .clr{display:none; position:absolute; right:9px; top:50%; transform:translateY(-50%); cursor:pointer; color:var(--text-3); font-weight:800; font-size:11px; z-index:2}
+.combo .clr:hover{color:#e05252}
+.combo.tiene .clr{display:block}
+/* --- resultado del filtrado --- */
+.fx-off{display:none !important}
+.fx-info{font-size:11.5px; color:var(--text-3); margin-top:8px; font-weight:600}
+.fx-info.vacio{color:#d9822b}
+@media (max-width:520px){ #fpanel{width:100%; max-width:100%} }
+
+/* ===================== BOTONES DEL HEADER · v13b (Pólizas / Actualizar andan) ===================== */
+#upd-ic{ display:inline-block; }
+#upd-ic.spin{ animation:upd-girar .7s linear infinite; }
+@keyframes upd-girar{ to{ transform:rotate(360deg); } }
+.btn.ok{ border-color:var(--success) !important; }
+#upd-sello{ font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+
+<div id="banner">
+  <span class="tag">MAQUETA · 044 · v13b</span>
+  <span><b>Así quedaría el Dashboard Management</b> <span class="hint">(Camino 3: grupos + subpestañas + bloques que se mueven)</span></span>
+  <span class="spacer"></span>
+  <span class="hint">Probá: cambiá de grupo ➜ colapsá bloques (tocá el título) ➜ arrastrá un bloque (⠿) ➜ «? guía», «✨ Análisis IA» y el constructor con «⛶ pantalla original» (Marketing → Constructor de publicaciones). TODO se conserva: guías ✓ · análisis IA por sección ✓ · constructor de publicidad ✓</span>
+  <button id="btn-reset" title="Vuelve el orden original de los bloques">↺ Restablecer orden</button>
+  <button id="btn-tema" title="Claro / oscuro">🌙 Tema</button>
+</div>
+
+<div class="wrap">
+  <div class="head-row">
+    <div class="titulo">
+      <div class="kicker">Cockpit ejecutivo</div>
+      <h1>Decisiones claras sobre clientes, cartera y crecimiento</h1>
+      <p>La historia de Rafael y la nueva plataforma, analizadas como una única cartera.</p>
+    </div>
+    <div class="spacer"></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+      <button class="btn" id="btn-polizas" title="Hay pólizas todavía en proceso de carga en el sistema nuevo — abrilo para ver la lista">Pólizas en proceso de carga</button>
+      <button class="btn primary" id="btn-actualizar" title="Vuelve a calcular los datos del tablero"><span id="upd-ic">⟳</span> Actualizar</button>
+      <span id="upd-sello" class="hint"></span>
+    </div>
+  </div>
+
+  <div id="sugerencias">
+    <span class="chip" data-goto="oportunidades/cola"><span class="dot" style="background:var(--danger)"></span>22 pólizas vencen en ≤7 días — hablá hoy</span>
+    <span class="chip" data-goto="oportunidades/reactivacion"><span class="dot" style="background:var(--accent)"></span>9.029 clientes para reactivar</span>
+    <span class="chip" data-goto="oportunidades/cross"><span class="dot" style="background:var(--success)"></span>Auto → Auxilio: 617 clientes para ampliar</span>
+    <span class="chip" data-goto="crm/crm"><span class="dot" style="background:var(--warning)"></span>CRM: 2 oportunidades abiertas</span>
+    <span class="chip" data-goto="analisis/calidad"><span class="dot" style="background:var(--text-3)"></span>Migración: 96,7% de gestiones vinculadas</span>
+  </div>
+
+  <nav id="grupos"></nav>
+  <nav id="subs"></nav>
+  <div id="migas"></div>
+  <div id="filtros"></div>
+  <main id="contenido"></main>
+</div>
+
+<div id="orig" class="orig">
+  <div class="orig-bar">
+    <span class="tt">📄 PUBLICACIÓN · pantalla original</span>
+    <div class="orig-toggle">
+      <button data-modo="cel" class="on">📱 Celular</button>
+      <button data-modo="tab">📲 Tablet</button>
+      <button data-modo="web">🖥️ Web</button>
+    </div>
+    <span class="orig-x" id="orig-x">✕ Cerrar</span>
+    </div>
+    <div class="orig-wrap"><div class="pz-wrap cel" id="orig-stage"></div></div>
+</div>
+<div id="guia-backdrop"></div>
+<aside id="guia">
+  <button class="btn tiny cerrar" onclick="cerrarGuia()">✕ Cerrar</button>
+  <h3 id="g-titulo"></h3>
+  <div id="g-cuerpo"></div>
+</aside>
+
+<div id="fpanel-backdrop" onclick="cerrarFiltros()"></div>
+<aside id="fpanel" aria-label="Panel de filtros">
+  <div class="fp-head">
+    <div><div class="fp-t">FILTROS</div><div class="fp-s" id="fp-sub">Se aplican a las listas y tablas de esta sección</div></div>
+    <button class="btn tiny" onclick="cerrarFiltros()">✕ Cerrar</button>
+  </div>
+  <div id="fp-body"></div>
+  <div class="fp-foot">
+    <button class="btn tiny" onclick="fxLimpiar()">Limpiar todo</button>
+    <span class="spacer"></span>
+    <span class="fp-cnt" id="fp-cnt"></span>
+    <button class="btn primary tiny" onclick="cerrarFiltros()">✓ Listo</button>
+  </div>
+</aside>
+
+<script>
+/* =================== DATOS (reales al 28/09/2026) =================== */
+const OFICINAS = ["AGENCIA BOFFELLI","AGENCIA CHAPIEC","AGENCIA CICLOLANDIA","AGENCIA MOTOPLACE","AGENCIA TERRE-MOTOS","ALLENDE (13647)","BAIGORRIA (7268)","BAIGORRIA moto (7293)","BLED GRAL (9513)","CLIENGO (7204)","FILIAL (7267)","FISHERTON (7266)","LIBERTAD (14339)","MAGNA (12351)","PUERTO (11435)","RAFAELA (7204)","SAN LORENZO (12172)","SAN NICOLAS (7566)","SANTA FE (10293)","SUR (7565)","VGG (7204)"];
+const PRODUCTOS = ["AUTO","MOTO","HOGAR","VIDA","ACCIDENTES PERSONALES","BICICLETA","CAMION","TRAILER","TAXI / REMIS","REMIS","COMERCIO","CAUCIÓN","MALA PRAXIS","CASA RODANTE","PICK UP"];
+const EMPLEADOS = ["ALLENDE RAFAEL SEBASTIAN","ALVAREZ SOFIA","ARIAS JOSE PABLO","ARROYO ELIANA MARICEL","AYBAR JOEL MILTON","GIOVANELLO CECILIA","HERRERO TOMAS","MENDOZA ROSA","RODRIGUEZ VERONICA GUADALUPE","SANTA CRUZ JUAN BAUTISTA","WASSER FABIANA ANABEL"];
+
+const GUIA_PULSO = {
+  que:"Es la radiografía del negocio: cuánto entra (altas), cuánto sale (anulaciones), más siniestros y cotizaciones. Combina la historia de Rafael con lo cargado en el sistema nuevo.",
+  mide:["Altas, anulaciones y el crecimiento neto.","Siniestros y cotizaciones del período.","Evolución mes a mes y reparto por canal, producto y oficina."],
+  sirve:["Mirá primero el crecimiento neto: positivo = el negocio crece.","Usá los atajos de período para enfocar la vista.","Si algo cae, filtrá por oficina o canal."]
+};
+
+/* Análisis IA por sección — textos de ejemplo (en el CRM real los genera deepseek-reasoner) */
+const ANALISIS_IA = {
+ pulso:"El negocio creció +5.998 en términos netos sobre 12.432 altas históricas. La señal de atención: 6.434 anulaciones (51,8% de las altas), concentradas antes de la migración. Con 93 pólizas venciendo en ≤30 días y 9.029 candidatos de reactivación, la agenda de retención y win-back es la palanca de mayor retorno del trimestre.",
+ cartera:"Cartera parcial: 1.326 pólizas activas cargadas ($73,3 M de prima, 96,6% en Triunfo Seguros). AUTO y VIDA lideran por producto. Los indicadores son parciales hasta cerrar la migración — revisá Calidad de datos antes de decidir concentración por compañía.",
+ calidad:"Migración al 96,7% de gestiones vinculadas (34.144/35.325) y 98,4% de clientes (14.688/14.921). Pendientes operativos: 433 pólizas sin vencimiento y 1.181 gestiones sin match. Al llegar a ~100%, la cartera cargada pasa a ser la definitiva.",
+ cola:"22 renovaciones al borde del vencimiento (≤7 días) y 93 en el mes. Reactivación con 9.029 candidatos; Auto→Auxilio es el par de mayor tracción (617). Sugerencia: repartir las primeras 22 por oficina y activar la campaña Auto→Auxilio esta semana.",
+ retencion:"22 clientes con vencimiento inmediato y 142 activos con anulaciones en su historia; 3.376 siniestros históricos marcan la experiencia. Prioridad: bloque ≤7 días, después la secuencia ≤30. La evolución pendiente es el score de riesgo 0–100.",
+ reactivacion:"9.029 candidatos sobre 23.148 registros analizados. Los más valiosos: exclientes recientes con altas históricas y productos rentables. Recomendación: campañas segmentadas por score — no contacto masivo.",
+ cross:"350 clientes con una sola póliza para ampliar y 420 con dos o más. Tracción: Auto→Auxilio (617), Auto→Hogar (612), Auto→Vida (311). Campaña sugerida: Auto→Auxilio — más casos y menor fricción de oferta.",
+ c360:"Ficha unificada (historia Rafael + plataforma): pólizas, gestiones, siniestros y la próxima mejor acción. El análisis IA por cliente convierte eso en la acción concreta: consolidar, ampliar, recuperar o seguir.",
+ crm:"0% de respuesta sobre 27 acciones en 30 días: primer mensaje sin seguimiento. 6 contactos vinculados a la cartera (75%) con $288.618 de prima activa. Acción: convertir las 2 oportunidades abiertas en pipeline con responsable y próximo paso.",
+ seguimiento:"Las gestiones se siguen evento por evento: creada → derivada → enviada → vista → respondió. Filtrá por estado o empleado para ver qué se trabó y qué conviene empujar.",
+ propuestas:"Embudo: 13 creadas → 3 derivadas → 4 enviadas → 13 vistas → 0 respondidas (0% de tasa). La brecha está en la derivación y la respuesta: sugerencia, asociar cada nueva publicidad a un responsable al crearla.",
+ constructor:"El constructor arma la pieza completa paso a paso: tipo y cliente, medios (foto + video), logo, texto con asistente IA, producto y CTA, y la publicación final en /p/ con su derivación. La vista demo muestra celular, tablet y web; «Ver en pantalla original» la muestra a tamaño real.",
+ campanas:"13 campañas en el macro. El formato «IA primero» domina la creación; las vistas se concentran en Renovación y Retención. Próximo paso: medir respuesta por tipo para cerrar el ciclo completo.",
+ archivos:"El contenedor concentra los medios (1 video fijo 🔒). Mantené la biblioteca depurada: de acá se eligen las imágenes al armar cada publicidad.",
+ _default:"El análisis IA combina los datos del período con tu cartera real. Elegí el motor (Algoritmo · Dual · Solo IA) y generalo cuando lo necesites — queda registrado igual que hoy."
+};
+
+/* ---------- Análisis por ALGORITMO (sin IA): datos + reglas del sistema, por sección ---------- */
+const ANALISIS_ALGO = {
+ pulso:[
+  "Altas históricas 12.432 · anulaciones 6.434 → fuga 51,8% (alerta principal)",
+  "Vencimientos ≤30 días: 93 → recordatorio automático ya activado",
+  "Candidatos de reactivación: 9.029 → lista priorizada por score"
+ ],
+ cartera:[
+  "Pólizas activas: 1.326 · prima $73,3 M → concentración Triunfo 96,6% (alta)",
+  "AUTO y VIDA lideran el mix → sugerida diversificación por producto",
+  "Carga parcial (migración en curso) → evitar decisión final de concentración"
+ ],
+ calidad:[
+  "Gestiones vinculadas: 34.144 de 35.325 → 96,7% (umbral 95%: OK)",
+  "Clientes vinculados: 14.688 de 14.921 → 98,4% (OK)",
+  "Cola de corrección: 433 pólizas sin vencimiento · 1.181 gestiones sin match"
+ ],
+ cola:[
+  "Renovación ≤7 días: 22 → prioridad máxima (bloque de hoy)",
+  "Renovación ≤30 días: 93 → recordatorios de la semana",
+  "Par Auto→Auxilio: 617 → campaña sugerida por baja fricción"
+ ],
+ retencion:[
+  "Vencimiento inmediato: 22 clientes → bloque ≤7 días",
+  "Anulaciones en su historia: 142 → secuencia ≤30 días",
+  "Siniestros históricos: 3.376 → marca de experiencia en la ficha"
+ ],
+ reactivacion:[
+  "Registros analizados: 23.148 → candidatos: 9.029 (39%)",
+  "Prioridad: exclientes recientes con producto rentable",
+  "Contacto masivo bloqueado → campañas segmentadas por score"
+ ],
+ cross:[
+  "Monopóliza: 350 → ampliación; Multipóliza: 420 → mantenimiento",
+  "Tracción: Auto→Auxilio 617 · Auto→Hogar 612 · Auto→Vida 311",
+  "Mejor par a ofertar: Auto→Auxilio (más casos, menor fricción)"
+ ],
+ c360:[
+  "Datos unificados: pólizas + gestiones + siniestros → ficha única",
+  "Próxima mejor acción: calculada por reglas de cartera y vencimientos"
+ ],
+ crm:[
+  "Acciones 30 días: 27 · respondidas: 0 → alerta de seguimiento",
+  "Contactos ↔ cartera: 6 de 8 (75%) · prima activa $288.618",
+  "Oportunidades abiertas: 2 → asignar responsable y próximo paso"
+ ],
+ seguimiento:[
+  "Flujo de estados: creada → derivada → enviada → vista → respondió",
+  "Regla: sin movimiento +48 h → marcar para seguimiento"
+ ],
+ propuestas:[
+  "Embudo: 13 creadas → 3 derivadas → 4 enviadas → 13 vistas → 0 respondidas",
+  "Alerta: publicidad sin responsable asignado al crearse"
+ ],
+ campanas:[
+  "Campañas activas: 13 · creación dominada por «IA primero»",
+  "Vistas concentradas: Renovación y Retención → medir respuesta por tipo"
+ ],
+ archivos:[
+  "Biblioteca de medios del equipo · 1 video fijo 🔒",
+  "Regla de fijado: solo dueño, propietario o gerente"
+ ],
+ constructor:[
+  "Pasos: tipo y cliente → medios → logo → texto → producto → página → derivación",
+  "Regla: publicidad sin derivar a los 3 días → recordatorio automático"
+ ],
+ _default:[
+  "Reglas del sistema evaluadas sobre los datos de la sección",
+  "Elegí otro motor para sumar la lectura de IA"
+ ]
+};
+let MOTOR="Dual"; // motor del análisis por sección (Algoritmo · Dual · Solo IA)
+
+const DATA = [
+ { id:"analisis", nombre:"Análisis", subs:[
+   { id:"pulso", nombre:"Pulso del negocio", filtros:["periodo","oficina","producto","canal","empleado","compania"],
+     bloques:[
+      { id:"kpis", piso:"1", titulo:"Los números", sub:"La foto del período", tipo:"kpis",
+        items:[
+          {v:"14.921", l:"Clientes históricos", s:"Base maestra actual", c:""},
+          {v:"12.432", l:"Altas históricas", s:"Historia comercial", c:""},
+          {v:"+5.998", l:"Crecimiento neto", s:"Altas menos anulaciones", c:"pos"},
+          {v:"1.427", l:"Pólizas sistema nuevo", s:"Activas + no vigentes", c:""},
+          {v:"$ 73,3 M", l:"Prima activa cargada", s:"Parcial (migración abierta)", c:""},
+          {v:"9.379", l:"Oportunidades", s:"Reactivación + venta cruzada", c:"acc"},
+        ]},
+      { id:"tend", piso:"2", titulo:"Las tendencias", sub:"Cómo evoluciona", tipo:"charts",
+        charts:[
+          {t:"¿Estamos creciendo?", s:"Altas, anulaciones y crecimiento neto", tipo:"barras3"},
+          {t:"Cómo llegan y se atienden", s:"Distribución histórica por canal", tipo:"hb", rows:[["WAPP - PERSONAL",58],["PRESENCIAL",44],["0810-AUTO-GESTIÓN",31],["AUTO-GESTIÓN",27],["VÍA E-MAIL",15],["WLVX",7]]},
+        ]},
+      { id:"sen", piso:"3", titulo:"Las señales", sub:"Lo que requiere decisión", tipo:"senales",
+        items:[
+          {c:"rojo", t:"6.434 anulaciones históricas", d:"Equivalen al 51,8% de las altas. No es churn todavía, pero sí una señal prioritaria."},
+          {c:"amar", t:"93 pólizas cargadas vencen pronto", d:"22 están dentro de los próximos 7 días."},
+          {c:"azul", t:"9.029 candidatos de reactivación", d:"Clientes con historia comercial que hoy no muestran póliza activa."},
+        ]},
+      { id:"listas", piso:"4", titulo:"Las listas", sub:"37.163 registros — con buscador y «ver todo»", tipo:"listas", mejora:"buscador + paginado",
+        items:[
+          {v:"14.921", l:"Clientes históricos", s:"Base maestra actual"},
+          {v:"12.432", l:"Altas históricas", s:"Historia comercial"},
+          {v:"1.427", l:"Pólizas en el sistema nuevo", s:"Activas + no vigentes"},
+          {v:"$ 73.290.282", l:"Prima activa cargada", s:"No representa la cartera total"},
+          {v:"9.379", l:"Oportunidades detectadas", s:"Reactivación + venta cruzada"},
+        ],
+        guia:"pulso"},
+     ]},
+   { id:"cartera", nombre:"Cartera", filtros:["periodo","compania","producto"],
+     bloques:[
+      { id:"kpis", piso:"1", titulo:"Los números", sub:"Cartera en proceso de carga — indicadores parciales", tipo:"kpis",
+        items:[
+          {v:"1.427", l:"Pólizas cargadas", s:"Activas 1.326 · No vigentes 101", c:""},
+          {v:"1.326", l:"Pólizas activas", s:"Vigentes o renovadas", c:""},
+          {v:"770", l:"Clientes activos", s:"Con al menos una póliza activa", c:""},
+          {v:"$ 73.290.282", l:"Prima activa", s:"Valor parcial", c:"acc"},
+        ]},
+      { id:"prod", piso:"2", titulo:"Las tendencias", sub:"Productos y compañías", tipo:"charts",
+        charts:[
+          {t:"Productos cargados actualmente", s:"Foto parcial de la nueva base", tipo:"hb", rows:[["AUTO",8],["VIDA",6],["PICK UP",5],["BICICLETA",4],["TAXI / REMIS",3],["CAMION",2],["AUXILIO",1]]},
+        ]},
+      { id:"comp", piso:"3", titulo:"Por compañía", sub:"Distribución de las pólizas ya cargadas", tipo:"tabla",
+        cols:["COMPAÑÍA","PÓLIZAS","PRIMA ACTIVA"], rows:[["TRIUNFO SEGUROS","1.414","$ 72.946.504"],["FEDERACION PATRONAL SEGUROS SA","1","$ 1.909"]]},
+     ]},
+   { id:"calidad", nombre:"Calidad de datos", filtros:["periodo"],
+     bloques:[
+      { id:"kpis", piso:"1", titulo:"Los números", sub:"Salud de la migración", tipo:"kpis",
+        items:[
+          {v:"98,4%", l:"Clientes vinculados", s:"14.688 de 14.921", c:"pos"},
+          {v:"96,7%", l:"Gestiones vinculadas", s:"34.144 de 35.325", c:"pos"},
+          {v:"1.181", l:"Gestiones sin match", s:"Por conciliar", c:"hot"},
+          {v:"433", l:"Pólizas sin vencimiento", s:"A completar", c:"hot"},
+        ]},
+      { id:"salud", piso:"2", titulo:"Lo que falta completar", sub:"Pólizas cargadas: 1.427", tipo:"tabla",
+        cols:["QUÉ FALTA","CASOS"], rows:[["Sin cliente","9"],["Sin producto","23"],["Sin compañía","12"],["Sin vencimiento","433"],["Gestiones sin match","1.181"]]},
+     ]},
+ ]},
+ { id:"oportunidades", nombre:"Oportunidades", subs:[
+   { id:"cola", nombre:"Cola de hoy", filtros:["oficina","producto","empleado","compania"],
+     bloques:[
+      { id:"kpis", piso:"1", titulo:"El resumen del día", sub:"Jugadas calculadas sobre la cartera real", tipo:"kpis",
+        items:[
+          {v:"22", l:"Vencen ≤7 días", s:"Hablá hoy", c:"hot"},
+          {v:"93", l:"Vencen ≤30 días", s:"La ronda del mes", c:"acc"},
+          {v:"9.029", l:"Para reactivar", s:"Historia sin póliza activa", c:""},
+          {v:"617", l:"Auto → Auxilio", s:"Venta cruzada top", c:"pos"},
+        ]},
+      { id:"j7", piso:"2", titulo:"Hablá hoy — vencen ≤7 días", sub:"La retención más barata", tipo:"jugada", urgente:true, mejora:"colapsable + paginado (adiós a las 12 pantallas)",
+        count:"22 en total", abierta:true,
+        filas:[
+          {nom:"SOLOAGA HUGO ALBERTO", doc:"DNI 14305576", pol:"AUTO · Póliza 458-1728054", ven:"Vence HOY", hoy:true},
+          {nom:"CAMPODONICO MARIA MARTA", doc:"DNI 29031057", pol:"AUTO · Póliza 458-1727815", ven:"en 1 día"},
+          {nom:"BERGARA EDUARDO FABIAN", doc:"DNI 28013456", pol:"TRAILER · Póliza 458-1727160", ven:"en 1 día"},
+        ], vermas:"Ver los 22 con buscador y filtros →"},
+      { id:"j30", piso:"3", titulo:"La ronda del mes — ≤30 días", sub:"Llamar antes es retener", tipo:"jugada",
+        count:"93 en total", abierta:false,
+        filas:[
+          {nom:"SHUTTE LUCAS EDUARDO", doc:"DNI 30293171", pol:"AUTO · Póliza 458-1725448", ven:"en 2 días · $47.031"},
+          {nom:"TABORDA ALBERTO MARTIN", doc:"DNI 34752472", pol:"AUTO · Póliza 458-1725187", ven:"en 2 días · $43.896"},
+        ], vermas:"Ver los 93 →"},
+      { id:"jre", piso:"4", titulo:"Reactivar y ampliar", sub:"Historia que ya confió", tipo:"jugada",
+        count:"9.029 + 617", abierta:false, filas:[], vermas:"9.029 para reactivar · 617 Auto→Auxilio · 612 Auto→Hogar →"},
+      { id:"jret", piso:"5", titulo:"A observar", sub:"Activos con anulaciones en su historia", tipo:"jugada",
+        count:"142", abierta:false, filas:[], vermas:"Contactar antes de que decidan no renovar →"},
+     ]},
+   { id:"retencion", nombre:"Retención", filtros:["periodo","oficina","producto","empleado"],
+     bloques:[
+      { id:"kpis", piso:"1", titulo:"Los números", sub:"Tu prioridad del día: lo que se vence", tipo:"kpis",
+        items:[
+          {v:"22", l:"Vencen ≤7 días", s:"Acción inmediata", c:"hot"},
+          {v:"93", l:"Vencen ≤30 días", s:"Secuencia de renovación", c:"acc"},
+          {v:"142", l:"Clientes a observar", s:"Activos con anulaciones", c:""},
+          {v:"3.376", l:"Siniestros históricos", s:"Clave para medir experiencia", c:""},
+        ]},
+      { id:"j7", piso:"2", titulo:"Las llamadas de hoy", sub:"Vencen ≤7 días", tipo:"jugada", urgente:true, count:"22",
+        abierta:true,
+        filas:[
+          {nom:"SOLOAGA HUGO ALBERTO", doc:"DNI 14305576", pol:"AUTO · 458-1728054", ven:"Vence HOY", hoy:true},
+          {nom:"DENTONE ANALIA", doc:"DNI 29234667", pol:"AUTO · 458-1727819", ven:"en 1 día"},
+        ], vermas:"Ver los 22 →"},
+      { id:"evo", piso:"3", titulo:"Próxima evolución", sub:"El sistema ya combina historia + situación contractual", tipo:"nota",
+        texto:"Score de riesgo 0–100 combinando antigüedad, anulaciones, siniestros, cantidad de pólizas, forma de pago, cercanía al vencimiento y comportamiento de atención."},
+     ]},
+   { id:"reactivacion", nombre:"Reactivación", filtros:["periodo","oficina","producto"],
+     bloques:[
+      { id:"kpis", piso:"1", titulo:"Los números", sub:"Clientes que ya te conocen y hoy no tienen póliza activa", tipo:"kpis",
+        items:[
+          {v:"9.029", l:"Candidatos detectados", s:"Alta histórica sin activa", c:"acc"},
+          {v:"14.119", l:"Universo potencial", s:"Históricos sin activa", c:""},
+          {v:"23.148", l:"Registros del módulo", s:"Base analizada", c:""},
+        ]},
+      { id:"est", piso:"2", titulo:"Las señales", sub:"Cómo trabajar la recuperación", tipo:"senales",
+        items:[
+          {c:"azul", t:"Reactivación prioritaria", d:"Exclientes recientes, con altas históricas y productos rentables."},
+          {c:"verde", t:"Win-back por producto", d:"Ejemplo: tuvo Moto o Auto y hoy no aparece con ese producto activo."},
+          {c:"amar", t:"Campañas segmentadas", d:"No contactar a toda la base: trabajar por score y probabilidad."},
+        ]},
+     ]},
+   { id:"cross", nombre:"Venta cruzada", filtros:["periodo","producto"],
+     bloques:[
+      { id:"kpis", piso:"1", titulo:"Los números", sub:"Venderle más al que ya confía", tipo:"kpis",
+        items:[
+          {v:"350", l:"Con una sola póliza", s:"Oportunidad directa", c:"acc"},
+          {v:"420", l:"Con 2+ pólizas", s:"Los más vinculados", c:""},
+          {v:"1.927", l:"Registros del módulo", s:"Base analizada", c:""},
+        ]},
+      { id:"pares", piso:"2", titulo:"Próximo mejor producto", sub:"Pares con más casos — armá la campaña de la semana", tipo:"tabla-cta",
+        rows:[["Auto → Auxilio","617 clientes"],["Auto → Hogar","612 clientes"],["Auto → Vida","311 clientes"],["Moto → Accidentes Personales","25 clientes"],["Moto → Vida","12 clientes"]]},
+     ]},
+ ]},
+ { id:"clientes", nombre:"Clientes", subs:[
+   { id:"c360", nombre:"Cliente 360°", filtros:["oficina","producto","empleado"],
+     bloques:[
+      { id:"busc", piso:"1", titulo:"Buscar y elegir", sub:"Antes: 100 fichas seguidas (25 pantallas). Ahora: buscador + fichas paginadas", tipo:"fichas",
+        fichas:[
+          {nom:"LOPEZ MAXIMILIANO RUBEN", doc:"DNI 33687387 · 45", activas:"2", accion:"Cliente consolidado", c:"verde", det:"Asegurá renovaciones al día · ofrecé revisión anual · pedí referido."},
+          {nom:"SOSA REY JOSE LUIS", doc:"DNI 12565771 · 45", activas:"2", accion:"Cliente consolidado", c:"verde", det:"Asegurá renovaciones al día · ofrecé revisión anual · pedí referido."},
+          {nom:"CARBALLO EROS ESTEBAN", doc:"DNI 30891703 · 40", activas:"0", accion:"Seguimiento comercial", c:"gris", det:"Ronda de contacto periódica. Verificá Retención si hay algo por vencer."},
+          {nom:"BOGADO MAIRA NATACHA", doc:"DNI 28731037 · 40", activas:"0", accion:"Seguimiento comercial", c:"gris", det:"Ronda de contacto periódica. Verificá Retención si hay algo por vencer."},
+          {nom:"FARIAS DIONICIO", doc:"DNI 13923539 · 40", activas:"0", accion:"Seguimiento comercial", c:"gris", det:"Ronda de contacto periódica. Verificá Retención si hay algo por vencer."},
+          {nom:"STRAMAZZO MARCELO RAUL", doc:"DNI 14729655 · 70", activas:"1", accion:"Oportunidad de ampliación", c:"azul", det:"Tiene 1 póliza activa: mirá Venta cruzada para su próximo producto."},
+        ], mas:"Mostrar 6 más (hay 108 en total)"},
+     ]},
+ ]},
+ { id:"marketing", nombre:"Marketing", subs:[
+   { id:"constructor", nombre:"Constructor de publicaciones", filtros:["estado"],
+     bloques:[
+      { id:"cons", piso:"1", titulo:"El constructor de publicaciones", sub:"MEJORADO: pasos guiados + vista previa en vivo", tipo:"constructor", mejora:"paso a paso + vista previa" },
+      { id:"lista", piso:"2", titulo:"Las publicidades", sub:"Cada fila: página pública, link, panel, editar, pausar y historial", tipo:"publicidades", mejora:"estados y acciones claras por fila" },
+     ]},
+   { id:"propuestas", nombre:"Propuestas", filtros:["estado"],
+     bloques:[
+      { id:"fun", piso:"1", titulo:"El embudo de la publicidad", sub:"Creadas → derivadas → enviadas → vistas → respondidas", tipo:"kpis",
+        items:[
+          {v:"13", l:"Creadas", s:"Total del período", c:""},
+          {v:"3", l:"Derivadas", s:"Asignadas a un responsable", c:""},
+          {v:"4", l:"Enviadas", s:"Al cliente", c:""},
+          {v:"13", l:"Vistas", s:"Con al menos 1 apertura", c:"acc"},
+          {v:"0", l:"Respondidas", s:"Tasa de respuesta 0%", c:"hot"},
+        ]},
+      { id:"admin", piso:"2", titulo:"Filtros y organización", sub:"Los mismos que hoy", tipo:"nota",
+        texto:"Gestiona: Todo el equipo o por empleado · Estado: Borrador, Derivada, Enviada · Archivo: Activas, Activas + archivadas, Solo archivadas · Tipo: Alerta de Siniestro, VENTA… Todo eso se conserva — ahora con buscador en cada selector. El constructor y la lista de publicidades ahora viven en su pestaña propia: «Constructor de publicaciones»."},
+     ]},
+   { id:"campanas", nombre:"Campañas 360", filtros:["estado"],
+     bloques:[
+      { id:"macro", piso:"1", titulo:"El macro de TODAS las publicidades", sub:"13 campañas · embudo, por empleado, por tipo y últimos 14 días", tipo:"kpis",
+        items:[
+          {v:"13", l:"Campañas", s:"Activas + archivadas", c:""},
+          {v:"🤖 IA", l:"Origen dominante", s:"«IA primero» en la creación", c:"acc"},
+          {v:"14 días", l:"Ventana de actividad", s:"Con métrica diaria", c:""},
+          {v:"Panel 360", l:"Acceso por fila", s:"+ Ver página pública", c:""},
+        ]},
+      { id:"dias", piso:"2", titulo:"Actividad por día", sub:"Últimos 14 días", tipo:"charts",
+        charts:[{t:"Publicidades por día", s:"Actividad del período", tipo:"hb", rows:[["21 · sept",3],["22 · sept",5],["23 · sept",2],["24 · sept",4],["25 · sept",1],["27 · sept",3],["28 · sept",4]]}]},
+      { id:"lista", piso:"3", titulo:"Las campañas", sub:"Por estado, con origen y vistas", tipo:"publicidades"},
+     ]},
+   { id:"seguimiento", nombre:"Seguimiento", filtros:["oficina","empleado"],
+     bloques:[
+      { id:"tl", piso:"1", titulo:"La línea de tiempo", sub:"Creada → derivada → enviada → vista → respondió, con quién y cuándo", tipo:"timeline",
+        eventos:[
+          {ic:"✨", t:"TEST IA · Captación de clientes — creada", m:"28-sept, 10:24 p. m. · Propuesta creada"},
+          {ic:"🎯", t:"MUT ADALBERTO JESUS · renovaciones7 — acción ejecutada", m:"28-sept, 06:46 p. m. · Desde la Cola de hoy"},
+          {ic:"👁️", t:"GIMENEZ JENI MARISA — vista (3 visitas)", m:"28-sept, 06:46 p. m. · Propuesta borrador"},
+          {ic:"✨", t:"GIMENEZ JENI MARISA · Lanzamiento de producto — creada", m:"18-sept, 10:19 p. m. · Propuesta borrador"},
+          {ic:"📤", t:"GIMENEZ JENI MARISA — enviada al cliente", m:"18-sept, 08:49 p. m. · Gestiona: TES"},
+          {ic:"🎯", t:"TEST IA · Renovación — derivada (aviso enviado)", m:"18-sept, 07:11 p. m. · Gestiona: Alerta de Siniestro"},
+        ]},
+      { id:"filtros", piso:"2", titulo:"Filtros y acciones", sub:"Se conservan", tipo:"nota",
+        texto:"Filtrá por estado (todas, borrador, derivada, enviada, vista, respondida, archivada) y por empleado. Cada evento abre la pieza pública; el historial completo (ediciones, pausas, archivados) queda igual."},
+     ]},
+   { id:"archivos", nombre:"Archivos", filtros:[],
+     bloques:[
+      { id:"cont", piso:"1", titulo:"El contenedor de archivos", sub:"Estante compartido del equipo", tipo:"archivos",
+        items:[{nombre:"Diseño sin título.mp4", meta:"2,1 MB · Diego", tipo:"🎬 Video", fijo:true}],
+        nota:"De acá se eligen las imágenes para las publicidades («Elegir del contenedor»). Lo que sube dueño/propietario/gerente queda fijo (🔒) y no se puede quitar. Subir sigue igual."},
+     ]},
+ ]},
+ { id:"crm", nombre:"CRM", subs:[
+   { id:"crm", nombre:"CRM · Venta y gestión", filtros:[],
+     bloques:[
+      { id:"kpis", piso:"1", titulo:"Los números", sub:"Tablero comercial y conversaciones", tipo:"kpis",
+        items:[
+          {v:"2", l:"Oportunidades abiertas", s:"Pipeline del tablero", c:"acc"},
+          {v:"27", l:"Acciones 30 días", s:"0% respondidas", c:""},
+          {v:"9", l:"Conversaciones", s:"WhatsApp 7 · web 1 · Telegram 1", c:""},
+          {v:"75%", l:"Tasa de vínculo", s:"6 contactos vinculados a la cartera", c:"pos"},
+        ]},
+      { id:"acc", piso:"2", titulo:"Acciones desde el tablero", sub:"Últimos 30 días", tipo:"nota",
+        texto:"27 acciones registradas, 0,0% respondidas. Concentradas en «General» (1 mensaje cada una)."},
+      { id:"pipe", piso:"3", titulo:"Pipeline desde el CRM", sub:"Etapas del tablero comercial", tipo:"tabla",
+        cols:["ETAPA","ESTADO","OPORTUNIDADES"], rows:[["Nuevo","en curso","1 · $0"],["Pendiente","en curso","1 · $0"],["Concluida","ganada","0"],["Perdido","perdida","0"]]},
+      { id:"macheo", piso:"4", titulo:"Macheo con la cartera (CRM ↔ SGSA)", sub:"Contactos del CRM cruzados contra clientes y pólizas", tipo:"tabla",
+        cols:["CONTACTO","CANAL","PÓLIZAS ACTIVAS","PRIMA ACTIVA","VENCE ≤30D"], rows:[
+          ["GOMEZ JUAN ALBERTO","whatsapp","3","$ 96.517","1"],
+          ["GIMENEZ JENI MARISA","whatsapp","1","$ 67.437","—"],
+          ["MUT ADALBERTO JESUS","whatsapp","2","$ 61.469","1"],
+          ["DEMARCHI ERNESTO JOSE","whatsapp","2","$ 56.978","—"],
+          ["DE SABATTO ESTEBAN NESTOR","whatsapp","3","$ 6.217","—"],
+          ["CARBALLO EROS ESTEBAN","whatsapp","0","—","—"],
+        ]},
+     ]},
+ ]},
+];
+
+/* =================== ESTADO =================== */
+const LS_KEY="dm044-order";
+let estado = {grupo:"analisis", sub:"pulso"};
+let orden = {};
+try { orden = JSON.parse(localStorage.getItem(LS_KEY)||"{}"); } catch(e){ orden={}; }
+let abiertos = {}; // jugadas abiertas
+
+const $=s=>document.querySelector(s);
+const el=(t,cls,txt)=>{const e=document.createElement(t); if(cls)e.className=cls; if(txt!=null)e.textContent=txt; return e;};
+const grupoActual=()=>DATA.find(g=>g.id===estado.grupo);
+const subActual=()=>grupoActual().subs.find(s=>s.id===estado.sub);
+
+/* =================== NAV =================== */
+function renderGrupos(){
+  const n=$("#grupos"); n.innerHTML="";
+  DATA.forEach(g=>{
+    const b=el("button","grupo-btn"+(g.id===estado.grupo?" on":"")); b.dataset.id=g.id;
+    b.append(el("span",null,g.nombre));
+    b.append(el("span","n",String(g.subs.length)));
+    b.onclick=()=>{ estado.grupo=g.id; estado.sub=g.subs[0].id; renderTodo(); };
+    n.append(b);
+  });
+}
+function renderSubs(){
+  const n=$("#subs"); n.innerHTML="";
+  grupoActual().subs.forEach(s=>{
+    const b=el("button","sub-btn"+(s.id===estado.sub?" on":""),s.nombre);
+    b.onclick=()=>{ estado.sub=s.id; renderTodo(); };
+    n.append(b);
+  });
+  const g=el("button","btn tiny","? guía");
+  g.id="sub-guia"; g.onclick=()=>abrirGuia(subActual()); n.append(g);
+}
+
+/* =================== FILTROS =================== */
+function combobox(lbl, opciones, onPick, onClear){
+  const c=el("div","combo"); c.innerHTML=`<span class="lupa">⌕</span>`;
+  const inp=el("input"); inp.placeholder=lbl; inp.readOnly=false;
+  const opts=el("div","opts");
+  const pintar=(q)=>{ opts.innerHTML=""; opciones.filter(o=>o.toLowerCase().includes((q||"").toLowerCase())).slice(0,40).forEach(o=>{
+      const d=el("div","opt",o); d.onclick=()=>{ inp.value=o; c.classList.add("tiene"); c.classList.remove("open"); if(onPick) onPick(o); }; opts.append(d); });
+    if(!opts.childElementCount) opts.append(el("div","opt","Sin resultados")); };
+  const abrir=()=>{ const r=c.getBoundingClientRect(); c.classList.toggle("up", (window.innerHeight-r.bottom)<260); c.classList.add("open"); pintar(inp.value===""? "":inp.value); };
+  inp.addEventListener("focus",abrir);
+  inp.addEventListener("click",abrir);
+  inp.addEventListener("input",()=>pintar(inp.value));
+  if(onClear){ const clr=el("span","clr","✕"); clr.title="Quitar este filtro";
+    clr.onclick=(e)=>{ e.stopPropagation(); inp.value=""; c.classList.remove("tiene","open"); onClear(); }; c.append(clr); }
+  c._sync=(v)=>{ inp.value=v||""; c.classList.toggle("tiene", !!v); };
+  document.addEventListener("click",e=>{ if(!c.contains(e.target)) c.classList.remove("open"); });
+  c.append(inp,opts); return c;
+}
+function renderFiltros(){
+  const f=$("#filtros"); f.innerHTML="";
+  const n=fxActivos();
+  const b=el("button","fadd"+(n?" on":""),"＋ Filtrar"+(n?" · "+n:""));
+  b.title="Abrir el panel de filtros de esta sección (tiempo · campos · condiciones)";
+  b.onclick=()=>abrirFiltros();
+  f.append(b);
+  fxChips().forEach(ch=>{ const s=el("span","fchip",ch.txt); const x=el("span","x","✕"); x.title="Quitar este filtro";
+    x.onclick=(e)=>{ e.stopPropagation(); ch.clr(); aplicarFiltros(); renderFiltros(); if(FP_OPEN) pintarFpanel(); }; s.append(x); f.append(s); });
+  if(n>1){ const l=el("button","flimpiar","Limpiar todo"); l.onclick=()=>fxLimpiar(); f.append(l); }
+  f.append(el("span","spacer"));
+  const c=el("span","fcnt2",""); c.id="fx-cnt"; f.append(c);
+  actualizarContadorBarra();
+}
+
+/* ============ FILTROS v13 · panel lateral + motor de filtrado (base estilo Airtable) ============ */
+const CAMPOS_FILTRO=[
+ {n:"Vencimiento",t:"Fecha"},{n:"Alta",t:"Fecha"},{n:"Última gestión",t:"Fecha"},
+ {n:"Prima",t:"Número"},{n:"Cliente",t:"Texto"},{n:"Empleado",t:"Texto"},
+ {n:"Oficina",t:"Selección",ops:OFICINAS},{n:"Producto",t:"Selección",ops:PRODUCTOS},
+ {n:"Compañía",t:"Selección",ops:["TRIUNFO SEGUROS","FEDERACION PATRONAL SEGUROS SA"]},
+ {n:"Canal",t:"Selección",ops:["WAPP - PERSONAL","PRESENCIAL","0810-AUTO-GESTIÓN","AUTO-GESTIÓN","VÍA E-MAIL","WLVX"]},
+ {n:"Estado",t:"Selección",ops:["Borrador","Enviada","Vista","Ganada","Perdida"]}
+];
+const OPS_POR_TIPO={
+ Fecha:[["es","Es"],["noes","No es"],["ant","Es anterior a"],["post","Es posterior a"],["antig","Es anterior o igual a"],["postig","Es posterior o igual a"],["dentro","Está dentro de"],["vac","Está vacío"],["novac","No está vacío"]],
+ "Número":[["gt","es mayor que"],["lt","es menor que"],["gte","es mayor o igual que"],["lte","es menor o igual que"],["eq","es igual a"],["neq","no es igual a"],["vac","está vacío"],["novac","no está vacío"]],
+ Texto:[["eq","es"],["neq","no es"],["ct","contiene"],["nct","no contiene"],["sw","empieza con"],["ew","termina con"],["vac","está vacío"],["novac","no está vacío"]],
+ "Selección":[["eq","es"],["neq","no es"],["ct","contiene"],["nct","no contiene"],["vac","está vacío"],["novac","no está vacío"]]
+};
+const PRESETS_FECHA=[["hoy","Hoy"],["ayer","Ayer"],["7","Hace 7 días"],["30","Hace 30 días"],["365","Hace 1 año"]];
+const DURACIONES=[["1","1 día"],["7","7 días"],["14","14 días"],["30","30 días"],["90","3 meses"],["180","6 meses"],["365","1 año"]];
+let FT={campo:"Vencimiento",op:null,dir:"pasado",dur:"30",preset:"30",fecha:"",aplicado:false};
+let COND=[];
+let FT_OPEN=false, COND_OPEN=false;
+function opLabel(t,k){ const o=(OPS_POR_TIPO[t]||[]).find(x=>x[0]===k); return o?o[1]:k; }
+function ftResumen(){
+  if(!FT.campo||!FT.op) return "";
+  let v="";
+  if(FT.op==="dentro") v=(FT.dir==="pasado"?"los últimos ":"los próximos ")+((DURACIONES.find(d=>d[0]===FT.dur)||["","—"])[1]);
+  else if(FT.op==="vac"||FT.op==="novac") v="";
+  else v=FT.preset==="exacta"?(FT.fecha||"fecha exacta"):((PRESETS_FECHA.find(p=>p[0]===FT.preset&&p[0]!=="exacta")||["","—"])[1]);
+  return FT.campo+" · "+opLabel("Fecha",FT.op).toLowerCase()+(v?" · "+v:"");
+}
+function mdd(label, items, onPick, ph){
+  const d=el("div","mdd");
+  const b=el("button","mdd-btn"+(ph?"":" set"), label+" ▾");
+  b.onclick=(e)=>{ e.stopPropagation(); const ya=d.classList.contains("open"); document.querySelectorAll(".mdd.open").forEach(x=>x.classList.remove("open")); if(!ya){ const r=d.getBoundingClientRect(); d.classList.toggle("up", (window.innerHeight-r.bottom)<250); d.classList.add("open"); } };
+  const o=el("div","mdd-opts");
+  items.forEach(it=>{ const v=Array.isArray(it)?it[0]:it, t=Array.isArray(it)?it[1]:it;
+    const op=el("button","mopt",t); op.onclick=(e)=>{ e.stopPropagation(); d.classList.remove("open"); onPick(v); }; o.append(op); });
+  d.append(b,o); return d;
+}
+function pintarFT(pop){
+  pop=pop||$("#fp-fecha"); if(!pop) return; pop.innerHTML="";
+  if(!fxTieneDias()){ pop.append(el("div","fp-hintv","Esta vista no tiene fechas para filtrar.")); return; }
+  const row=el("div","fp-row"); row.append(el("span","fp-lbl","Condición"));
+  row.append(mdd(FT.op?opLabel("Fecha",FT.op):"Elegir…", OPS_POR_TIPO.Fecha, v=>{ FT.op=v; FT.aplicado=false; fxAutoFT(); }, !FT.op));
+  if(FT.op && FT.op!=="vac" && FT.op!=="novac"){
+    if(FT.op==="dentro"){
+      row.append(mdd(FT.dir==="pasado"?"Los últimos":"Los próximos", [["pasado","Los últimos"],["futuro","Los próximos"]], v=>{ FT.dir=v; fxAutoFT(); }));
+      row.append(mdd((DURACIONES.find(d=>d[0]===FT.dur)||["","—"])[1], DURACIONES, v=>{ FT.dur=v; fxAutoFT(); }));
+    } else {
+      row.append(mdd(FT.preset?(PRESETS_FECHA.find(p=>p[0]===FT.preset)||["","—"])[1]:"Valor…", PRESETS_FECHA, v=>{ FT.preset=v; fxAutoFT(); }, !FT.preset));
+    }
+  }
+  pop.append(row);
+  if(FT.aplicado){ const q=el("button","btn tiny","✕ Quitar"); q.title="Quitar el filtro de fecha";
+    q.onclick=(e)=>{ e.stopPropagation(); FT={campo:"Vencimiento",op:null,dir:"pasado",dur:"30",preset:"30",fecha:"",aplicado:false}; aplicarFiltros(); renderFiltros(); pintarFpanel(); }; pop.append(q); }
+}
+function fxAutoFT(){
+  FT.aplicado = !!(FT.op && (FT.op==="vac" || FT.op==="novac" || (FT.op==="dentro" ? !!FT.dur : !!FT.preset)));
+  aplicarFiltros(); renderFiltros(); pintarFT($("#fp-fecha"));
+}
+function fxTieneDias(){ return FX_ITEMS.some(it=>it.campos.dias!=null); }
+function pintarCONDS(pop){
+  pop=pop||$("#fp-conds"); if(!pop) return; pop.innerHTML="";
+  const campos=fxCampos();
+  if(!campos.length){ pop.append(el("div","fp-hintv","Esta vista no tiene registros para filtrar.")); return; }
+  if(!COND.length) COND.push({campo:"",op:"",val:"",conj:"y"});
+  pop.append(el("div","fp-s2","Mostrar los registros que cumplan:"));
+  COND.forEach((c,i)=>{
+    if(i>0){ const cj=el("button","conj",c.conj==="y"?"y":"o"); cj.title="Tocar para alternar «y» / «o»";
+      cj.onclick=(e)=>{ e.stopPropagation(); COND[i].conj=COND[i].conj==="y"?"o":"y"; fxTrasCond(); }; pop.append(cj); }
+    const f=el("div","fila-cond");
+    f.append(mdd(c.campo?(CAMPO_LBL[c.campo]||c.campo):"Campo…", campos.map(x=>[x.k,x.lbl]), v=>{ COND[i]={campo:v,op:"",val:"",conj:(COND[i]&&COND[i].conj)||"y"}; fxTrasCond(); }, !c.campo));
+    const def=c.campo?campos.find(x=>x.k===c.campo):null;
+    const t=c.campo?(TIPO_CAMPO[c.campo]||"Texto"):null;
+    if(def&&t){
+      f.append(mdd(c.op?opLabel(t,c.op):"Condición…", OPS_POR_TIPO[t], v=>{ COND[i].op=v; COND[i].val=""; fxTrasCond(); }, !c.op));
+      if(c.op&&c.op!=="vac"&&c.op!=="novac"){
+        if(t==="Fecha"){
+          f.append(mdd(c.val?(PRESETS_FECHA.find(p=>p[0]===c.val)||["","—"])[1]:"Valor…", PRESETS_FECHA, v=>{ COND[i].val=v; fxTrasCond(); }, !c.val));
+        } else if(t==="Selección"){
+          const ops=(def.ops&&def.ops.length)?def.ops:fxValores(c.campo);
+          f.append(mdd(c.val||"Valor…", ops, v=>{ COND[i].val=v; fxTrasCond(); }, !c.val));
+        } else if(t==="Número"){
+          const inp=el("input","dtin"); inp.type="number"; inp.placeholder="Valor"; inp.value=c.val||""; inp.style.width="110px"; inp.oninput=()=>{ COND[i].val=inp.value; fxReaplicar(); }; f.append(inp);
+        } else {
+          const inp=el("input","dtin"); inp.placeholder="Valor"; inp.value=c.val||""; inp.style.width="130px"; inp.oninput=()=>{ COND[i].val=inp.value; fxReaplicar(); }; f.append(inp);
+        }
+      }
+    }
+    const x=el("button","rm","✕"); x.title="Quitar condición";
+    x.onclick=(e)=>{ e.stopPropagation(); COND.splice(i,1); fxTrasCond(); };
+    f.append(el("span","spacer"), x);
+    pop.append(f);
+  });
+  const n=COND.filter(c=>c.campo&&c.op).length;
+  const pie=el("div","cfoot");
+  const add=el("button","btn tiny","+ Añadir condición");
+  add.onclick=(e)=>{ e.stopPropagation(); if(COND.length&&!COND[COND.length-1].campo) return; COND.push({campo:"",op:"",val:"",conj:"y"}); fxTrasCond(); };
+  const lim=el("button","btn tiny","Limpiar condiciones");
+  lim.onclick=(e)=>{ e.stopPropagation(); COND=[]; fxTrasCond(); };
+  pie.append(add, lim, el("span","fcnt", n?n+" condición"+(n>1?"es":"")+" aplicada"+(n>1?"s":""):""));
+  pop.append(pie);
+}
+function fxTrasCond(){ aplicarFiltros(); renderFiltros(); pintarCONDS($("#fp-conds")); }
+function fxReaplicar(){ aplicarFiltros(); actualizarContadorBarra(); }
+
+/* ===== FILTROS v13 · panel lateral + motor de filtrado real sobre los datos de la sección ===== */
+let FP_OPEN=false, FX_TXT="", FX_ITEMS=[], VENTANA="todo";
+let CAMPOS_FX={oficina:"",producto:"",empleado:"",compania:"",canal:"",estado:""};
+const VENT_LBL={mes:"Este mes",mespasado:"Mes pasado",ano:"Este año"};
+const CAMPO_LBL={oficina:"Oficina",producto:"Producto",empleado:"Empleado",compania:"Compañía",canal:"Canal",estado:"Estado",nombre:"Cliente",doc:"DNI",prima:"Prima",dias:"Vencimiento",activas:"Pólizas activas",polizas:"Pólizas",casos:"Casos",origen:"Origen",vistas:"Vistas",vence30:"Vence ≤30d",tipo:"Tipo"};
+const TIPO_CAMPO={dias:"Fecha",prima:"Número",activas:"Número",polizas:"Número",casos:"Número",vistas:"Número",vence30:"Número",
+ oficina:"Selección",producto:"Selección",empleado:"Selección",compania:"Selección",canal:"Selección",estado:"Selección",origen:"Selección",
+ nombre:"Texto",doc:"Texto",tipo:"Texto"};
+const OPS_SELEC_REALES={oficina:OFICINAS,producto:PRODUCTOS,empleado:EMPLEADOS,compania:["TRIUNFO SEGUROS","FEDERACION PATRONAL SEGUROS SA"],canal:["WAPP - PERSONAL","PRESENCIAL","0810-AUTO-GESTIÓN","AUTO-GESTIÓN","VÍA E-MAIL","WLVX"]};
+const COL2CAMPO_FX={"COMPAÑÍA":"compania","PÓLIZAS":"polizas","PRIMA ACTIVA":"prima","QUÉ FALTA":"nombre","CASOS":"casos","ETAPA":"nombre","ESTADO":"estado","CONTACTO":"nombre","CANAL":"canal","PÓLIZAS ACTIVAS":"activas","VENCE ≤30D":"vence30","OPORTUNIDADES":"casos"};
+/* Asignación de demo (consistente entre secciones y con variedad garantizada para que los filtros muestren resultados) */
+const FX_ASIG={
+ "SOLOAGA HUGO ALBERTO":{of:"AGENCIA BOFFELLI", em:"ALLENDE RAFAEL SEBASTIAN"},
+ "CAMPODONICO MARIA MARTA":{of:"BAIGORRIA (7268)", em:"WASSER FABIANA ANABEL"},
+ "BERGARA EDUARDO FABIAN":{of:"LIBERTAD (14339)", em:"HERRERO TOMAS"},
+ "SHUTTE LUCAS EDUARDO":{of:"SUR (7565)", em:"MENDOZA ROSA"},
+ "TABORDA ALBERTO MARTIN":{of:"AGENCIA BOFFELLI", em:"GIOVANELLO CECILIA"},
+ "DENTONE ANALIA":{of:"AGENCIA CHAPIEC", em:"ARROYO ELIANA MARICEL"},
+ "LOPEZ MAXIMILIANO RUBEN":{of:"AGENCIA BOFFELLI", em:"ALLENDE RAFAEL SEBASTIAN"},
+ "SOSA REY JOSE LUIS":{of:"BAIGORRIA (7268)", em:"ARIAS JOSE PABLO"},
+ "CARBALLO EROS ESTEBAN":{of:"SUR (7565)", em:"MENDOZA ROSA"},
+ "BOGADO MAIRA NATACHA":{of:"ALLENDE (13647)", em:"AYBAR JOEL MILTON"},
+ "FARIAS DIONICIO":{of:"CLIENGO (7204)", em:"ALVAREZ SOFIA"},
+ "STRAMAZZO MARCELO RAUL":{of:"AGENCIA BOFFELLI", em:"RODRIGUEZ VERONICA GUADALUPE"},
+ "GIMENEZ JENI MARISA":{of:"AGENCIA BOFFELLI", em:"ALLENDE RAFAEL SEBASTIAN"},
+ "MUT ADALBERTO JESUS":{of:"BAIGORRIA (7268)", em:"WASSER FABIANA ANABEL"},
+ "TEST IA":{of:"AGENCIA BOFFELLI", em:"ALLENDE RAFAEL SEBASTIAN"}
+};
+const FX_OFI=["AGENCIA BOFFELLI","AGENCIA CHAPIEC","ALLENDE (13647)","BAIGORRIA (7268)","CLIENGO (7204)","LIBERTAD (14339)","SANTA FE (10293)","SUR (7565)"];
+function fxPerfil(nom){ const s=String(nom||""); const a=FX_ASIG[s];
+  let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
+  return { oficina:(a&&a.of)||FX_OFI[h%FX_OFI.length], empleado:(a&&a.em)||EMPLEADOS[(h>>>3)%EMPLEADOS.length],
+    compania:((h>>>5)%10<9)?"TRIUNFO SEGUROS":"FEDERACION PATRONAL SEGUROS SA",
+    canal:["WAPP - PERSONAL","PRESENCIAL","0810-AUTO-GESTIÓN","AUTO-GESTIÓN","VÍA E-MAIL","WLVX"][(h>>>7)%6] }; }
+function fxDias(ven){ const s=String(ven||"").toLowerCase(); if(!s) return null;
+  if(/hoy/.test(s)) return 0; if(/vencid|hace/.test(s)) return -1;
+  let m=s.match(/en (\d+) día/); if(m) return parseInt(m[1],10);
+  m=s.match(/en (\d+) semana/); if(m) return parseInt(m[1],10)*7; return null; }
+function fxPrima(ven){ const m=String(ven||"").match(/\$\s?([\d.]+)/); return m?parseInt(m[1].replace(/\./g,""),10):null; }
+function fxNum(s){ return parseInt(String(s==null?"":s).replace(/[^\d]/g,""),10)||0; }
+function fxItem(node,campos){ if(node){ node.dataset.fx="1"; FX_ITEMS.push({el:node,campos}); } }
+function fxCamposFila(f){ return Object.assign({nombre:f.nom, doc:f.doc, producto:(String(f.pol||"").split("·")[0]||"").trim(), dias:fxDias(f.ven), prima:fxPrima(f.ven)}, fxPerfil(f.nom)); }
+function fxNombreTL(t){ const m=String(t||"").match(/^[A-ZÁÉÍÓÚÑÜ0-9][A-ZÁÉÍÓÚÑÜ0-9 .,]{3,}?(?= ·| —|$)/); return m?m[0].trim():String(t||"").split(" ")[0]; }
+function fxValores(k){ const vs=new Set(); FX_ITEMS.forEach(it=>{ const v=it.campos[k]; if(v!=null&&v!=="") vs.add(String(v)); }); return [...vs].slice(0,80); }
+function fxCampos(){
+  const has=new Set(); FX_ITEMS.forEach(it=>Object.keys(it.campos).forEach(k=>has.add(k)));
+  const orden=["oficina","producto","empleado","compania","canal","estado","nombre","doc","tipo","accion","origen","prima","dias","activas","polizas","casos","vistas","vence30"];
+  return orden.filter(k=>has.has(k)).map(k=>({k, lbl:CAMPO_LBL[k]||k, ops:(TIPO_CAMPO[k]==="Selección")?(OPS_SELEC_REALES[k]||fxValores(k)):null}));
+}
+function fxActivos(){ let n=0; if(VENTANA!=="todo")n++; if(FT.aplicado)n++; for(const k in CAMPOS_FX) if(CAMPOS_FX[k])n++; if(COND.some(c=>c.campo&&c.op))n++; if(FX_TXT)n++; return n; }
+function fxChips(){
+  const arr=[];
+  if(VENTANA!=="todo") arr.push({txt:"📅 "+VENT_LBL[VENTANA], clr:()=>{ VENTANA="todo"; }});
+  if(FT.aplicado) arr.push({txt:ftResumen(), clr:()=>{ FT={campo:"Vencimiento",op:null,dir:"pasado",dur:"30",preset:"30",fecha:"",aplicado:false}; }});
+  for(const k in CAMPOS_FX){ if(CAMPOS_FX[k]) arr.push({txt:CAMPO_LBL[k]+": "+CAMPOS_FX[k], clr:(kk=>()=>{ CAMPOS_FX[kk]=""; })(k)}); }
+  const nc=COND.filter(c=>c.campo&&c.op).length;
+  if(nc) arr.push({txt:"⚗️ "+nc+" condición"+(nc>1?"es":""), clr:()=>{ COND=[]; }});
+  if(FX_TXT) arr.push({txt:"🔍 «"+FX_TXT+"»", clr:()=>{ FX_TXT=""; document.querySelectorAll(".buscador360 input").forEach(i2=>i2.value=""); }});
+  return arr;
+}
+function fxLimpiar(){ VENTANA="todo"; FT={campo:"Vencimiento",op:null,dir:"pasado",dur:"30",preset:"30",fecha:"",aplicado:false};
+  CAMPOS_FX={oficina:"",producto:"",empleado:"",compania:"",canal:"",estado:""}; COND=[]; FX_TXT="";
+  aplicarFiltros(); renderFiltros(); if(FP_OPEN) pintarFpanel(); }
+function abrirFiltros(){ FP_OPEN=true; pintarFpanel(); $("#fpanel-backdrop").classList.add("open"); $("#fpanel").classList.add("open"); }
+function cerrarFiltros(){ FP_OPEN=false; $("#fpanel-backdrop").classList.remove("open"); $("#fpanel").classList.remove("open"); }
+function pintarFpanel(){
+  const body=$("#fp-body"); if(!body) return; body.innerHTML="";
+  const cfg=subActual().filtros||[];
+  const secT=t=>body.append(el("div","fp-sec",t));
+  if((cfg.includes("periodo") || fxTieneDias()) && FX_ITEMS.length){
+    secT("Tiempo");
+    if(cfg.includes("periodo")){
+      const row=el("div","fp-row"); row.append(el("span","fp-lbl","Ver"));
+      const p=el("div","preset");
+      [["todo","Todo"],["mes","Este mes"],["mespasado","Mes pasado"],["ano","Este año"]].forEach(([k,t])=>{
+        const b=el("button",VENTANA===k?"on":null,t);
+        b.onclick=()=>{ VENTANA=k; aplicarFiltros(); renderFiltros(); pintarFpanel(); }; p.append(b); });
+      row.append(p); body.append(row);
+    }
+    if(fxTieneDias()){ const caja=el("div","fp-inline"); caja.id="fp-fecha"; body.append(caja); pintarFT(caja); }
+  }
+  const ks=["oficina","producto","empleado","compania","canal","estado"].filter(k=>cfg.includes(k) && fxValores(k).length>0);
+  if(ks.length){
+    secT("Campos");
+    ks.forEach(k=>{
+      const row=el("div","fp-row"); row.append(el("span","fp-lbl",CAMPO_LBL[k]));
+      const ops=(k==="estado")?((fxValores("estado").length)?fxValores("estado"):["Borrador","Derivada","Enviada","Vista","Ganada","Perdida"]):OPS_SELEC_REALES[k];
+      const cb=combobox("Buscar "+CAMPO_LBL[k].toLowerCase()+"…", ops, v=>{ CAMPOS_FX[k]=v; aplicarFiltros(); renderFiltros(); }, ()=>{ CAMPOS_FX[k]=""; aplicarFiltros(); renderFiltros(); });
+      cb._sync(CAMPOS_FX[k]); row.append(cb); body.append(row); });
+  }
+  if(FX_ITEMS.length){
+    secT("Condiciones (y/o)");
+    const cajaC=el("div","fp-cond"); cajaC.id="fp-conds"; body.append(cajaC); pintarCONDS(cajaC);
+  } else {
+    body.append(el("div","fp-hintv","Esta vista muestra números y gráficos agregados. Los filtros de campos y condiciones aplican a las secciones con listas y tablas (Cola de hoy, Cliente 360°, Propuestas, Campañas 360, CRM…)."));
+  }
+  actualizarContadorBarra();
+}
+function actualizarContadorBarra(){
+  const s=$("#fx-cnt"); const tot=FX_ITEMS.length;
+  if(s){ const on=FX_ITEMS.filter(it=>!it.el.classList.contains("fx-off")).length; const n=fxActivos();
+    s.textContent = tot? (n? "Mostrando "+on+" de "+tot+" registros" : tot+" registros en esta vista") : ""; }
+  const fp=$("#fp-cnt");
+  if(fp){ const on=FX_ITEMS.filter(it=>!it.el.classList.contains("fx-off")).length;
+    fp.textContent = tot? on+" de "+tot+" visibles" : ""; }
+}
+function fxFechaPasa(d){
+  const n=({"hoy":0,"ayer":-1,"7":7,"30":30,"365":365})[FT.preset];
+  switch(FT.op){
+    case "dentro":{ const k=+FT.dur; return FT.dir==="futuro"? (d>=0&&d<=k) : (d>=-k&&d<=0); }
+    case "es": return n==null? true : d===n;
+    case "noes": return n==null? true : d!==n;
+    case "ant": return n==null? true : d<n;
+    case "post": return n==null? true : d>n;
+    case "antig": return n==null? true : d<=n;
+    case "postig": return n==null? true : d>=n;
+    default: return true; }
+}
+function fxCond(cd,c){
+  if(c[cd.campo]==null) return true; /* el registro no tiene ese campo: la condición no aplica */
+  const t=TIPO_CAMPO[cd.campo]||"Texto"; const v=c[cd.campo]; const empty=(v==="");
+  if(cd.op==="vac") return empty; if(cd.op==="novac") return !empty;
+  if(empty) return false;
+  if(t==="Número"){ const n=+String(v).replace(/[^\d.-]/g,"")||0; const x=+String(cd.val).replace(/[^\d.-]/g,"")||0;
+    return cd.op==="gt"? n>x : cd.op==="lt"? n<x : cd.op==="gte"? n>=x : cd.op==="lte"? n<=x : cd.op==="eq"? n===x : cd.op==="neq"? n!==x : true; }
+  if(t==="Fecha"){ const d=c.dias; if(d==null) return false; const n=({"hoy":0,"ayer":-1,"7":7,"30":30,"365":365})[cd.val];
+    if(n==null) return true;
+    return cd.op==="es"? d===n : cd.op==="noes"? d!==n : cd.op==="ant"? d<n : cd.op==="post"? d>n : cd.op==="antig"? d<=n : cd.op==="postig"? d>=n : true; }
+  const V=String(v).toLowerCase(), X=String(cd.val).toLowerCase();
+  return cd.op==="eq"? V===X : cd.op==="neq"? V!==X : cd.op==="ct"? V.includes(X) : cd.op==="nct"? !V.includes(X) : cd.op==="sw"? V.startsWith(X) : cd.op==="ew"? V.endsWith(X) : true;
+}
+function fxPasa(it){
+  const c=it.campos;
+  if(VENTANA!=="todo" && c.dias!=null){ const d=c.dias;
+    if(VENTANA==="mes" && !(d>=0&&d<=30)) return false;
+    if(VENTANA==="mespasado" && !(d<0&&d>=-30)) return false;
+    if(VENTANA==="ano" && !(d>=0&&d<=365)) return false; }
+  if(FT.aplicado && c.dias!=null && !fxFechaPasa(c.dias)) return false;
+  if(FX_TXT){ const t=(String(c.nombre||"")+" "+String(c.doc||"")).toLowerCase();
+    if(t.indexOf(FX_TXT.toLowerCase())<0) return false; }
+  for(const k in CAMPOS_FX){ const v=CAMPOS_FX[k]; if(!v) continue;
+    if(c[k]==null) continue; /* el registro no tiene ese campo: este filtro no lo restringe */
+    const cv=String(c[k]);
+    if(cv.toLowerCase()!==v.toLowerCase()) return false; }
+  let acc=null;
+  for(const cd of COND){ if(!cd.campo||!cd.op) continue; const r=fxCond(cd,c);
+    acc = (acc===null)? r : (cd.conj==="y"? (acc&&r) : (acc||r)); }
+  if(acc===false) return false;
+  return true;
+}
+function aplicarFiltros(){
+  FX_ITEMS.forEach(it=>it.el.classList.toggle("fx-off", !fxPasa(it)));
+  const parents=new Set(FX_ITEMS.map(it=>it.el.parentElement).filter(Boolean));
+  parents.forEach(p=>{
+    const its=[...p.children].filter(x=>x.dataset.fx);
+    if(!its.length) return;
+    const isTb=(p.tagName==="TBODY"); const host=isTb?(p.closest(".tabla-wrap")||p):p;
+    let info=host.querySelector(":scope > .fx-info");
+    const on=its.filter(x=>!x.classList.contains("fx-off")).length;
+    const txt=(on===its.length)?"":(on===0?"Sin resultados con los filtros actuales":"Mostrando "+on+" de "+its.length);
+    if(txt){ if(!info){ info=document.createElement("div"); info.className="fx-info"; host.append(info); }
+      info.textContent=txt; info.classList.toggle("vacio", on===0); }
+    else if(info) info.remove();
+  });
+  actualizarContadorBarra();
+}
+document.addEventListener("click",e=>{
+  if(!e.target.closest(".mdd")) document.querySelectorAll(".mdd.open").forEach(x=>x.classList.remove("open"));
+});
+document.addEventListener("keydown",e=>{ if(e.key==="Escape" && FP_OPEN) cerrarFiltros(); });
+
+/* =================== BLOQUES =================== */
+function bloqueChrome(b, num, onToggle){
+  const head=el("div","bloque-head");
+  const chev=el("span","chev","▼"); chev.textContent="▾";
+  const piso=el("span","piso",String(num));
+  const h2=el("h2",null,b.titulo);
+  const sub=el("span","sub",b.sub||"");
+  const spacer=el("span","spacer");
+  const esq=b.tipo==="esquema"; if(esq) spacer.append(el("span","badge esquema","esquema"));
+  if(b.mejora) spacer.append(el("span","badge mejora","✨ mejorado · "+b.mejora));
+  const han=el("span","handle","⠿"); han.draggable=true; han.title="Arrastrá para reordenar";
+  const ch=el("span","chev"); ch.textContent="▾";
+  head.append(piso,h2,sub,spacer,(esq?null:el("span")),han,ch);
+  head.onclick=(e)=>{ if(e.target.closest(".handle")) return; head.parentElement.classList.toggle("collapsed"); };
+  return head;
+}
+function dentro(b, cont){
+  switch(b.tipo){
+    case "kpis":{
+      const g=el("div","kpis");
+      b.items.forEach(k=>{ const c=el("div","kpi"+(k.c?" "+k.c:"")); c.append(el("div","l",k.l), el("div","v",k.v), el("div","s",k.s)); g.append(c); });
+      cont.append(g); break;
+    }
+    case "charts":{
+      const g=el("div","charts");
+      b.charts.forEach(ch=>{
+        const c=el("div","chart"); c.append(el("div","ct",ch.t), el("div","cs",ch.s));
+        if(ch.tipo==="hb"){
+          const hb=el("div","hbarras"); const max=Math.max(...ch.rows.map(r=>r[1]));
+          ch.rows.forEach(r=>{ const row=el("div","hbarra"); const nm=el("span",null,r[0]); const bar=el("div"); const fill=el("div","hb"); fill.style.width=Math.round(r[1]/max*100)+"%"; bar.append(fill); row.append(nm,bar,el("span","hn",String(r[1]))); hb.append(row); });
+          c.append(hb);
+        } else {
+          const meses=["Mar","Jun","Sep","Dic","Mar","Jun","Sep"]; const altas=[22,48,61,55,80,74,92]; const anul=[12,30,26,20,18,16,11]; const neto=altas.map((a,i)=>a-anul[i]);
+          const bs=el("div","barras"); const max=Math.max(...altas);
+          meses.forEach((m,i)=>{ const col=el("div","barra");
+            const a=el("div","b verde"); a.style.height=Math.round(altas[i]/max*100)+"%";
+            const n=el("div","b rojo"); n.style.height=Math.round(anul[i]/max*100)+"%";
+            const t=el("div","b"); t.style.height=Math.round(neto[i]/max*100)+"%";
+            const lb=el("div","n",m);
+            col.append(a,t,n,lb); bs.append(col); });
+          c.append(bs, el("div","cs","Verde: altas · Rojo: anulaciones · Azul: crecimiento neto"));
+        }
+        g.append(c);
+      });
+      cont.append(g); break;
+    }
+    case "senales":{
+      const g=el("div","senales");
+      b.items.forEach(s=>{ const d=el("div","senal "+(s.c||"")); d.append(el("div","t",s.t), el("div","d",s.d)); g.append(d); });
+      cont.append(g); break;
+    }
+    case "listas":{
+      const g=el("div","listas");
+      b.items.forEach(it=>{ const c=el("div","lista-card"); c.append(el("div","v",it.v), el("div","l",it.l), el("div","s",it.s)); const a=el("a",null,"Ver lista →"); a.onclick=(e)=>{e.preventDefault();}; c.append(a); g.append(c); });
+      const busc=el("div","buscador360"); const inp=el("input"); inp.placeholder="Buscar en las 37.163 filas…"; busc.append(inp); cont.append(g,busc);
+      cont.append(el("div","cs","Antes: la tabla entera en la página. Ahora: buscador + paginado."));
+      break;
+    }
+    case "tabla":{
+      const w=el("div","tabla-wrap"); const t=el("table","tabla");
+      const tr=el("tr"); (b.cols||[]).forEach(c=>tr.append(el("th",null,c))); const thead=el("thead"); thead.append(tr); t.append(thead);
+      const tb=el("tbody"); (b.rows||[]).forEach(r=>{
+        const row=el("tr"); r.forEach((cell,i)=>{ const td=el("td",i>0?"num":null,cell); row.append(td); });
+        const campos={}; (b.cols||[]).forEach((cn,ci)=>{ const k=COL2CAMPO_FX[cn]; if(k&&r[ci]!=null){ const esTxt=["nombre","estado","canal","compania"].indexOf(k)>=0; campos[k]=esTxt?String(r[ci]):fxNum(r[ci]); } });
+        if(!Object.keys(campos).length) campos.nombre=String(r[0]);
+        fxItem(row, campos);
+        tb.append(row);
+      }); t.append(tb); w.append(t); cont.append(w); break;
+    }
+    case "tabla-cta":{
+      const w=el("div","tabla-wrap"); const t=el("table","tabla");
+      const tr=el("tr"); ["PAR","CLIENTES",""].forEach(c=>tr.append(el("th",null,c))); const th=el("thead"); th.append(tr); t.append(th);
+      const tb=el("tbody"); b.rows.forEach(r=>{ const row=el("tr"); row.append(el("td",null,r[0]), el("td","num",r[1])); const td=el("td"); const a=el("a",null,"Ver clientes →"); a.style.cssText="color:var(--accent-text); font-weight:600; cursor:pointer"; a.onclick=e=>e.preventDefault(); td.append(a); fxItem(row,{nombre:String(r[0]), casos:fxNum(r[1])}); row.append(td); tb.append(row); }); t.append(tb); w.append(t); cont.append(w); break;
+    }
+    case "jugada":{
+      const j=el("div","jugada"+(b.urgente?" peligro":"")+(abiertos[b.id]!==false&&b.abierta!==false?" open":""));
+      const h=el("div","jugada-head");
+      h.append(el("div","jt",b.titulo), el("div","jd",b.sub||""), el("span","cnt",b.count||""));
+      h.onclick=()=>{ j.classList.toggle("open"); abiertos[b.id]=j.classList.contains("open"); };
+      const body=el("div","jugada-body");
+      (b.filas||[]).forEach(f=>{
+        const row=el("div","fila-cliente");
+        const izq=el("div"); izq.append(el("div","nom",f.nom), el("div","doc",f.doc));
+        row.append(izq, el("div","pol",f.pol), el("span","ven"+(f.hoy?" hoy":""),f.ven));
+        const sp=el("div","spacer"); const acc=el("div","acciones");
+        ["Mandar mensaje","Panel 360","Llamar","Ficha"].forEach((t,i)=>{ const bt=el("button","btn tiny"+(i===0?" primary":""),t); bt.onclick=e=>{e.stopPropagation();}; acc.append(bt); });
+        fxItem(row, fxCamposFila(f));
+        row.append(sp,acc); body.append(row);
+      });
+      if(b.vermas){ const v=el("div","vermas",b.vermas); v.onclick=(e)=>{e.stopPropagation();}; body.append(v); }
+      j.append(h,body); cont.append(j); break;
+    }
+    case "fichas":{
+      const bs=el("div","buscador360"); const inp=el("input"); inp.placeholder="Buscar por nombre o DNI…"; bs.append(inp);
+      inp.addEventListener("input",()=>{ FX_TXT=inp.value.trim(); aplicarFiltros(); renderFiltros(); });
+      cont.append(bs);
+      const g=el("div","fichas");
+      b.fichas.forEach(f=>{
+        const c=el("div","ficha");
+        c.append(el("div","fn",f.nom), el("div","fd",f.doc));
+        fxItem(c, Object.assign({nombre:f.nom, doc:f.doc, activas:parseInt(f.activas||"0",10), accion:f.accion}, fxPerfil(f.nom)));
+        const st=el("div","stats"); st.innerHTML=`<span><b>${f.activas}</b> activas</span><span>Próxima acción:</span>`; c.append(st);
+        c.append(el("div","accion "+f.c, f.accion));
+        c.append(el("div","fd",f.det));
+        const fl=el("div","filo"); ["Panel de control","Ficha backoffice"].forEach(t=>{ const bt=el("button","btn tiny",t); fl.append(bt); });
+        const ap=el("button","btn tiny","🪄 Armar publicación"); ap.onclick=(e)=>{ e.stopPropagation(); saltarAConstructor(f.nom); }; fl.append(ap);
+        const iaTxt=el("div","ia-result"); iaTxt.innerHTML='<div class="tt">✨ Análisis IA (extra) · cliente</div><div>'+f.accion+': '+f.det+'</div>';
+        const iaBtn=el("button","btn tiny","✨ Análisis IA"); iaBtn.onclick=(e)=>{ e.stopPropagation(); iaTxt.classList.toggle("on"); }; fl.append(iaBtn);
+        c.append(fl, iaTxt);
+        g.append(c);
+      });
+      cont.append(g);
+      if(b.mas){ const v=el("div","vermas",b.mas); cont.append(v); }
+      break;
+    }
+    case "ia":{
+      const m=el("div","motor");
+      const pill=el("div","pills");
+      const est=el("span","estado","IA conectada · deepseek-reasoner");
+      const sec=subActual();
+      const res=el("div","ia-result");
+      const pintarAlgo=()=>{ res.innerHTML='<div class="tt">📊 Por algoritmo (sin IA) · '+sec.nombre+'</div><div class="ia-hint">Solo datos y reglas del sistema — instantáneo y auditable.</div>'+(ANALISIS_ALGO[sec.id]||ANALISIS_ALGO._default).map(r=>'<div class="algo-r">• '+r+'</div>').join(''); res.classList.add("on"); };
+      const pintarIA=(modo)=>{ res.innerHTML='<div class="tt">'+(modo==="Dual"?"Datos + lectura de IA":"✨ Solo IA")+' · '+sec.nombre+'</div><div>'+b.textoIA+'</div>'; res.classList.add("on"); };
+      const gen=el("button","btn primary tiny","✨ Generar análisis");
+      const generar=()=>{ if(MOTOR==="Algoritmo"){ pintarAlgo(); gen.textContent="📊 Ver reglas aplicadas"; return; } const t=MOTOR; gen.textContent="Generando…"; setTimeout(()=>{ if(t!==MOTOR) return; pintarIA(t); gen.textContent="✨ Regenerar análisis"; },820); };
+      const hints={ "Algoritmo":"Sin IA: solo los datos y las reglas del sistema — instantáneo y auditable.", "Dual":"Los datos del módulo + la lectura de la IA (la generás cuando quieras).", "Solo IA":"La IA lee los datos reales de este módulo y arma el resumen; se genera sola." };
+      ["Algoritmo","Dual","Solo IA"].forEach((t)=>{
+        const pb=el("button",t===MOTOR?"on":null,t);
+        pb.title=hints[t];
+        pb.onclick=(e)=>{ e.stopPropagation(); MOTOR=t; pill.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===pb)); est.textContent = t==="Algoritmo"?"Motor de datos (sin IA) · algoritmo":(t==="Dual"?"IA conectada · deepseek-reasoner":"Solo IA · deepseek-reasoner"); generar(); };
+        pill.append(pb);
+      });
+      gen.onclick=(e)=>{ e.stopPropagation(); generar(); };
+      m.append(el("span","estado","MOTOR"),pill,est,el("span","spacer"),gen);
+      cont.append(m,res);
+      if(MOTOR==="Algoritmo"){ pintarAlgo(); gen.textContent="📊 Ver reglas aplicadas"; }
+      else if(MOTOR==="Solo IA"){ generar(); }
+      break;
+    }
+    case "constructor":{ renderConstructor(cont); break; }
+    case "timeline":{
+      const w=el("div","timeline");
+      (b.eventos||[]).forEach(ev=>{
+        const r=el("div","tl");
+        r.append(el("span","ic",ev.ic||"•"));
+        const t=el("div"); t.append(el("div","tt",ev.t), el("div","tm",ev.m));
+        r.append(t, el("span","sp"), el("span","ab","Abrir pieza"));
+        const nomTL=fxNombreTL(ev.t);
+        fxItem(r, Object.assign({nombre:nomTL, accion:(String(ev.t).match(/creada|derivada|enviada|vista|respondió/)||[""])[0]}, fxPerfil(nomTL)));
+        w.append(r);
+      });
+      cont.append(w); break;
+    }
+    case "publicidades":{
+      const w=el("div","tabla-wrap"); const t=el("table","tabla");
+      const th=el("thead"); const tr=el("tr"); ["PUBLICIDAD","CLIENTE","ESTADO","ORIGEN","VISTAS",""].forEach(c=>tr.append(el("th",null,c))); th.append(tr); t.append(th);
+      const tb=el("tbody");
+      [
+        ["🧲 Tu primer seguro de auxilio, fácil y claro","TEST IA","Vista","🤖 IA primero","3"],
+        ["🚀 Llegó un producto nuevo a nuestro catálogo","GIMENEZ JENI MARISA","Vista","🤖 IA primero","3"],
+        ["🧩 Ampliá tu protección sin sumar trámites","GIMENEZ JENI MARISA","Vista","🗣️ TES","5"],
+        ["📅 Tu póliza está por renovarse","TEST IA","Vista","🤖 IA primero","5"],
+        ["🛡️ Seguí cubierto y sin preocupaciones","TEST IA","Vista","🤖 IA primero","2"],
+        ["💙 Tu fidelidad tiene premio: 20% en tu póliza de vida","TEST IA","Vista","🤖 IA primero","1"],
+        ["🔁 Volvé a estar protegido","CARBALLO EROS ESTEBAN","Vista","🤖 IA primero","5"],
+        ["📅 Tu coche, mejor cubierto","TEST IA","Vista","🤖 IA primero","10"],
+      ].forEach(r=>{
+        const row=el("tr"); r.forEach((c,i)=>row.append(el("td",i===4?"num":null,c)));
+        const td=el("td"); const a=el("a",null,"Panel 360 · Ver · ⋯"); a.style.cssText="color:var(--accent-text); font-weight:600; cursor:pointer; white-space:nowrap"; a.onclick=e=>e.preventDefault(); td.append(a); row.append(td);
+        fxItem(row, Object.assign({nombre:r[1], estado:r[2], origen:r[3], vistas:parseInt(r[4],10)||0}, fxPerfil(r[1])));
+        tb.append(row);
+      });
+      t.append(tb); w.append(t); cont.append(w);
+      cont.append(el("div","cs","Cada fila conserva: abrir página pública, copiar link, Panel 360, editar la publicidad, historial, pausar/archivar."));
+      break;
+    }
+    case "archivos":{
+      const g=el("div","fichas");
+      (b.items||[]).forEach(it=>{
+        const c=el("div","ficha");
+        c.append(el("div","fn",it.tipo+"  "+it.nombre), el("div","fd",(it.fijo?"🔒 Fijo · ":"")+it.meta));
+        fxItem(c, {nombre:it.nombre, tipo:it.tipo});
+        const fl=el("div","filo"); ["Ver video","Usar en publicidad"].forEach(t=>fl.append(el("button","btn tiny",t))); c.append(fl); g.append(c);
+      });
+      cont.append(g);
+      const n=el("div","senal azul"); n.style.marginTop="10px"; n.append(el("div","d",b.nota)); cont.append(n); break;
+    }
+    case "nota":{
+      const p=el("div","senal azul"); p.style.marginTop="10px"; p.append(el("div","d",b.texto)); cont.append(p); break;
+    }
+    case "esquema":{
+      const p=el("div","senal amar"); p.style.marginTop="10px";
+      p.append(el("div","t","Esquema de la nueva estructura"), el("div","d",b.texto)); cont.append(p); break;
+    }
+  }
+}
+function renderContenido(){
+  const cont=$("#contenido"); cont.innerHTML="";
+  FX_ITEMS=[]; FX_TXT="";
+  const s=subActual();
+  const key=grupoActual().id+"/"+s.id;
+  const base=[...s.bloques, { id:"ia", piso:"IA", titulo:"El análisis IA de la sección", sub:"Motor: Algoritmo · Dual · Solo IA · IA conectada", tipo:"ia", mejora:"siempre visible + motor elegible", textoIA:ANALISIS_IA[s.id]||ANALISIS_IA._default }];
+  const idxOf=(bl)=>{ const i=base.indexOf(bl); return i<0?999:i; };
+  const ordenado=[...base].sort((a,b)=>{
+    const oa=(orden[key]||{})[a.id]; const ob=(orden[key]||{})[b.id];
+    if(oa==null||ob==null) return idxOf(a)-idxOf(b);
+    return oa-ob;
+  });
+  ordenado.forEach((b,i)=>{
+    const sec=el("section","bloque"); sec.dataset.id=b.id; sec.draggable=true;
+    sec.id="blk-"+b.id;
+    const head=bloqueChrome(b, i+1);
+    const body=el("div","bloque-body");
+    dentro(b, body);
+    sec.append(head, body);
+    // drag & drop
+    sec.addEventListener("dragstart",e=>{ sec.classList.add("dragging"); e.dataTransfer.setData("text/plain",b.id); e.dataTransfer.effectAllowed="move"; });
+    sec.addEventListener("dragend",()=>{ sec.classList.remove("dragging"); });
+    sec.addEventListener("dragover",e=>{ e.preventDefault(); e.dataTransfer.dropEffect="move"; sec.classList.add("drop-target"); });
+    sec.addEventListener("dragleave",()=>sec.classList.remove("drop-target"));
+    sec.addEventListener("drop",e=>{ e.preventDefault(); sec.classList.remove("drop-target");
+      const srcId=e.dataTransfer.getData("text/plain"); if(srcId===b.id) return;
+      const srcIdx=ordenado.findIndex(x=>x.id===srcId); const dstIdx=ordenado.findIndex(x=>x.id===b.id);
+      if(srcIdx<0||dstIdx<0) return;
+      const m=[...ordenado]; m.splice(dstIdx,0,m.splice(srcIdx,1)[0]);
+      orden[key]={}; m.forEach((x,ix)=>orden[key][x.id]=ix);
+      guardarOrden(); renderContenido();
+    });
+    if(abiertos["col-"+key+"/"+b.id]) { /* colapso vivo, no persiste */ }
+    cont.append(sec);
+  });
+  aplicarFiltros();
+}
+function guardarOrden(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(orden)); }catch(e){} }
+
+/* =================== CONSTRUCTOR DE PUBLICIDAD (MEJORADO v2) =================== */
+const PZ = { cliente:"GIMENEZ JENI MARISA", nombre:"Jeni", tipo:"Renovación", producto:"AUTO",
+  titulo:"Tu póliza está por renovarse", sub:"Te acompañamos para que sigas cubierto, sin trámites.",
+  beneficio:"20% off renovando este mes", oferta:"Débito automático sin cargo + primera cuota bonificada.",
+  wa:"Hablar con TES", waOn:true, agenda:true, video:true };
+
+function pzHTML(){
+  const n=PZ.nombre;
+  return '<div class="pz">'
+   +'<div class="pz-blob pz-b1"></div><div class="pz-blob pz-b2"></div><div class="pz-blob pz-b3"></div>'
+   +'<div class="pz-card">'
+    +'<header class="pz-head" data-z="logo"><div class="pz-hl"><div class="pz-logo-c">DL</div><div style="min-width:0"><div class="pz-nm">Diego López · Seguros</div><div class="pz-kd">'+PZ.tipo+'</div></div></div><span class="pz-chipc">Para '+n+'</span></header>'
+    +'<div class="pz-media" data-z="medios">📷'+(PZ.video?'<span class="pz-shine"></span>🎬':'')+'<div class="pz-dots"><i class="on"></i><i></i><i></i></div></div>'
+    +'<div class="pz-body">'
+     +'<div class="pz-asesor"><span class="pz-av">TS</span><div><div class="t1">Te la envió TES</div><div class="t2">Tu asesor · Diego López Seguros</div></div></div>'
+     +'<h1 class="pz-tit" data-z="texto">'+PZ.titulo+'</h1>'
+     +'<p class="pz-sub">'+PZ.sub+'</p>'
+     +'<div class="pz-benef"><span class="em">🎁</span><span class="tx">'+PZ.beneficio+'</span></div>'
+     +'<span class="pz-prod">🛡️ '+PZ.producto+'</span>'
+     +'<p class="pz-p">¡Hola '+n+'! Tu póliza de '+PZ.producto+' está por vencer y preparamos esta propuesta para que sigas cubierto, sin interrupciones.</p>'
+     +'<div class="pz-oferta"><div class="lb">La oferta</div><div class="tx">'+PZ.oferta+'</div></div>'
+     +'<div class="pz-btns" data-z="cta">'
+      +(PZ.agenda?'<div class="pz-agenda"><div class="tt">📹 Videollamada con un asesor</div><div class="td">Elegí día y horario en un minuto · te esperamos online</div><div class="cta"><span class="pz-shine"></span>Agendar videollamada →</div></div>':'')
+      +(PZ.waOn?'<a class="pz-wa">💬 '+PZ.wa+'</a>':'')
+      +((!PZ.waOn&&!PZ.agenda)?'<a class="pz-wa">Quiero más información →</a>':'')
+      +(PZ.waOn?'<div class="pz-at"><span class="pt"></span> Te atiende TES · el equipo</div>':'')
+     +'</div>'
+     +'<div class="pz-ausp"><span class="lb">Auspicia</span><b>Triunfo Seguros</b></div>'
+    +'</div>'
+    +'<footer class="pz-foot" data-z="pub"><span>Propuesta para '+n+' · Hecha para vos 💙</span><span class="pz-print">🖨️ Imprimir</span></footer>'
+   +'</div>'
+   +'<div class="pz-nota">Si no esperabas este mensaje, ignorá esta página.</div>'
+  +'</div>';
+}
+function pzSet(){ const h=pzHTML(); document.querySelectorAll(".pv-clip .pz-wrap, #orig-stage").forEach(x=>x.innerHTML=h); }
+function pzHL(paso, root){ const z=["","medios","logo","texto","cta","pub"][paso]||""; (root||document).querySelectorAll(".pz [data-z]").forEach(x=>x.classList.toggle("hl", !!z && x.dataset.z===z)); }
+/* Demo = MINIATURA (min(fit, tope): cel 50% · tab 35% · web 22%) — el detalle a tamaño real está en «Ver en pantalla original». Pantalla original = 1:1 con el viewport REAL de cada dispositivo (iPhone 390×844, iPad 768×1024, laptop 1280×800) y scroll interno. */
+const PV={ f:"cel" }; let PV_DER=null; let PV_LBL=null;
+const PVF={ cel:{pieza:390, escMax:.5, vp:844}, tab:{pieza:768, escMax:.35, vp:1024}, web:{pieza:1280, escMax:.22, vp:800} };
+function pvSetFormato(f, frameEl){
+  PV.f=f; const F=PVF[f]||PVF.cel;
+  const frame=frameEl||document.querySelector(".ctor .pv-frame"); if(!frame) return;
+  const avail=Math.max((PV_DER&&PV_DER.clientWidth)||520, 260);
+  const esc=Math.floor(Math.min((avail-18)/F.pieza, F.escMax)*100)/100;
+  frame.classList.remove("f-cel","f-tab","f-web"); frame.classList.add("f-"+f);
+  frame.style.width=Math.round(F.pieza*esc+14)+"px";
+  const wrap=frame.querySelector(".pz-wrap");
+  if(wrap){ wrap.style.width=F.pieza+"px"; wrap.style.transform="scale("+esc+")"; }
+  const clip=frame.querySelector(".pv-clip");
+  if(clip){ clip.style.height=Math.round(F.vp*esc)+"px"; clip.scrollTop=0; }
+  if(PV_LBL) PV_LBL.textContent="VISTA DEMO";
+  const bar=frame.querySelector(".pv-bar");
+  if(bar){ bar.innerHTML = f==="web" ? '<span class="dotg"></span><span class="dotg"></span><span class="dotg"></span><span class="urlbox">vocero.sistemasagenticos.cloud/p/…</span>' : f==="tab" ? '<span class="urlbox">📲 Tablet</span>' : ''; }
+}
+
+function renderConstructor(cont){
+  const wrap=el("div","ctor");
+  const izq=el("div"); const der=el("div");
+  const tabs=el("div","ctor-tabs");
+  const panel=el("div","ctor-panel");
+  const pvHead=el("div","pv-head");
+  PV_LBL=el("span","pv-lbl","VISTA DEMO");
+  pvHead.append(PV_LBL);
+  const bOrig=el("button","pv-btn","⛶ Ver en pantalla original");
+  bOrig.onclick=(e)=>{ e.stopPropagation(); abrirOriginal(); };
+  pvHead.append(bOrig);
+  const fmtRow=el("div","fmt-row");
+  [["cel","📱 Celular"],["tab","📲 Tablet"],["web","🖥️ Web"]].forEach((ft)=>{ const b=el("button","fmt"+(PV.f===ft[0]?" on":""),ft[1]); b.onclick=(e)=>{ e.stopPropagation(); fmtRow.querySelectorAll("button").forEach(x=>x.classList.remove("on")); b.classList.add("on"); pvSetFormato(ft[0]); }; fmtRow.append(b); });
+  const frame=el("div","pv-frame f-cel");
+  frame.innerHTML='<div class="pv-notch"></div><div class="pv-bar"></div><div class="pv-clip"><div class="pz-wrap" id="pv-stage"></div></div>';
+  const stagePV=frame.querySelector(".pz-wrap");
+  const pvNota=el("div","cs","La MISMA publicación, full responsive mobile-first: elegí el formato y mirala acá en miniatura; para verla a tamaño real, tocá «⛶ Ver en pantalla original».");
+  der.append(pvHead, fmtRow, frame, pvNota);
+  const PASOS=["1 · Tipo y cliente","2 · Medios","3 · Logo","4 · Texto con IA","5 · Producto y CTA","6 · Publicar y derivar"];
+  let paso=0;
+  const repaint=()=>{ const h=pzHTML(); if(stagePV) stagePV.innerHTML=h; const b2o=document.getElementById("orig-stage"); if(b2o){ b2o.innerHTML=h; pzHL(paso,b2o); } pzHL(paso,stagePV); };
+  const paint=()=>{
+    tabs.querySelectorAll("button").forEach((b,i)=>b.classList.toggle("on",i===paso));
+    panel.innerHTML="";
+    if(paso===0){
+      panel.append(el("h4",null,"¿Qué publicidad es y para quién?"));
+      panel.append(el("div","pd","El motor de datos sugiere el tipo según la cartera — vos elegís."));
+      const t=el("div","ctor-row");
+      ["Renovación","Retención","Reactivación","Venta cruzada","Captación","Lanzamiento","Fidelización"].forEach((x,i)=>{ const b=el("button","opt-chip"+(x===PZ.tipo?" on":""),x); b.onclick=()=>{ PZ.tipo=x; t.querySelectorAll("button").forEach(y=>y.classList.remove("on")); b.classList.add("on"); repaint(); }; t.append(b); });
+      panel.append(t);
+      panel.append(el("div","pd","Prioridad:")); const t2=el("div","ctor-row");
+      ["Alta","Media","Baja"].forEach((x,i)=>{ const b=el("button","opt-chip"+(i===0?" on":""),x); b.onclick=()=>{ t2.querySelectorAll("button").forEach(y=>y.classList.remove("on")); b.classList.add("on"); }; t2.append(b); });
+      panel.append(t2, el("div","pd","Cliente: GIMENEZ JENI MARISA · DNI 28731037"));
+    } else if(paso===1){
+      panel.append(el("h4",null,"Medios: carrusel de fotos + UN video, en orden"));
+      const s=el("div","ctor-row");
+      const slot=(x,on,fn)=>{ const b=el("button","slot"+(on?" on":""),x); b.onclick=()=>{ b.classList.toggle("on"); fn(b.classList.contains("on")); }; s.append(b); };
+      slot("📷 Foto 1",true,()=>{});
+      slot("📷 Foto 2",true,()=>{});
+      slot("🎬 Video",PZ.video,(on)=>{ PZ.video=on; repaint(); });
+      panel.append(s, el("div","pd","Se suben acá o con «Elegir del contenedor universal». El orden es el del carrusel."));
+    } else if(paso===2){
+      panel.append(el("h4",null,"Logo de marca"));
+      const s=el("div","ctor-row"); s.append(el("button","slot on","🛡️ Logo")); panel.append(s);
+      panel.append(el("div","pd","Siempre imagen. El video va en los medios, nunca como logo."));
+    } else if(paso===3){
+      panel.append(el("h4",null,"Texto con asistente IA"));
+      const ta=el("textarea"); ta.value=PZ.titulo;
+      const sb=el("textarea"); sb.value=PZ.sub;
+      ta.oninput=()=>{ PZ.titulo=ta.value; repaint(); };
+      sb.oninput=()=>{ PZ.sub=sb.value; repaint(); };
+      const tonos=el("div","ctor-row");
+      [["Cercano","Tu póliza está por renovarse","Te acompañamos para que sigas cubierto, sin trámites."],
+       ["Formal","Aviso de renovación de póliza","Estimado cliente: su cobertura está próxima a su vencimiento. Coordinemos la renovación."],
+       ["Promo","¡Renová hoy y seguí protegido!","Mantené tu cobertura activa sin interrupciones. Respondé este mensaje y lo gestionamos juntos."]
+      ].forEach((x,i)=>{ const b=el("button","opt-chip"+(i===0?" on":""),x[0]); b.onclick=()=>{ tonos.querySelectorAll("button").forEach(y=>y.classList.remove("on")); b.classList.add("on"); PZ.titulo=x[1]; PZ.sub=x[2]; ta.value=x[1]; sb.value=x[2]; repaint(); }; tonos.append(b); });
+      const gen=el("button","btn primary tiny","✨ Redactar con IA");
+      gen.onclick=(e)=>{ e.stopPropagation(); gen.textContent="Redactando…"; setTimeout(()=>{ gen.textContent="✨ Redactar con IA"; PZ.titulo="Tu póliza está por renovarse 💙"; PZ.sub="Te acompañamos para que sigas cubierto, sin trámites ni sorpresas."; ta.value=PZ.titulo; sb.value=PZ.sub; repaint(); },800); };
+      panel.append(ta, sb, el("div","pd","El asistente escribe; vos editás. Tono:"), tonos, gen);
+    } else if(paso===4){
+      panel.append(el("h4",null,"Producto y llamado a la acción"));
+      panel.append(el("div","pd","Producto: AUTO (del catálogo real) — sale del selector «Tipo de producto»."));
+      panel.append(el("div","pd","La página pública muestra:")); const c=el("div","ctor-row");
+      const wb=el("button","opt-chip"+(PZ.waOn?" on":""),"💬 WhatsApp"); wb.onclick=()=>{ PZ.waOn=!PZ.waOn; wb.classList.toggle("on"); repaint(); };
+      const ab=el("button","opt-chip"+(PZ.agenda?" on":""),"📹 Videollamada"); ab.onclick=()=>{ PZ.agenda=!PZ.agenda; ab.classList.toggle("on"); repaint(); };
+      c.append(wb,ab); panel.append(c);
+    } else {
+      panel.append(el("h4",null,"Publicar y derivar"));
+      panel.append(el("div","pd","Página pública: https://vocero.sistemasagenticos.cloud/p/… [Copiar link]"));
+      panel.append(el("div","pd","Responsable: TES — al derivar, el aviso le llega a su chat interno."));
+      const dv=el("button","btn primary tiny","🚀 Derivar y enviar");
+      const vo=el("button","btn tiny","⛶ Ver en pantalla original");
+      vo.onclick=(e)=>{ e.stopPropagation(); abrirOriginal(); };
+      const toast=el("div","ctor-toast","✓ Derivada a TES — aviso enviado (demostración de la maqueta)");
+      dv.onclick=(e)=>{ e.stopPropagation(); toast.classList.add("on"); };
+      const fila=el("div","ctor-row"); fila.append(dv,vo); panel.append(fila, toast);
+    }
+    repaint();
+  };
+  PASOS.forEach((p,i)=>{ const b=el("button","ctor-tab",p); b.onclick=(e)=>{ e.stopPropagation(); paso=i; paint(); }; tabs.append(b); });
+  izq.append(tabs, panel);
+  const nota=el("div","senal verde"); nota.style.marginTop="12px";
+  nota.append(el("div","t","Mejora de este bloque"), el("div","d","Pasos guiados + vista demo FIEL (la misma publicación real en celular, tablet y web) + pantalla original a tamaño real. El constructor completo (medios, logo, asistente, producto, página pública y ciclo de vida) se conserva entero."));
+  izq.append(nota);
+  PV_DER=der;
+  wrap.append(izq, der); cont.append(wrap); paint(); pvSetFormato(PV.f, frame); setTimeout(()=>pvSetFormato(PV.f), 90);
+}
+
+/* =================== GUÍA =================== */
+function abrirGuia(sub){
+  const g=$("#guia"); $("#g-titulo").textContent="¿Cómo funciona "+sub.nombre+"?";
+  const c=$("#g-cuerpo"); c.innerHTML="";
+  const gd = sub.id==="pulso" ? GUIA_PULSO : null;
+  const sec=(t,ul)=>{ const d=el("div","gsec"); d.append(el("div","t",t)); if(ul){ const u=el("ul"); ul.forEach(x=>u.append(el("li",null,x))); d.append(u);} return d; };
+  if(gd){ c.append(sec("¿Qué es?",[gd.que]), sec("¿Qué mide?",gd.mide), sec("¿Para qué te sirve?",gd.sirve)); }
+  else {
+    const txt={
+      cartera:"Todo lo vigente ya cargado en el sistema nuevo: pólizas, activas, prima y reparto por compañía y producto. Es parcial hasta cerrar la migración.",
+      calidad:"El avance real de la migración: clientes y gestiones vinculadas, pólizas con campos sin completar y gestiones sin match.",
+      cola:"El análisis convertido en acción: qué hacer hoy y con quién. Cada fila es un cliente con su motivo y el camino listo para actuar.",
+      retencion:"Las pólizas que se vencen y los clientes que conviene contactar antes de perderlos. Empezá por ≤7 días; después la ronda de ≤30.",
+      reactivacion:"Clientes con historia de compra que hoy no tienen póliza activa: la venta más fácil, ya te conocen.",
+      cross:"Qué producto le falta a cada cliente según lo que ya tiene (Auto sin Auxilio, sin Hogar, sin Vida…). Se crece sobre la cartera propia.",
+      c360:"La ficha completa del cliente: pólizas, gestiones, historia y la próxima mejor acción con su análisis IA.",
+      seguimiento:"Las gestiones programadas del equipo, con estados y seguimiento hasta el cierre.",
+      propuestas:"Propuestas comerciales con embudo: creación de la pieza pública con CTA y derivación con prioridad.",
+      constructor:"El constructor de publicaciones: pasos guiados para armar la pieza pública (tipo y cliente, medios, logo, texto con IA, producto y CTA) con vista previa en celular, tablet y web, pantalla original y la lista de publicidades con sus acciones.",
+      campanas:"Campañas activas por canal y segmento, con su alcance y métricas.",
+      archivos:"Biblioteca de archivos compartibles del CRM, con buscador y vista previa.",
+      crm:"El tablero comercial: pipeline de oportunidades, acciones, conversaciones y el macheo de contactos contra la cartera."
+    };
+    c.append(sec("¿Qué es?",[txt[sub.id]||""]));
+    c.append(sec("Tip",["Usá los filtros de arriba: solo aparecen los que aplican a esta sección.","Arrastrá los bloques para dejar arriba lo que más usás: tu orden queda guardado."]));
+  }
+  g.classList.add("open"); $("#guia-backdrop").classList.add("open");
+}
+function cerrarGuia(){ $("#guia").classList.remove("open"); $("#guia-backdrop").classList.remove("open"); }
+$("#guia-backdrop").onclick=cerrarGuia;
+
+/* =================== INIT =================== */
+function renderTodo(){ renderGrupos(); renderSubs(); renderMigas(); renderFiltros(); renderContenido(); }
+function renderMigas(){ $("#migas").innerHTML="Dashboard Management › "+grupoActual().nombre+" › <b>"+subActual().nombre+"</b>"; }
+$("#btn-reset").onclick=()=>{ orden={}; guardarOrden(); renderContenido(); };
+$("#btn-tema").onclick=()=>{ const r=document.documentElement; r.dataset.theme = r.dataset.theme==="dark" ? "light" : "dark"; };
+document.querySelectorAll("#sugerencias .chip").forEach(ch=>ch.onclick=()=>{ const [g,s]=ch.dataset.goto.split("/"); estado.grupo=g; estado.sub=s; renderTodo(); window.scrollTo({top:0,behavior:"smooth"}); });
+/* ===== Pantalla original (publicación 1:1) ===== */
+function saltarAConstructor(nom){
+  if(nom && nom.trim()){ const t=nom.trim().split(/\s+/); const p=(t[1]||t[0]); PZ.cliente=nom.trim(); PZ.nombre=p.charAt(0)+p.slice(1).toLowerCase(); }
+  estado.grupo="marketing"; estado.sub="constructor"; renderTodo(); pzSet(); window.scrollTo({top:0,behavior:"smooth"});
+}
+function abrirOriginal(){ pzSet(); $("#orig").classList.add("open"); }
+function cerrarOriginal(){ $("#orig").classList.remove("open"); }
+$("#orig-x").onclick=cerrarOriginal;
+$("#orig").onclick=(e)=>{ if(e.target.id==="orig") cerrarOriginal(); };
+document.querySelectorAll(".orig-toggle button").forEach(bt=>bt.onclick=()=>{ document.querySelectorAll(".orig-toggle button").forEach(x=>x.classList.remove("on")); bt.classList.add("on"); const st=$("#orig-stage"); st.classList.remove("cel","tab","web"); st.classList.add(bt.dataset.modo); });
+document.addEventListener("keydown",(e)=>{ if(e.key==="Escape") cerrarOriginal(); });
+
+/* ===== Botones del header (Pólizas / Actualizar) — mismo comportamiento que el real ===== */
+$("#btn-polizas").onclick=()=>{ estado.grupo="analisis"; estado.sub="cartera"; renderTodo(); window.scrollTo({top:0,behavior:"smooth"}); };
+$("#btn-actualizar").onclick=()=>{
+  const b=$("#btn-actualizar"), ic=$("#upd-ic"), se=$("#upd-sello");
+  if(b.dataset.busy) return;
+  b.dataset.busy="1"; b.disabled=true; se.textContent=""; ic.classList.add("spin");
+  setTimeout(()=>{
+    delete b.dataset.busy; b.disabled=false;
+    ic.classList.remove("spin"); ic.textContent="✓"; b.classList.add("ok");
+    se.textContent="· Actualizado "+new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
+    setTimeout(()=>{ ic.textContent="⟳"; b.classList.remove("ok"); }, 2600);
+  }, 950);
+};
+renderTodo();
+</script>
+</body>
+</html>
