@@ -28,6 +28,7 @@ import {
   UserRound,
   Users,
   Wand2,
+  X,
 } from "lucide-react";
 
 import { LibraryPicker } from "./library-picker";
@@ -66,6 +67,7 @@ export function ConstructorPanel({
   embebido = false,
   onCreated,
   onOpenInbox,
+  onQuitarClienteFijo,
 }: {
   onGoToProposals?: () => void;
   /** Modo Cliente 360: el cliente ya está elegido y el wizard arranca en «Publicación». */
@@ -79,6 +81,8 @@ export function ConstructorPanel({
     draft: string;
     attach?: string | null;
   }) => void;
+  /** 044b B9b — quitar el cliente fijo (el wizard vuelve a elegir destinatario). */
+  onQuitarClienteFijo?: () => void;
 }) {
   const pasoInicial = clienteFijo ? 1 : 0;
   const [paso, setPaso] = useState(pasoInicial);
@@ -607,10 +611,14 @@ export function ConstructorPanel({
     setPickerTarget(null);
   };
 
-  /* Cliente 360: el cliente del panel entra como si lo hubieran elegido en el paso 1. */
+  /* 360 -> Constructor: el cliente que llega del panel entra como si lo hubieran
+   * elegido en el paso 1. Si ya había otro cliente, el que llega MANDA (queda
+   * elegido y el wizard sigue en «Publicación»). */
   useEffect(() => {
-    if (clienteFijo && !cliente) setCliente(clienteFijo as unknown as ClienteSistema);
-  }, [clienteFijo, cliente]);
+    if (!clienteFijo) return;
+    setCliente(clienteFijo as unknown as ClienteSistema);
+    setPaso((p) => (p === 0 ? 1 : p));
+  }, [clienteFijo]);
 
   /* Textos base: al cargar las plantillas, si el título está vacío, aplicar los del tipo. */
   useEffect(() => {
@@ -666,8 +674,22 @@ export function ConstructorPanel({
       <ol className="flex flex-wrap items-center gap-1.5">
         {clienteFijo && (
           <li>
-            <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 text-[11.5px] font-semibold text-emerald-700">
+            <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 pl-2.5 pr-1 text-[11.5px] font-semibold text-emerald-700">
               <Check size={12} /> {clienteFijo.nombre}
+              {onQuitarClienteFijo && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onQuitarClienteFijo();
+                    setCliente(null);
+                    setPaso(0);
+                  }}
+                  title="Quitar este cliente y elegir otro destinatario"
+                  className="rounded-full p-1 transition-colors hover:bg-emerald-500/20"
+                >
+                  <X size={11} />
+                </button>
+              )}
             </span>
           </li>
         )}
@@ -919,7 +941,7 @@ export function ConstructorPanel({
                 </>
               )}
 
-              {cliente && (
+              {cliente && !clienteFijo && (
                 <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-brand-soft bg-brand-tint px-3 py-2">
                   <div className="min-w-0">
                     <p className="truncate text-[12.5px] font-semibold text-brand-text">

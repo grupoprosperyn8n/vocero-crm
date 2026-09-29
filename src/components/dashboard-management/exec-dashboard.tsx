@@ -74,7 +74,7 @@ import type { SystemClientSearchResultDto } from "@/lib/types";
 import { airtableTagStyle } from "@/lib/dashboard-management/airtable-colors";
 import { ClientPanel, type PanelCustomer } from "./client-panel";
 import { ProposalsPanel } from "./proposals-panel";
-import { ConstructorPanel } from "./constructor-panel";
+import { ConstructorPanel, type ClienteFijoWizard } from "./constructor-panel";
 import { CampaignsPanel } from "./campaigns-panel";
 import { LibraryPanel } from "./library-panel";
 import { FollowUpPanel } from "./followup-panel";
@@ -1209,6 +1209,8 @@ export function ExecDashboard() {
   }, [fpanelOpen]);
   // 041 — panel de control del cliente (Cliente 360°), a pantalla completa.
   const [panelClient, setPanelClient] = useState<PanelCustomer | null>(null);
+  /* 044b B9b — cliente que viaja del Cliente 360° al Constructor de publicaciones. */
+  const [constructorFijo, setConstructorFijo] = useState<ClienteFijoWizard | null>(null);
   // 042 — el rol del visor decide si ve el tablero de campañas (owner/admin/manager).
   const [viewerRole, setViewerRole] = useState<string | null>(null);
   const [modEngines, setModEngines] = useState<Partial<Record<ModuleAiId, InsightMode>>>({});
@@ -3214,6 +3216,8 @@ export function ExecDashboard() {
                 router.push("/inbox");
               }
             }}
+            clienteFijo={constructorFijo ?? undefined}
+            onQuitarClienteFijo={() => setConstructorFijo(null)}
           />
         </div>
       )}
@@ -3956,21 +3960,12 @@ export function ExecDashboard() {
         <ClientPanel
           customer={panelClient}
           onClose={() => setPanelClient(null)}
-          onMandarMensaje={() => sendPanelMessage(panelClient)}
-          onOpenInbox={(input) => {
-            if (input.contactId) {
-              // 041b — el adjunto (imagen de la publicación) viaja por la URL
-              // y el compositor lo deja cargado junto al texto, sin enviar.
-              const params = new URLSearchParams({
-                contact: input.contactId,
-                draft: input.draft,
-              });
-              if (input.attach) params.set("attach", input.attach);
-              router.push(`/inbox?${params.toString()}`);
-            } else {
-              router.push("/inbox");
-            }
+          onGoToConstructor={(c) => {
+            setConstructorFijo(c);
+            setPanelClient(null);
+            setTab("constructor");
           }}
+          onMandarMensaje={() => sendPanelMessage(panelClient)}
         />
       )}
     </div>

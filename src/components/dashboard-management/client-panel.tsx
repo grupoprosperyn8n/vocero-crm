@@ -51,8 +51,7 @@ import {
   type ProposalDto,
   type ProposalPriority,
 } from "@/lib/types";
-import { ConstructorPanel } from "./constructor-panel";
-import { ProposalPostPanel } from "./proposal-post";
+import type { ClienteFijoWizard } from "./constructor-panel";
 import {
   ProposalEditModal,
   ProposalHistoryModal,
@@ -78,13 +77,8 @@ type Props = {
   onClose: () => void;
   /** Usa el flujo de IA del tablero para «Mandar mensaje» (devuelve el error, si hubo). */
   onMandarMensaje?: () => Promise<string | null> | void;
-  /** Navega al inbox con el borrador cargado (como «Mandar mensaje»). */
-  onOpenInbox: (input: {
-    contactId: string | null;
-    draft: string;
-    /** 041b — imagen de la publicación para dejar adjunta en el chat. */
-    attach?: string | null;
-  }) => void;
+  /** 044b B9b — armar la publicación en EL Constructor (Marketing) con este cliente. */
+  onGoToConstructor?: (cliente: ClienteFijoWizard) => void;
 };
 
 const money = (n: number) =>
@@ -153,7 +147,7 @@ export function suggestKind(customer: PanelCustomer, ficha: ClientFichaDto | nul
   return "retencion";
 }
 
-export function ClientPanel({ customer, onClose, onMandarMensaje, onOpenInbox }: Props) {
+export function ClientPanel({ customer, onClose, onMandarMensaje, onGoToConstructor }: Props) {
   const [ficha, setFicha] = useState<ClientFichaDto | null>(null);
   const [loadingFicha, setLoadingFicha] = useState(true);
   const [fichaError, setFichaError] = useState<string | null>(null);
@@ -264,7 +258,7 @@ export function ClientPanel({ customer, onClose, onMandarMensaje, onOpenInbox }:
             ficha={ficha}
             kindDefault={kindDefault}
             onMandarMensaje={onMandarMensaje}
-            onOpenInbox={onOpenInbox}
+            onGoToConstructor={onGoToConstructor}
             onFichaChange={(f) => setFicha(f)}
             copied={copied}
             setCopied={setCopied}
@@ -337,7 +331,7 @@ function PanelBody({
   ficha,
   kindDefault,
   onMandarMensaje,
-  onOpenInbox,
+  onGoToConstructor,
   onFichaChange,
   copied,
   setCopied,
@@ -346,17 +340,11 @@ function PanelBody({
   ficha: ClientFichaDto;
   kindDefault: string;
   onMandarMensaje?: () => Promise<string | null> | void;
-  onOpenInbox: (input: {
-    contactId: string | null;
-    draft: string;
-    /** 041b — imagen de la publicación para dejar adjunta en el chat. */
-    attach?: string | null;
-  }) => void;
+  onGoToConstructor?: (cliente: ClienteFijoWizard) => void;
   onFichaChange: (f: ClientFichaDto) => void;
   copied: boolean;
   setCopied: (v: boolean) => void;
 }) {
-  const [proposalFlow, setProposalFlow] = useState(false);
   const [iaBusy, setIaBusy] = useState(false);
   const [iaError, setIaError] = useState("");
   // 041e — quién soy (para los permisos de la lista) y modales de gestión.
@@ -542,13 +530,24 @@ function PanelBody({
           </ol>
         )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setProposalFlow((v) => !v)}
-            className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[12.5px] font-bold text-white transition-opacity hover:opacity-90"
-          >
-            <Target size={14} /> {proposalFlow ? "Cerrar propuesta" : "Crear propuesta comercial"}
-          </button>
+          {onGoToConstructor && (
+            <button
+              type="button"
+              onClick={() =>
+                onGoToConstructor({
+                  recordId: customer.id,
+                  nombre: customer.name,
+                  apellido: null,
+                  dni: ficha.dni ?? customer.dni ?? null,
+                  telefono: ficha.telefono ?? customer.phone ?? null,
+                })
+              }
+              title="Abre el Constructor de publicidad con este cliente cargado"
+              className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[12.5px] font-bold text-white transition-opacity hover:opacity-90"
+            >
+              <Target size={14} /> Armar publicación
+            </button>
+          )}
           {onMandarMensaje && (
             <button
               type="button"
@@ -579,22 +578,6 @@ function PanelBody({
           <p className="mt-2 text-[12px] font-semibold text-rose-600">{iaError}</p>
         )}
 
-        {proposalFlow && (
-          <ProposalFlow
-            customer={customer}
-            ficha={ficha}
-            kindDefault={kindDefault}
-            onOpenInbox={onOpenInbox}
-            onProposalChange={() => void 0}
-            onRefreshFicha={async () => {
-              const res = await fetch(`/api/clients/ficha?recordId=${encodeURIComponent(customer.id)}&refresh=1`, {
-                cache: "no-store",
-              }).catch(() => null);
-              const data = res ? ((await res.json().catch(() => ({}))) as { ficha?: ClientFichaDto }) : null;
-              if (data?.ficha) onFichaChange(data.ficha);
-            }}
-          />
-        )}
       </section>
 
       {/* 4 · Propuestas del cliente */}
@@ -837,70 +820,4 @@ function ProposalRow({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Flujo de propuesta: crear → compartir → derivar → enviar             */
 
-function ProposalFlow({
-  customer,
-  ficha,
-  kindDefault,
-  onOpenInbox,
-  onProposalChange,
-  onRefreshFicha,
-}: {
-  customer: PanelCustomer;
-  ficha: ClientFichaDto;
-  kindDefault: string;
-  onOpenInbox: (input: {
-    contactId: string | null;
-    draft: string;
-    /** 041b — imagen de la publicación para dejar adjunta en el chat. */
-    attach?: string | null;
-  }) => void;
-  onProposalChange: () => void;
-  onRefreshFicha: () => Promise<void>;
-}) {
-  /* B9 — creada la pieza, TODO el flujo (compartir, derivar con aceptación
-   * del grupo, mensaje con IA y envío) vive en el panel compartido: el mismo
-   * que usa el Constructor de Marketing. Acá solo se pasa el cliente fijo. */
-  const [created, setCreated] = useState<{ id: string } | null>(null);
-
-  return (
-    <div className="mt-3 space-y-3 rounded-xl border bg-card p-4">
-      {!created && (
-        <ConstructorPanel
-          clienteFijo={{
-            recordId: customer.id,
-            nombre: customer.name,
-            apellido: null,
-            dni: ficha.dni ?? customer.dni ?? null,
-            telefono: ficha.telefono ?? customer.phone ?? null,
-          }}
-          kindDefault={kindDefault}
-          embebido
-          onCreated={(p) => {
-            setCreated({ id: String(p.id) });
-            onProposalChange();
-            void onRefreshFicha();
-          }}
-        />
-      )}
-      {created && (
-        <ProposalPostPanel
-          proposalId={created.id}
-          customerName={customer.name}
-          onOpenInbox={onOpenInbox}
-          onChanged={() => {
-            onProposalChange();
-            void onRefreshFicha();
-          }}
-          onNew={() => {
-            setCreated(null);
-            onProposalChange();
-            void onRefreshFicha();
-          }}
-        />
-      )}
-    </div>
-  );
-}
