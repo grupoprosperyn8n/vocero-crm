@@ -70,6 +70,8 @@ const prefixes = {
   couponToken: "cptok",
   // 044b-B13 — baúl de plantillas de piezas (publicación/formulario/encuesta/cupón)
   pieceTemplate: "btpl",
+  // 044b-B15 — baúl de análisis de IA (módulos y clientes del tablero)
+  aiInsight: "ain",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

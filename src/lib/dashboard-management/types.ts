@@ -435,6 +435,18 @@ export type CrmAnalytics = {
 
 export type InsightMode = "dual" | "ia" | "algoritmo";
 
+/*
+ * 044b-B15 — Pieza de construcción: si una acción del análisis implica
+ * crear algo, indica cuál de los 4 constructores del CRM la arma
+ * (publicación, formulario, encuesta o cupón). null = es una tarea.
+ */
+export type PiezaTipo = "publicacion" | "formulario" | "encuesta" | "cupon";
+
+export type ModuleAccion = {
+  texto: string;
+  pieza: PiezaTipo | null;
+};
+
 export type ClientInsightContext = {
   name: string;
   activePolicies: number;
@@ -454,6 +466,8 @@ export type ClientInsight = {
   porQue: string;
   pasos: string[];
   mensajeWhatsapp: string;
+  /** 044b-B15 — pieza sugerida para la acción (botón al Constructor). */
+  pieza: PiezaTipo | null;
   model: string;
   generatedAt: string;
   cached: boolean;
@@ -480,11 +494,44 @@ export type ModuleAiId = (typeof MODULE_AI_IDS)[number];
 export type ModuleInsight = {
   resumen: string;
   focos: string[];
-  acciones: string[];
+  acciones: ModuleAccion[];
   mensaje: string;
   model: string;
   generatedAt: string;
   cached: boolean;
+};
+
+/*
+ * 044b-B15 — Análisis del sistema en modo ALGORITMO: mismas secciones que el
+ * informe de IA (resumen · focos · acciones) pero calculadas por reglas sobre
+ * los datos del módulo — sin IA, instantáneo y auditable. No se guarda.
+ */
+export type AlgoModuleInsight = {
+  resumen: string;
+  focos: string[];
+  acciones: ModuleAccion[];
+};
+
+/*
+ * 044b-B15 — Baúl de análisis: cada informe de IA (dual o solo IA), de
+ * módulo o de cliente, se guarda con fecha/modo/modelo y su contexto de
+ * entrada (para poder reformularlo). Se puede eliminar de a uno o en bloque.
+ */
+export type InsightScope = "module" | "client";
+
+export type InsightRecordDto = {
+  id: string;
+  scope: InsightScope;
+  refId: string;
+  title: string;
+  mode: "dual" | "ia";
+  model: string;
+  /** Salida del modelo (resumen/focos/acciones/mensaje o accion/pasos/…). */
+  payload: Record<string, unknown>;
+  /** Contexto de entrada que alimentó el informe (para reformular). */
+  input: Record<string, unknown>;
+  generatedAt: string;
+  createdAt: string;
 };
 
 /*

@@ -53,6 +53,68 @@ function copyMock(system: string, lastUser: string): string | null {
   });
 }
 
+/**
+ * 044b-B15 — Análisis del tablero (módulos y clientes). Determinista y con
+ * acciones que traen "pieza" para poder ejercitar el puente al Constructor
+ * en el self-test, sin gastar tokens.
+ */
+function insightMock(system: string, lastUser: string): string | null {
+  const isModule =
+    system.includes("Sos el analista de negocio de Rafael Allende") &&
+    system.includes('"focos"');
+  const isClient =
+    system.includes("Sos el asistente comercial de Rafael Allende") &&
+    system.includes('"mensaje_whatsapp"');
+
+  if (!isModule && !isClient) {
+    return null;
+  }
+
+  // El nombre del módulo viaja en el brief ("MÓDULO: ...") si está presente.
+  const modulo = /MÓDULO:\s*([^\n"]+)/.exec(system)?.[1]?.trim() ?? "el módulo";
+
+  if (isModule) {
+    return JSON.stringify({
+      resumen: `Mock · ${modulo}: el panorama viene estable y las prioridades están claras. Atacá primero lo urgente de la semana y medí el resultado de cada acción.`,
+      focos: [
+        "Las renovaciones de los próximos 7 días concentran la urgencia",
+        "Hay clientes a observar que valen una llamada de recupero",
+      ],
+      acciones: [
+        {
+          texto: "Lanzar el recordatorio de renovación a los que vencen esta semana",
+          pieza: "publicacion",
+        },
+        {
+          texto: "Llamar a los clientes a observar y registrar la gestión en el CRM",
+          pieza: null,
+        },
+        {
+          texto: "Enviar una encuesta corta a los renovados del mes",
+          pieza: "encuesta",
+        },
+      ],
+      mensaje:
+        "Hola! Tu póliza está por vencer y te preparé la renovación sin trámites. ¿Te la envío por acá?",
+    });
+  }
+
+  const nombre = /"name":\s*"([^"]+)"/.exec(lastUser)?.[1]?.trim() ?? "el cliente";
+
+  return JSON.stringify({
+    accion: "Recontactarlo con una propuesta de actualización",
+    por_que: `Mock · ${nombre}: pasó tiempo desde la última gestión y hay margen para sumar cobertura con algo simple.`,
+    pasos: [
+      "Llamarlo y validar los datos de contacto",
+      "Ofrecerle el complemento según lo que ya tiene",
+      "Enviarle el resumen de la propuesta por WhatsApp",
+    ],
+    mensaje_whatsapp:
+      "Hola! ¿Cómo va todo? Te escribo porque tengo una mejora para tu cobertura que te puede interesar.",
+    pieza: "publicacion",
+  });
+}
+
 export function aiMockCompletion(messages: InMessage[]): string {
   const system = messages.find((m) => m.role === "system")?.content ?? "";
   const lastUser =
@@ -63,6 +125,13 @@ export function aiMockCompletion(messages: InMessage[]): string {
 
   if (copy) {
     return copy;
+  }
+
+  // 044b-B15 — Análisis del tablero (módulos y clientes del CRM).
+  const insight = insightMock(system, lastUser);
+
+  if (insight) {
+    return insight;
   }
 
   // Juez del Laboratorio: veredicto determinista por persona. Para cerrar el

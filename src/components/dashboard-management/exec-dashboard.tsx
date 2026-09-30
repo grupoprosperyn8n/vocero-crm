@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   AlertTriangle,
+  Archive,
   ArrowUpRight,
   BarChart3,
   Blend,
@@ -14,6 +15,7 @@ import {
   CalendarRange,
   ChevronDown,
   CircleDollarSign,
+  ClipboardList,
   Clock3,
   Database,
   FileText,
@@ -42,7 +44,9 @@ import {
   Sigma,
   SlidersHorizontal,
   Sparkles,
+  Star,
   Target,
+  Ticket,
   TrendingUp,
   Unlink,
   UserRound,
@@ -90,11 +94,16 @@ import type {
   DrillItem,
   DrillList,
   InsightMode,
+  InsightRecordDto,
+  ModuleAccion,
   ModuleAiId,
   ModuleInsight,
+  PiezaTipo,
   Playlist,
   PlaylistItem,
 } from "@/lib/dashboard-management/types";
+import { buildAlgoModuleInsight } from "@/lib/dashboard-management/algo-insight";
+import { InsightVault } from "./insight-vault";
 
 /**
  * 038b — Dashboard Management: el cockpit ejecutivo como parte NATIVA del CRM.
@@ -980,15 +989,143 @@ const MODULE_AI_TITLES: Record<ModuleAiId, string> = {
   crm: "CRM · Venta y gestión",
 };
 
+/* — 044b-B15 — piezas sugeridas: etiqueta + ícono del botón al Constructor — */
+const PIEZA_LABELS: Record<PiezaTipo, { label: string; Icon: typeof Megaphone }> = {
+  publicacion: { label: "Crear publicación", Icon: Megaphone },
+  formulario: { label: "Crear formulario", Icon: ClipboardList },
+  encuesta: { label: "Crear encuesta", Icon: Star },
+  cupon: { label: "Crear cupón", Icon: Ticket },
+};
+
+/** Fecha corta para los chips del baúl: "30/09 14:22". */
+function stampShort(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleString("es-AR", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
+/** Lista de acciones del análisis; si la acción trae pieza, botón al Constructor. */
+function ModuleActionList({
+  acciones,
+  onBuildPiece,
+}: {
+  acciones: ModuleAccion[];
+  onBuildPiece?: (accion: ModuleAccion) => void;
+}) {
+  return (
+    <ul className="mt-1 list-disc space-y-1 pl-4 text-[12.5px] text-text-2">
+      {acciones.map((accion, index) => {
+        const pieza = accion.pieza ? PIEZA_LABELS[accion.pieza] : null;
+        const PiezaIcon = pieza?.Icon;
+        return (
+          <li key={`${index}-${accion.texto.slice(0, 24)}`}>
+            <span>{accion.texto}</span>
+            {pieza && PiezaIcon && onBuildPiece && (
+              <button
+                className="ml-1.5 inline-flex items-center gap-1 rounded-md border border-brand-soft bg-card px-1.5 py-0.5 align-middle text-[10.5px] font-semibold text-brand-text transition-colors hover:bg-brand-tint"
+                title="Abre el Constructor con esta idea cargada y el análisis adjunto"
+                onClick={() => onBuildPiece(accion)}
+              >
+                <PiezaIcon size={10} />
+                {pieza.label}
+                <ArrowUpRight size={10} />
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * 044b-B15 — «Análisis del sistema»: el informe por reglas (sin IA) del módulo.
+ * En modo Algoritmo es el bloque principal; en Dual queda plegado arriba de la IA.
+ */
+function AlgoInsightBlock({
+  module,
+  context,
+  collapsed = false,
+  onBuildPiece,
+}: {
+  module: ModuleAiId;
+  context: Record<string, unknown>;
+  collapsed?: boolean;
+  onBuildPiece?: (accion: ModuleAccion) => void;
+}) {
+  const algo = buildAlgoModuleInsight(module, context);
+
+  const body = (
+    <>
+      <p className="text-[12.5px] text-text-2">{algo.resumen}</p>
+
+      {algo.focos.length > 0 && (
+        <div>
+          <span className="text-[11.5px] font-bold text-text-3">Qué mirar</span>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[12.5px] text-text-2">
+            {algo.focos.map((foco, index) => (
+              <li key={`${index}-${foco.slice(0, 24)}`}>{foco}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {algo.acciones.length > 0 && (
+        <div>
+          <span className="text-[11.5px] font-bold text-text-3">Qué hacer</span>
+          <ModuleActionList acciones={algo.acciones} onBuildPiece={onBuildPiece} />
+        </div>
+      )}
+    </>
+  );
+
+  if (collapsed) {
+    return (
+      <details className="mt-2.5 rounded-md border bg-subtle/50 px-3 py-2">
+        <summary className="flex cursor-pointer items-center gap-1.5 text-[11.5px] font-bold text-text-2">
+          <Sigma size={12} />
+          Ver análisis del sistema (por reglas, sin IA)
+        </summary>
+        <div className="mt-2 space-y-2">{body}</div>
+      </details>
+    );
+  }
+
+  return (
+    <div className="mt-2.5 rounded-md border bg-subtle/50 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex items-center gap-1.5 text-[11.5px] font-bold text-text-2">
+          <Sigma size={12} />
+          Análisis del sistema · {MODULE_AI_TITLES[module]}
+        </span>
+        <span className="rounded-full border bg-card px-2 py-0.5 text-[10px] font-semibold text-text-3">
+          por reglas · sin IA · instantáneo
+        </span>
+      </div>
+      <div className="mt-2 space-y-2">{body}</div>
+    </div>
+  );
+}
+
 function ModuleAiRow({
   id,
   engine,
   onEngine,
   state,
   onGenerate,
+  onRegenerate,
   onCopy,
   copied,
   aiStatus,
+  context,
+  onBuildPiece,
+  onOpenVault,
 }: {
   id: ModuleAiId;
   engine: InsightMode;
@@ -997,14 +1134,24 @@ function ModuleAiRow({
     status: "loading" | "error" | "done";
     data?: ModuleInsight;
     error?: string;
+    saved?: boolean;
   };
   onGenerate: () => void;
+  /** 044b-B15 — reformular: vuelve a generar y guarda la versión nueva. */
+  onRegenerate?: () => void;
   onCopy: (text: string) => void;
   copied: boolean;
   aiStatus?: AiStatus | null;
+  /** 044b-B15 — mismos datos que se le pasan a la IA (alimentan el algoritmo). */
+  context?: Record<string, unknown>;
+  /** 044b-B15 — acción con pieza → Constructor. */
+  onBuildPiece?: (accion: ModuleAccion) => void;
+  /** 044b-B15 — abre el baúl de análisis. */
+  onOpenVault?: () => void;
 }) {
   const label = MODULE_AI_TITLES[id];
   const insight = state?.status === "done" ? state.data : undefined;
+  const algoContext = context ?? {};
 
   useEffect(() => {
     if (engine === "ia" && !state) {
@@ -1064,6 +1211,23 @@ function ModuleAiRow({
         <span className="flex-1" />
         <AiStatusChip status={aiStatus ?? null} />
       </div>
+
+      {engine === "algoritmo" && (
+        <AlgoInsightBlock
+          module={id}
+          context={algoContext}
+          onBuildPiece={onBuildPiece}
+        />
+      )}
+
+      {engine === "dual" && (
+        <AlgoInsightBlock
+          module={id}
+          context={algoContext}
+          collapsed
+          onBuildPiece={onBuildPiece}
+        />
+      )}
 
       {engine !== "algoritmo" && (
         <div className="mt-2.5 rounded-md border border-brand-soft bg-brand-tint px-3 py-2.5">
@@ -1126,11 +1290,7 @@ function ModuleAiRow({
               {insight.acciones.length > 0 && (
                 <div>
                   <span className="text-[11.5px] font-bold text-text-3">Qué hacer</span>
-                  <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[12.5px] text-text-2">
-                    {insight.acciones.map((accion) => (
-                      <li key={accion}>{accion}</li>
-                    ))}
-                  </ul>
+                  <ModuleActionList acciones={insight.acciones} onBuildPiece={onBuildPiece} />
                 </div>
               )}
 
@@ -1146,9 +1306,33 @@ function ModuleAiRow({
                 </div>
               )}
 
-              <span className="block text-[11px] text-text-3">
-                Generado con {insight.model} · solo sobre los datos del sistema
-              </span>
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-brand-soft pt-2">
+                <span className="text-[11px] text-text-3">
+                  Generado con {insight.model} · solo sobre los datos del sistema
+                  {state?.saved === true ? ` · Guardado ✓ ${stampShort(insight.generatedAt)}` : ""}
+                </span>
+                <span className="flex-1" />
+                {onRegenerate && (
+                  <button
+                    className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-0.5 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                    title="Vuelve a generar el análisis sobre los datos de ahora y guarda la versión nueva"
+                    onClick={onRegenerate}
+                  >
+                    <RefreshCcw size={11} />
+                    Reformular
+                  </button>
+                )}
+                {onOpenVault && (
+                  <button
+                    className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-0.5 text-[11px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                    title="Ver todos los análisis guardados: fecha, modo y modelo"
+                    onClick={onOpenVault}
+                  >
+                    <Archive size={11} />
+                    Baúl de análisis
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1267,11 +1451,22 @@ export function ExecDashboard() {
   const [panelClient, setPanelClient] = useState<PanelCustomer | null>(null);
   /* 044b B9b — cliente que viaja del Cliente 360° al Constructor de publicaciones. */
   const [constructorFijo, setConstructorFijo] = useState<ClienteFijoWizard | null>(null);
+  // 044b-B15 — idea que viaja del análisis de IA al Constructor (acción → pieza).
+  const [constructorIdea, setConstructorIdea] = useState<{
+    pieza: PiezaTipo;
+    prompt: string;
+    analisis?: { title: string; body: string };
+  } | null>(null);
+  // 044b-B15 — baúl de análisis de IA (modal).
+  const [vaultOpen, setVaultOpen] = useState(false);
   // 042 — el rol del visor decide si ve el tablero de campañas (owner/admin/manager).
   const [viewerRole, setViewerRole] = useState<string | null>(null);
   const [modEngines, setModEngines] = useState<Partial<Record<ModuleAiId, InsightMode>>>({});
   const [modInsights, setModInsights] = useState<
-    Record<string, { status: "loading" | "error" | "done"; data?: ModuleInsight; error?: string }>
+    Record<
+      string,
+      { status: "loading" | "error" | "done"; data?: ModuleInsight; error?: string; saved?: boolean }
+    >
   >({});
   const [copiedMod, setCopiedMod] = useState<ModuleAiId | null>(null);
   const [listOpen, setListOpen] = useState<Record<string, boolean>>({});
@@ -1279,7 +1474,10 @@ export function ExecDashboard() {
   const [listRestore, setListRestore] = useState<{ tab: TabId; scrollY: number } | null>(null);
   const [engine, setEngine] = useState<InsightMode>("dual");
   const [insights, setInsights] = useState<
-    Record<string, { status: "loading" | "error" | "done"; data?: ClientInsight; error?: string }>
+    Record<
+      string,
+      { status: "loading" | "error" | "done"; data?: ClientInsight; error?: string; saved?: boolean }
+    >
   >({});
   const [copiedInsight, setCopiedInsight] = useState<string | null>(null);
   // 039e — «Mandar mensaje»: estado del botón que abre el chat del cliente con el texto de la IA.
@@ -1507,14 +1705,25 @@ export function ExecDashboard() {
   const insightKeyFor = (module: ModuleAiId, mode: InsightMode) =>
     `${module}:${mode === "ia" ? "ia" : "dual"}`;
 
-  async function requestModuleInsight(module: ModuleAiId, mode: "dual" | "ia") {
+  async function requestModuleInsight(
+    module: ModuleAiId,
+    mode: "dual" | "ia",
+    force = false
+  ) {
     const key = `${module}:${mode}`;
     setModInsights((prev) => ({ ...prev, [key]: { status: "loading" } }));
     try {
       const response = await fetch("/api/dashboard-management/module-insight", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ module, mode, context: moduleContext(module) }),
+        body: JSON.stringify({
+          module,
+          mode,
+          context: moduleContext(module),
+          // 044b-B15 — todo informe del bloque se guarda en el baúl (con fecha).
+          save: true,
+          force,
+        }),
       });
       const result = await response.json();
       if (!response.ok || !result.ok) {
@@ -1522,7 +1731,11 @@ export function ExecDashboard() {
       }
       setModInsights((prev) => ({
         ...prev,
-        [key]: { status: "done", data: result.insight as ModuleInsight },
+        [key]: {
+          status: "done",
+          data: result.insight as ModuleInsight,
+          saved: result.saved === true,
+        },
       }));
     } catch (err) {
       setModInsights((prev) => ({
@@ -1552,32 +1765,25 @@ export function ExecDashboard() {
 
   /* — Motor de sugerencias del Cliente 360° — */
 
-  async function requestInsight(
-    customer: DashboardResponse["customers"][number],
-    mode: "dual" | "ia"
+  async function requestInsightRaw(
+    clientId: string,
+    mode: "dual" | "ia",
+    context: Record<string, unknown>,
+    force = false
   ) {
-    const key = `${mode}:${customer.id}`;
+    const key = `${mode}:${clientId}`;
     setInsights((prev) => ({ ...prev, [key]: { status: "loading" } }));
     try {
       const response = await fetch("/api/dashboard-management/insight", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientId: customer.id,
+          clientId,
           mode,
-          context: {
-            name: customer.name,
-            activePolicies: customer.activePolicies,
-            historicalOperations: customer.historicalOperations,
-            historicalAltas: customer.historicalAltas,
-            historicalAnulaciones: customer.historicalAnulaciones,
-            historicalSiniestros: customer.historicalSiniestros,
-            activePremium: customer.activePremium,
-            score: customer.score,
-            recommendation: customer.recommendation,
-            recommendationWhy: customer.recommendationWhy,
-            recommendationSteps: customer.recommendationSteps,
-          },
+          context,
+          // 044b-B15 — todo informe del bloque se guarda en el baúl (con fecha).
+          save: true,
+          force,
         }),
       });
       const result = await response.json();
@@ -1586,7 +1792,11 @@ export function ExecDashboard() {
       }
       setInsights((prev) => ({
         ...prev,
-        [key]: { status: "done", data: result.insight as ClientInsight },
+        [key]: {
+          status: "done",
+          data: result.insight as ClientInsight,
+          saved: result.saved === true,
+        },
       }));
     } catch (err) {
       setInsights((prev) => ({
@@ -1596,6 +1806,97 @@ export function ExecDashboard() {
           error: err instanceof Error && err.message ? err.message : "La IA no respondió.",
         },
       }));
+    }
+  }
+
+  async function requestInsight(
+    customer: DashboardResponse["customers"][number],
+    mode: "dual" | "ia",
+    force = false
+  ) {
+    await requestInsightRaw(
+      customer.id,
+      mode,
+      {
+        name: customer.name,
+        activePolicies: customer.activePolicies,
+        historicalOperations: customer.historicalOperations,
+        historicalAltas: customer.historicalAltas,
+        historicalAnulaciones: customer.historicalAnulaciones,
+        historicalSiniestros: customer.historicalSiniestros,
+        activePremium: customer.activePremium,
+        score: customer.score,
+        recommendation: customer.recommendation,
+        recommendationWhy: customer.recommendationWhy,
+        recommendationSteps: customer.recommendationSteps,
+      },
+      force
+    );
+  }
+
+  /* — 044b-B15 — puentes: acción del análisis → Constructor, y baúl — */
+
+  function moduleInsightText(insight: ModuleInsight): string {
+    const parts = [insight.resumen];
+    if (insight.focos.length > 0) {
+      parts.push(`Qué mirar: ${insight.focos.join(" · ")}`);
+    }
+    if (insight.acciones.length > 0) {
+      parts.push(`Acciones: ${insight.acciones.map((a) => a.texto).join(" · ")}`);
+    }
+    return parts.join("\n").slice(0, 1600);
+  }
+
+  function clientInsightText(insight: ClientInsight): string {
+    const parts = [`Acción: ${insight.accion}. ${insight.porQue}`];
+    if (insight.pasos.length > 0) {
+      parts.push(`Pasos: ${insight.pasos.join(" · ")}`);
+    }
+    return parts.join("\n").slice(0, 1600);
+  }
+
+  /** Acción de un módulo con pieza → abre el Constructor con la idea cargada. */
+  function buildPieceFromModule(
+    module: ModuleAiId,
+    accion: ModuleAccion,
+    insight: ModuleInsight
+  ) {
+    if (!accion.pieza) return;
+    setConstructorIdea({
+      pieza: accion.pieza,
+      prompt: accion.texto.slice(0, 400),
+      analisis: {
+        title: `${MODULE_AI_TITLES[module]} · ${stampShort(insight.generatedAt)}`,
+        body: moduleInsightText(insight),
+      },
+    });
+    setTab("constructor");
+  }
+
+  /** Acción de un cliente con pieza → abre el Constructor con la idea cargada. */
+  function buildPieceFromClient(
+    customer: { id: string; name: string },
+    insight: ClientInsight
+  ) {
+    if (!insight.pieza) return;
+    setConstructorIdea({
+      pieza: insight.pieza,
+      prompt: `${insight.accion}: ${insight.pasos.join(" ")}`.slice(0, 400),
+      analisis: {
+        title: `${customer.name} · ${stampShort(insight.generatedAt)}`,
+        body: clientInsightText(insight),
+      },
+    });
+    setTab("constructor");
+  }
+
+  /** Reformular desde el baúl: regenera el informe (módulo o cliente) y lo guarda. */
+  function reforwardFromVault(item: InsightRecordDto) {
+    setVaultOpen(false);
+    if (item.scope === "module") {
+      void requestModuleInsight(item.refId as ModuleAiId, item.mode, true);
+    } else {
+      void requestInsightRaw(item.refId, item.mode, item.input, true);
     }
   }
 
@@ -1794,9 +2095,20 @@ export function ExecDashboard() {
         onEngine={(next) => chooseModEngine(module, next)}
         state={modInsights[insightKeyFor(module, mode)]}
         onGenerate={() => void requestModuleInsight(module, mode === "ia" ? "ia" : "dual")}
+        onRegenerate={
+          mode === "algoritmo"
+            ? undefined
+            : () => void requestModuleInsight(module, mode === "ia" ? "ia" : "dual", true)
+        }
         onCopy={(text) => void copyModuleMessage(module, text)}
         copied={copiedMod === module}
         aiStatus={aiStatus}
+        context={moduleContext(module)}
+        onBuildPiece={(accion) => {
+          const insight = modInsights[insightKeyFor(module, mode)]?.data;
+          if (insight) buildPieceFromModule(module, accion, insight);
+        }}
+        onOpenVault={() => setVaultOpen(true)}
       />
     );
   };
@@ -3195,9 +3507,47 @@ export function ExecDashboard() {
                                   )}
                                 </div>
                               )}
-                              <span className="block text-[10.5px] text-text-3">
-                                Generado con {insight.model} · solo sobre los datos del sistema
-                              </span>
+                              {(() => {
+                                const pieza = insight.pieza ? PIEZA_LABELS[insight.pieza] : null;
+                                const PiezaIcon = pieza?.Icon;
+                                return pieza && PiezaIcon ? (
+                                  <button
+                                    className="inline-flex items-center gap-1 rounded-md border border-brand-soft bg-card px-2 py-0.5 text-[11px] font-semibold text-brand-text transition-colors hover:bg-brand-tint"
+                                    title="Abre el Constructor con esta idea cargada y el análisis adjunto"
+                                    onClick={() => buildPieceFromClient(customer, insight)}
+                                  >
+                                    <PiezaIcon size={11} />
+                                    {pieza.label}
+                                    <ArrowUpRight size={11} />
+                                  </button>
+                                ) : null;
+                              })()}
+
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[10.5px] text-text-3">
+                                  Generado con {insight.model} · solo sobre los datos del sistema
+                                  {insightState?.saved === true
+                                    ? ` · Guardado ✓ ${stampShort(insight.generatedAt)}`
+                                    : ""}
+                                </span>
+                                <span className="flex-1" />
+                                <button
+                                  className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-0.5 text-[10.5px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                                  title="Vuelve a generar el análisis y guarda la versión nueva en el baúl"
+                                  onClick={() => void requestInsight(customer, withAi, true)}
+                                >
+                                  <RefreshCcw size={10} />
+                                  Reformular
+                                </button>
+                                <button
+                                  className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-0.5 text-[10.5px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                                  title="Ver todos los análisis guardados"
+                                  onClick={() => setVaultOpen(true)}
+                                >
+                                  <Archive size={10} />
+                                  Baúl
+                                </button>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -3275,6 +3625,8 @@ export function ExecDashboard() {
             }}
             clienteFijo={constructorFijo ?? undefined}
             onQuitarClienteFijo={() => setConstructorFijo(null)}
+            ideaInicial={constructorIdea ?? undefined}
+            onQuitarIdea={() => setConstructorIdea(null)}
           />
         </div>
       )}
@@ -4025,6 +4377,13 @@ export function ExecDashboard() {
           onMandarMensaje={() => sendPanelMessage(panelClient)}
         />
       )}
+
+      {/* 044b-B15 — baúl de análisis de IA (módulos y clientes). */}
+      <InsightVault
+        open={vaultOpen}
+        onClose={() => setVaultOpen(false)}
+        onReforward={reforwardFromVault}
+      />
     </div>
     </div>
   );

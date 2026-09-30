@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
+  Bell,
   CalendarClock,
   ClipboardCopy,
   ClipboardList,
@@ -30,6 +31,7 @@ import {
   PlayCircle,
   RefreshCw,
   Sparkles,
+  Star,
   Target,
   Trash2,
   TrendingUp,
@@ -49,6 +51,7 @@ import {
 import {
   PROPOSAL_KINDS,
   type ClientFichaDto,
+  type ClientMonitoreoDto,
   type ClientPiezaRespuestaDto,
   type ClientPiezaVoucherDto,
   type ProposalDto,
@@ -329,6 +332,14 @@ function ChartCard({ title, children, empty }: { title: string; children: React.
   );
 }
 
+/* 044b-B14 — pestañas del dashboard individual del cliente. */
+const TABS_CLIENTE = [
+  { id: "resumen", label: "Resumen", icon: <TrendingUp size={13} /> },
+  { id: "monitoreo", label: "Monitoreo", icon: <Bell size={13} /> },
+  { id: "piezas", label: "Piezas y ventas", icon: <FileText size={13} /> },
+  { id: "historial", label: "Historial", icon: <HistoryIcon size={13} /> },
+] as const;
+
 function PanelBody({
   customer,
   ficha,
@@ -354,6 +365,10 @@ function PanelBody({
   const [viewerRole, setViewerRole] = useState("member");
   const [editing, setEditing] = useState<ProposalDto | null>(null);
   const [historyFor, setHistoryFor] = useState<ProposalDto | null>(null);
+  /* 044b-B14 — pestañas del dashboard individual del cliente. */
+  const [tab, setTab] = useState<"resumen" | "monitoreo" | "piezas" | "historial">(
+    "resumen"
+  );
 
   useEffect(() => {
     let alive = true;
@@ -413,7 +428,30 @@ function PanelBody({
   };
 
   return (
-    <div className="max-h-[calc(92vh-70px)] space-y-5 overflow-y-auto px-5 py-4">
+    <div className="max-h-[calc(92vh-70px)] overflow-y-auto px-5 py-4">
+      {/* 044b-B14 — pestañas: Resumen · Monitoreo · Piezas y ventas · Historial */}
+      <div className="sticky top-0 z-20 -mx-5 -mt-4 mb-5 border-b bg-card/95 px-5 backdrop-blur">
+        <div className="flex flex-wrap items-center gap-1 py-2">
+          {TABS_CLIENTE.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setTab(option.id)}
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${
+                tab === option.id
+                  ? "border-brand bg-brand text-white"
+                  : "bg-card text-text-2 hover:bg-subtle"
+              }`}
+            >
+              {option.icon}
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "resumen" && (
+      <div className="space-y-5">
       {/* 1 · Métricas */}
       <section>
         <SectionTitle icon={<TrendingUp size={13} />}>Métricas del cliente</SectionTitle>
@@ -501,7 +539,13 @@ function PanelBody({
           </ChartCard>
         </div>
       </section>
+      </div>
+      )}
 
+      {tab === "monitoreo" && <MonitoreoDelCliente customer={customer} dni={ficha.dni} />}
+
+      {tab === "piezas" && (
+      <div className="space-y-5">
       {/* 3 · Gestión sugerida */}
       <section className="rounded-xl border bg-subtle/40 p-4">
         <SectionTitle
@@ -625,7 +669,11 @@ function PanelBody({
         </SectionTitle>
         <PiezasDelCliente customer={customer} />
       </section>
+      </div>
+      )}
 
+      {tab === "historial" && (
+      <div className="space-y-5">
       {/* 5 · Historial de gestiones */}
       <section>
         <SectionTitle icon={<Archive size={13} />}>
@@ -668,6 +716,25 @@ function PanelBody({
         )}
       </section>
 
+      {/* Whatsapp detalle */}
+      {wa && (
+        <section className="rounded-xl border bg-card px-4 py-3">
+          <SectionTitle icon={<MessageCircle size={13} />}>Contactabilidad WhatsApp</SectionTitle>
+          <p className="text-[12.5px] text-text-2">
+            {wa.assigneeName ? `Atiende ${wa.assigneeName}. ` : ""}
+            Último mensaje entrante:{" "}
+            <span className="font-semibold text-text-1">
+              {wa.lastInboundAt ? new Date(wa.lastInboundAt).toLocaleDateString("es-AR") : "nunca"}
+            </span>
+            {wa.lastInboundAt && Date.now() - new Date(wa.lastInboundAt).getTime() < 30 * 86400_000
+              ? " · responde (suma al score) ✓"
+              : ""}
+          </p>
+        </section>
+      )}
+      </div>
+      )}
+
       {/* 041e — editar / historial de una gestión */}
       {editing && (
         <ProposalEditModal
@@ -691,22 +758,6 @@ function PanelBody({
         />
       )}
 
-      {/* Whatsapp detalle */}
-      {wa && (
-        <section className="rounded-xl border bg-card px-4 py-3">
-          <SectionTitle icon={<MessageCircle size={13} />}>Contactabilidad WhatsApp</SectionTitle>
-          <p className="text-[12.5px] text-text-2">
-            {wa.assigneeName ? `Atiende ${wa.assigneeName}. ` : ""}
-            Último mensaje entrante:{" "}
-            <span className="font-semibold text-text-1">
-              {wa.lastInboundAt ? new Date(wa.lastInboundAt).toLocaleDateString("es-AR") : "nunca"}
-            </span>
-            {wa.lastInboundAt && Date.now() - new Date(wa.lastInboundAt).getTime() < 30 * 86400_000
-              ? " · responde (suma al score) ✓"
-              : ""}
-          </p>
-        </section>
-      )}
     </div>
   );
 }
@@ -861,6 +912,328 @@ function PiezasDelCliente({ customer }: { customer: PanelCustomer }) {
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 044b-B14 — MONITOREO del cliente: lo que el sistema de gestión (SGSA) dejó
+ * en Airtable para este cliente — alertas y calificaciones — con sus gráficos.
+ * Misma vista en cualquier puerta de entrada al cliente.
+ */
+function MonitoreoDelCliente({ customer, dni }: { customer: PanelCustomer; dni?: string | null }) {
+  const [data, setData] = useState<ClientMonitoreoDto | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError("");
+    void (async () => {
+      const params = new URLSearchParams({ recordId: customer.id });
+      if (customer.name) params.set("name", customer.name);
+      if (dni) params.set("dni", dni);
+      const res = await fetch(`/api/clients/monitoreo?${params.toString()}`, {
+        cache: "no-store",
+      }).catch(() => null);
+      if (!alive) return;
+      if (!res?.ok) {
+        const body = res
+          ? ((await res.json().catch(() => ({}))) as { message?: string })
+          : null;
+        setError(body?.message ?? "No se pudo leer el monitoreo del cliente.");
+        setLoading(false);
+        return;
+      }
+      const body = (await res.json().catch(() => ({}))) as {
+        monitoreo?: ClientMonitoreoDto;
+      };
+      setData(
+        body.monitoreo ?? {
+          alertas: [],
+          calificaciones: [],
+          generatedAt: new Date().toISOString(),
+        }
+      );
+      setLoading(false);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [customer.id, customer.name, dni, refreshKey]);
+
+  const alertas = useMemo(() => data?.alertas ?? [], [data]);
+  const calificaciones = useMemo(() => data?.calificaciones ?? [], [data]);
+
+  const alertasPorMes = useMemo(() => {
+    const now = new Date();
+    const months: { label: string; count: number; key: string }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+        label: d.toLocaleDateString("es-AR", { month: "short" }),
+        count: 0,
+      });
+    }
+    for (const a of alertas) {
+      const iso = a.createdAt;
+      if (!iso) continue;
+      const m = months.find((mm) => mm.key === iso.slice(0, 7));
+      if (m) m.count += 1;
+    }
+    return months;
+  }, [alertas]);
+
+  const alertasPorEstado = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const a of alertas) {
+      const estado = a.estado ?? "SIN ESTADO";
+      map.set(estado, (map.get(estado) ?? 0) + 1);
+    }
+    return [...map.entries()]
+      .map(([estado, count]) => ({
+        estado:
+          estado === "SIN ESTADO"
+            ? "Sin estado"
+            : estado.charAt(0).toUpperCase() +
+              estado.slice(1).toLowerCase().replace(/_/g, " "),
+        count,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  }, [alertas]);
+
+  const estrellas = useMemo(() => {
+    const hist = [5, 4, 3, 2, 1].map((n) => ({ n: `${n}★`, count: 0 }));
+    let sum = 0;
+    let total = 0;
+    for (const c of calificaciones) {
+      const e = Math.round(c.estrellas);
+      if (e >= 1 && e <= 5) {
+        const bucket = hist[5 - e];
+        if (bucket) bucket.count += 1;
+        sum += e;
+        total += 1;
+      }
+    }
+    return { hist, promedio: total > 0 ? (sum / total).toFixed(1) : null, total };
+  }, [calificaciones]);
+
+  const pendientes = alertas.filter(
+    (a) => a.estado === "PENDIENTE" || a.estado === "EN_PROGRESO"
+  ).length;
+  const fecha = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleDateString("es-AR") : "—";
+  const primer = customer.name.split(" ")[0];
+
+  if (loading && !data) {
+    return (
+      <p className="flex items-center gap-2 rounded-xl border border-dashed bg-card px-4 py-5 text-[12.5px] text-text-3">
+        <Loader2 size={14} className="animate-spin" /> Buscando alertas y calificaciones de{" "}
+        {primer} en SGSA…
+      </p>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed bg-card px-4 py-6 text-center">
+        <p className="text-[12.5px] font-semibold text-text-2">{error}</p>
+        <button
+          type="button"
+          onClick={() => setRefreshKey((k) => k + 1)}
+          className="rounded-lg border bg-card px-3 py-1.5 text-[12px] font-semibold text-text-2 hover:bg-subtle"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* KPIs */}
+      <section>
+        <SectionTitle
+          icon={<Bell size={13} />}
+          extra={
+            <button
+              type="button"
+              onClick={() => setRefreshKey((k) => k + 1)}
+              title="Volver a leer las alertas y calificaciones de SGSA"
+              className="flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-[10.5px] font-semibold text-text-2 transition-colors hover:bg-subtle"
+            >
+              <RefreshCw size={11} className={loading ? "animate-spin" : ""} /> Actualizar
+            </button>
+          }
+        >
+          Monitoreo de {primer} — alertas y calificaciones
+        </SectionTitle>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <KpiChip icon={<Bell size={15} />} label="Alertas SGSA" value={String(alertas.length)} />
+          <KpiChip
+            icon={<Bell size={15} />}
+            label="Pendientes"
+            value={String(pendientes)}
+            tone={pendientes > 0 ? "warn" : "default"}
+          />
+          <KpiChip icon={<Star size={15} />} label="Calificaciones" value={String(calificaciones.length)} />
+          <KpiChip
+            icon={<Star size={15} />}
+            label="Promedio"
+            value={estrellas.promedio ? `${estrellas.promedio} / 5` : "sin datos"}
+            tone={
+              estrellas.promedio
+                ? Number(estrellas.promedio) < 3
+                  ? "bad"
+                  : "good"
+                : "default"
+            }
+          />
+        </div>
+      </section>
+
+      {/* Gráficas */}
+      <section>
+        <SectionTitle icon={<PanelRightOpen size={13} />}>Monitoreo en gráficas</SectionTitle>
+        <div className="grid gap-3 lg:grid-cols-3">
+          <ChartCard title="Alertas por mes (6m)" empty={alertas.length === 0}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={alertasPorMes} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                <Tooltip
+                  formatter={(v: unknown) => [String(v), "alertas"]}
+                  contentStyle={{ fontSize: 12, borderRadius: 10 }}
+                />
+                <Bar dataKey="count" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          <ChartCard title="Alertas por estado" empty={alertas.length === 0}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={alertasPorEstado} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
+                <XAxis dataKey="estado" tick={{ fontSize: 9 }} interval={0} />
+                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                <Tooltip
+                  formatter={(v: unknown) => [String(v), "alertas"]}
+                  contentStyle={{ fontSize: 12, borderRadius: 10 }}
+                />
+                <Bar dataKey="count" fill="#4f7cff" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          <ChartCard title="Calificaciones (estrellas)" empty={calificaciones.length === 0}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={estrellas.hist}
+                layout="vertical"
+                margin={{ top: 6, right: 12, left: -6, bottom: 0 }}
+              >
+                <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
+                <YAxis type="category" dataKey="n" tick={{ fontSize: 10 }} width={30} />
+                <Tooltip
+                  formatter={(v: unknown) => [String(v), "clientes"]}
+                  contentStyle={{ fontSize: 12, borderRadius: 10 }}
+                />
+                <Bar dataKey="count" fill="#22c55e" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        </div>
+      </section>
+
+      {/* Listas */}
+      <section>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-2">
+            <p className="text-[11px] font-bold tracking-wide text-text-3 uppercase">
+              🔔 Alertas del sistema {alertas.length > 0 && `(${alertas.length})`}
+            </p>
+            {alertas.length === 0 ? (
+              <p className="rounded-xl border border-dashed bg-card px-3 py-4 text-center text-[12px] text-text-3">
+                SGSA no registra alertas para {primer}.
+              </p>
+            ) : (
+              alertas.map((a) => (
+                <div key={a.id} className="rounded-xl border bg-card px-3 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <p className="text-[12px] font-bold text-text-1">{a.titulo}</p>
+                    <span className="text-[10.5px] text-text-3">{fecha(a.createdAt)}</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {a.estado && (
+                      <span className="rounded-full border bg-subtle px-2 py-0.5 text-[10px] font-bold text-text-2">
+                        {a.estado.replace(/_/g, " ")}
+                      </span>
+                    )}
+                    {a.prioridad && (
+                      <span className="rounded-full border bg-subtle px-2 py-0.5 text-[10px] font-semibold text-text-2">
+                        {a.prioridad}
+                      </span>
+                    )}
+                    {a.tipo && (
+                      <span className="text-[10px] text-text-3">{a.tipo.replace(/_/g, " ")}</span>
+                    )}
+                  </div>
+                  {a.detalle && (
+                    <p className="mt-1 line-clamp-3 whitespace-pre-line text-[11.5px] leading-relaxed text-text-2">
+                      {a.detalle}
+                    </p>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[11px] font-bold tracking-wide text-text-3 uppercase">
+              ⭐ Calificaciones recibidas {calificaciones.length > 0 && `(${calificaciones.length})`}
+            </p>
+            {calificaciones.length === 0 ? (
+              <p className="rounded-xl border border-dashed bg-card px-3 py-4 text-center text-[12px] text-text-3">
+                Todavía no hay calificaciones de {primer} en SGSA.
+              </p>
+            ) : (
+              calificaciones.map((c) => (
+                <div key={c.id} className="rounded-xl border bg-card px-3 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <p className="text-[13px] font-bold text-amber-500">
+                      {"★".repeat(Math.max(0, Math.min(5, Math.round(c.estrellas))))}
+                      <span className="text-text-3">
+                        {"☆".repeat(Math.max(0, 5 - Math.round(c.estrellas)))}
+                      </span>
+                      <span className="ml-1 text-[10.5px] font-semibold text-text-3">
+                        {c.estrellas}/5
+                      </span>
+                    </p>
+                    <span className="text-[10.5px] text-text-3">{fecha(c.createdAt)}</span>
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-text-3">
+                    {c.servicio ?? "Atención"}
+                    {c.urgencia ? ` · ${c.urgencia}` : ""}
+                  </p>
+                  {c.comentario && (
+                    <p className="mt-1 text-[11.5px] italic leading-relaxed text-text-2">
+                      “{c.comentario}”
+                    </p>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
+
+      <p className="text-[10.5px] text-text-3">
+        Datos de SGSA (Airtable) leídos en vivo con el permiso del sistema · el monitor se
+        actualiza solo cada 5 minutos.
+      </p>
     </div>
   );
 }

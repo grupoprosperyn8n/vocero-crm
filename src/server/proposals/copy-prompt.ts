@@ -49,6 +49,10 @@ export type CopyContext = {
   benefit: string;
   ctaLabel: string;
   draftMessage: string;
+  /** 044b-B15 — análisis del sistema adjunto (título y texto del informe
+   * del tablero): la redacción lo tiene en cuenta como contexto. */
+  analysisTitle: string;
+  analysisBody: string;
 };
 
 function clampText(value: unknown, max: number): string {
@@ -79,6 +83,9 @@ export function sanitizeCopyContext(raw: unknown): CopyContext | null {
     ? data.angle
     : null;
 
+  // 044b-B15 — análisis del sistema adjunto (opcional).
+  const analysis = (data.analysis ?? {}) as Record<string, unknown>;
+
   return {
     target,
     tone,
@@ -101,6 +108,10 @@ export function sanitizeCopyContext(raw: unknown): CopyContext | null {
     draftMessage: String(data.draftMessage ?? "")
       .trim()
       .slice(0, 900),
+    analysisTitle: clampText(analysis.title, 120),
+    analysisBody: String(analysis.body ?? "")
+      .trim()
+      .slice(0, 1600),
   };
 }
 
@@ -126,6 +137,13 @@ export function buildCopyPrompt(context: CopyContext): {
       ? [
           "GUÍA DE ESTA ACCIÓN COMERCIAL (la definió el negocio: tomá ese rol de experto en marketing digital y asesor de seguros, y seguí la jugada al pie de la letra):",
           context.kindPrompt,
+        ]
+      : []),
+    ...(context.analysisBody
+      ? [
+          "CONTEXTO DE ANÁLISIS DEL SISTEMA (informe del tablero de gestión ya guardado; tenelo en cuenta para el enfoque y usalo como fuente de datos del negocio):",
+          `«${context.analysisTitle || "Análisis"}»: ${context.analysisBody}`,
+          "No contradigas ese análisis ni inventes cifras nuevas: los números que menciones salen de ahí o de los datos del cliente.",
         ]
       : []),
     'Devolvé SOLO un JSON válido, sin texto extra, con esta forma: {"title": "...", "subtitle": "...", "body": "...", "offer": "...", "benefit": "...", "ctaLabel": "...", "message": "...", "notes": "..."}',

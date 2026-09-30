@@ -610,6 +610,33 @@ export type ClientFichaDto = {
   generatedAt: string;
 };
 
+/** 044b-B14 — Monitoreo del cliente: alertas y calificaciones de SGSA (Airtable). */
+export type ClientMonitoreoAlertaDto = {
+  id: string;
+  titulo: string;
+  tipo: string;
+  prioridad: string | null;
+  estado: string | null;
+  detalle: string | null;
+  createdAt: string | null;
+};
+
+export type ClientMonitoreoCalificacionDto = {
+  id: string;
+  nombre: string;
+  estrellas: number;
+  servicio: string | null;
+  comentario: string | null;
+  createdAt: string | null;
+  urgencia: string | null;
+};
+
+export type ClientMonitoreoDto = {
+  alertas: ClientMonitoreoAlertaDto[];
+  calificaciones: ClientMonitoreoCalificacionDto[];
+  generatedAt: string;
+};
+
 export type FichaGestionesMonthPoint = {
   month: string;
   altas: number;

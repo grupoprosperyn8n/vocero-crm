@@ -22,6 +22,7 @@ import {
   Lightbulb,
   Loader2,
   MessageCircle,
+  Paperclip,
   Search,
   Sparkles,
   Trash2,
@@ -30,6 +31,7 @@ import {
   Wand2,
   X,
 } from "lucide-react";
+import type { InsightRecordDto } from "@/lib/dashboard-management/types";
 
 import { LibraryPicker } from "./library-picker";
 
@@ -74,6 +76,51 @@ export type ClienteFijoWizard = {
   telefono?: string | null;
 };
 
+/* 044b-B15 — fecha corta y texto plano de un análisis del baúl. */
+function recordStamp(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleString("es-AR", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
+function insightRecordText(item: InsightRecordDto): string {
+  const payload = item.payload as Record<string, unknown>;
+
+  if (item.scope === "module") {
+    const parts: string[] = [String(payload.resumen ?? "").trim()];
+    const focos = Array.isArray(payload.focos)
+      ? payload.focos.map((f) => String(f))
+      : [];
+    if (focos.length > 0) parts.push(`Qué mirar: ${focos.join(" · ")}`);
+    const acciones = Array.isArray(payload.acciones)
+      ? payload.acciones
+          .map((a) =>
+            typeof a === "string"
+              ? a
+              : String((a as { texto?: string })?.texto ?? "")
+          )
+          .filter(Boolean)
+      : [];
+    if (acciones.length > 0) parts.push(`Acciones: ${acciones.join(" · ")}`);
+    return parts.filter(Boolean).join("\n").slice(0, 1600);
+  }
+
+  const parts: string[] = [
+    `Acción: ${String(payload.accion ?? "").trim()}. ${String(payload.porQue ?? "").trim()}`,
+  ];
+  const pasos = Array.isArray(payload.pasos)
+    ? payload.pasos.map((p) => String(p))
+    : [];
+  if (pasos.length > 0) parts.push(`Pasos: ${pasos.join(" · ")}`);
+  return parts.join("\n").slice(0, 1600);
+}
+
 export function ConstructorPanel({
   onGoToProposals,
   clienteFijo,
@@ -82,6 +129,8 @@ export function ConstructorPanel({
   onCreated,
   onOpenInbox,
   onQuitarClienteFijo,
+  ideaInicial,
+  onQuitarIdea,
 }: {
   onGoToProposals?: () => void;
   /** Modo Cliente 360: el cliente ya está elegido y el wizard arranca en «Publicación». */
@@ -97,6 +146,15 @@ export function ConstructorPanel({
   }) => void;
   /** 044b B9b — quitar el cliente fijo (el wizard vuelve a elegir destinatario). */
   onQuitarClienteFijo?: () => void;
+  /** 044b-B15 — idea que llega desde una acción del análisis de IA: precarga
+   * el tipo de pieza, la instrucción para la IA y el análisis adjunto. */
+  ideaInicial?: {
+    pieza: WidgetTipo;
+    prompt: string;
+    analisis?: { title: string; body: string };
+  };
+  /** 044b-B15 — la idea ya se aplicó (el padre la limpia). */
+  onQuitarIdea?: () => void;
 }) {
   const pasoInicial = clienteFijo ? 1 : 0;
   const [paso, setPaso] = useState(pasoInicial);
@@ -210,6 +268,13 @@ export function ConstructorPanel({
   /* 044b-B13 — el hub de creación (qué se construye · baúl · Plantillas de
      Meta) y el guardado de la pieza actual como plantilla. */
   const [hubAbierto, setHubAbierto] = useState(!clienteFijo);
+  /* 044b-B15 — análisis del sistema adjunto (del baúl) para la escritura con IA. */
+  const [analisisAdjunto, setAnalisisAdjunto] = useState<{ title: string; body: string } | null>(
+    null
+  );
+  const [pickOpen, setPickOpen] = useState(false);
+  const [pickItems, setPickItems] = useState<InsightRecordDto[]>([]);
+  const [pickLoading, setPickLoading] = useState(false);
   const [guardandoPlantilla, setGuardandoPlantilla] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const pasosActuales = [
@@ -355,6 +420,23 @@ export function ConstructorPanel({
 
   /* 041c — la IA escribe la pieza con el tono y el concepto elegidos. Nunca
      pisa el texto sin vuelta atrás: guarda el anterior para «Deshacer». */
+  /* 044b-B15 — cargar los últimos análisis del baúl para adjuntar a la IA. */
+  const loadPick = async () => {
+    setPickLoading(true);
+    try {
+      const res = await fetch("/api/dashboard-management/insights?limit=12");
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        insights?: InsightRecordDto[];
+      };
+      setPickItems(res.ok && data.ok && Array.isArray(data.insights) ? data.insights : []);
+    } catch {
+      setPickItems([]);
+    } finally {
+      setPickLoading(false);
+    }
+  };
+
   const aiWrite = async () => {
     // 044b-B10 — la IA necesita saber a quién le habla: con cliente del
     // sistema, contacto del CRM o el nombre libre alcanza; si no hay nada,
@@ -385,6 +467,14 @@ export function ConstructorPanel({
         tone,
         angle,
         instructions: aiInstructions.trim() || null,
+        // 044b-B15 — el análisis adjunto viaja a la redacción para que la IA
+        // lo tenga en cuenta (su resumen, sus focos y sus acciones).
+        analysis: analisisAdjunto
+          ? {
+              title: analisisAdjunto.title.slice(0, 120),
+              body: analisisAdjunto.body.slice(0, 1600),
+            }
+          : null,
         clientName: hablaA,
         kind,
         productName: form.productName,
@@ -736,6 +826,20 @@ export function ConstructorPanel({
     setCliente(clienteFijo as unknown as ClienteSistema);
     setPaso((p) => (p === 0 ? 1 : p));
   }, [clienteFijo]);
+
+  /* 044b-B15 — idea que llega desde una acción del análisis de IA: tipo de
+   * pieza + instrucción para la IA + análisis adjunto. Se consume una vez. */
+  useEffect(() => {
+    if (!ideaInicial) return;
+    setTipoCreacion(ideaInicial.pieza);
+    setHubAbierto(false);
+    setModoIA((m) => (m === "manual" ? "textos" : m));
+    if (ideaInicial.prompt) setAiInstructions(ideaInicial.prompt.slice(0, 400));
+    if (ideaInicial.analisis) setAnalisisAdjunto(ideaInicial.analisis);
+    setToast("Idea cargada del análisis ✓ — elegí el destinatario y generá la pieza.");
+    onQuitarIdea?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ideaInicial]);
 
   /* Textos base: al cargar las plantillas, si el título está vacío, aplicar los del tipo. */
   useEffect(() => {
@@ -1459,6 +1563,75 @@ export function ConstructorPanel({
                     </button>
                   )}
                 </div>
+                {/* 044b-B15 — análisis del sistema adjunto: la IA escribe teniéndolo en cuenta. */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {analisisAdjunto ? (
+                    <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-brand-soft bg-brand-tint px-2.5 py-1 text-[11px] font-semibold text-brand-text">
+                      <Paperclip size={11} className="shrink-0" />
+                      <span className="truncate">Análisis adjunto: {analisisAdjunto.title}</span>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-full p-0.5 hover:bg-card"
+                        title="Quitar el análisis adjunto"
+                        onClick={() => setAnalisisAdjunto(null)}
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-[11.5px] font-semibold text-text-2 transition-colors hover:bg-accent"
+                      title="Elegí un análisis guardado en el baúl para que la IA escriba teniéndolo en cuenta"
+                      onClick={() => {
+                        setPickOpen((v) => !v);
+                        if (!pickOpen && pickItems.length === 0) void loadPick();
+                      }}
+                    >
+                      <Paperclip size={12} />
+                      Adjuntar análisis del baúl
+                    </button>
+                  )}
+                </div>
+
+                {pickOpen && !analisisAdjunto && (
+                  <div className="rounded-lg border bg-card p-2">
+                    {pickLoading ? (
+                      <p className="text-[11.5px] text-text-3">Buscando análisis…</p>
+                    ) : pickItems.length === 0 ? (
+                      <p className="text-[11.5px] text-text-3">
+                        Todavía no hay análisis guardados. Generá uno desde el Dashboard Management
+                        y va a aparecer acá.
+                      </p>
+                    ) : (
+                      <ul className="max-h-52 space-y-1 overflow-y-auto">
+                        {pickItems.map((item) => (
+                          <li key={item.id}>
+                            <button
+                              type="button"
+                              className="w-full rounded-md border px-2 py-1.5 text-left text-[11.5px] transition-colors hover:border-brand-soft hover:bg-brand-tint"
+                              onClick={() => {
+                                setAnalisisAdjunto({
+                                  title: `${item.title} · ${recordStamp(item.generatedAt)}`,
+                                  body: insightRecordText(item),
+                                });
+                                setPickOpen(false);
+                              }}
+                            >
+                              <strong>{item.title}</strong>
+                              <span className="text-text-3">
+                                {" "}
+                                · {item.scope === "client" ? "Cliente" : "Módulo"} ·{" "}
+                                {item.mode === "ia" ? "Solo IA" : "Dual"} ·{" "}
+                                {recordStamp(item.generatedAt)}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
                 {aiNotas && <p className="text-[11px] text-text-3">{aiNotas}</p>}
               </div>
 

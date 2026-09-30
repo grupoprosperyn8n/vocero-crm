@@ -140,7 +140,13 @@ function providerFailed(detail: string): {
 
 export async function generateClientInsight(
   organizationId: string,
-  input: { clientId: string; mode: "dual" | "ia"; context: unknown }
+  input: {
+    clientId: string;
+    mode: "dual" | "ia";
+    context: unknown;
+    /** 044b-B15 — reformular: ignora el cache y genera de nuevo. */
+    force?: boolean;
+  }
 ): Promise<AiGeneration<ClientInsight>> {
   const context: ClientInsightContext | null = sanitizeClientContext(
     input.context
@@ -158,7 +164,7 @@ export async function generateClientInsight(
   const key = `${input.mode}:${input.clientId}`;
   const hit = clientCache.get(key);
 
-  if (hit && Date.now() - hit.ts < CLIENT_CACHE_TTL_MS) {
+  if (!input.force && hit && Date.now() - hit.ts < CLIENT_CACHE_TTL_MS) {
     return { ok: true, insight: { ...hit.insight, cached: true } };
   }
 

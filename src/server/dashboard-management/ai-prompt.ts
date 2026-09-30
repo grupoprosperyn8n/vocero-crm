@@ -13,9 +13,22 @@ import { z } from "zod";
 import type {
   ClientInsight,
   ClientInsightContext,
+  ModuleAccion,
   ModuleAiId,
   ModuleInsight,
+  PiezaTipo,
 } from "@/lib/dashboard-management/types";
+
+/* 044b-B15 — piezas del Constructor que una acción puede sugerir. */
+const PIEZA_IDS = ["publicacion", "formulario", "encuesta", "cupon"] as const;
+
+/** Normaliza el campo "pieza" que devuelve el modelo (cualquier cosa rara → null). */
+export function normalizePieza(value: unknown): PiezaTipo | null {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return (PIEZA_IDS as readonly string[]).includes(raw)
+    ? (raw as PiezaTipo)
+    : null;
+}
 
 /* --------------------------------------------------------------------- *
  * Sanitizado (los datos llegan del navegador: contexto cerrado y acotado)
@@ -168,11 +181,12 @@ export function buildClientPrompt(
     "Escribís en español rioplatense, claro y directo, tratando de vos.",
     "Te paso el contexto REAL de un cliente tomado del sistema de gestión, con las reglas del negocio ya calculadas.",
     "REGLAS ESTRICTAS: usá SOLO los datos del contexto; no inventes cifras, productos ni situaciones; no prometas coberturas que no estén listadas.",
-    'Devolvé SOLO un JSON válido, sin texto extra, con esta forma exacta: {"accion": "...", "por_que": "...", "pasos": ["...", "...", "..."], "mensaje_whatsapp": "..."}',
+    'Devolvé SOLO un JSON válido, sin texto extra, con esta forma exacta: {"accion": "...", "por_que": "...", "pasos": ["...", "...", "..."], "mensaje_whatsapp": "...", "pieza": null}',
     '"accion": la mejor acción comercial en 2 a 5 palabras.',
     '"por_que": 2 a 3 frases explicando por qué es la mejor acción para ESTE cliente.',
     '"pasos": 3 o 4 pasos concretos y accionables, en orden.',
     '"mensaje_whatsapp": mensaje breve (máximo 60 palabras), cordial, con la firma de Rafael Allende; usá 1 o 2 emojis pertinentes (ninguno si el motivo es delicado: anulación, reclamo o siniestro) y cerrá con una pregunta concreta que invite a responder (por ejemplo, proponer día y horario para una llamada corta).',
+    '"pieza": si para ejecutar la acción hay que crear una pieza en el CRM, indicá cuál: "publicacion" (novedad, campaña u oferta para el cliente), "formulario" (pedir datos), "encuesta" (medir opinión) o "cupon" (beneficio con código); si es una llamada o gestión, poné null.',
   ].join("\n");
 
   const base = [
@@ -287,10 +301,11 @@ export function buildModulePrompt(
     "Escribís en español rioplatense, claro y directo, tratando de vos; te lee el dueño o gerente del negocio, no un técnico.",
     `Estás analizando el módulo "${brief.title}" del tablero de gestión, que muestra ${brief.brief}.`,
     "REGLAS ESTRICTAS: usá SOLO los datos del contexto; no inventes cifras, clientes ni situaciones; si un dato no está, no lo supongas.",
-    'Devolvé SOLO un JSON válido, sin texto extra, con esta forma exacta: {"resumen": "...", "focos": ["...", "..."], "acciones": ["...", "..."], "mensaje": "..."}',
+    'Devolvé SOLO un JSON válido, sin texto extra, con esta forma exacta: {"resumen": "...", "focos": ["...", "..."], "acciones": [{"texto": "...", "pieza": null}], "mensaje": "..."}',
     '"resumen": 2 o 3 frases con lo más importante que dicen los datos (incluí los números clave).',
     '"focos": 3 o 4 puntos cortos de qué mirar y por qué, mirando los números del módulo.',
-    '"acciones": 3 a 5 acciones concretas y priorizadas para esta semana.',
+    '"acciones": 3 a 5 acciones concretas y priorizadas para esta semana; cada acción es un objeto con "texto" y "pieza".',
+    '"pieza": si esa acción implica crear algo con el Constructor del CRM, indicá con qué: "publicacion" (novedad, campaña u oferta para clientes), "formulario" (pedir datos), "encuesta" (medir opinión) o "cupon" (beneficio con código); si es una tarea interna (revisar, llamar, completar datos), poné null.',
     brief.expectsMessage
       ? '"mensaje": un mensaje breve de WhatsApp (máximo 60 palabras, cordial, con la firma de Rafael Allende, con 1 o 2 emojis pertinentes y un cierre con una pregunta concreta que invite a responder) listo para enviar a un cliente tipo de este módulo.'
       : '"mensaje": cadena vacía, este módulo no requiere mensaje al cliente.',
@@ -320,6 +335,7 @@ export const CLIENT_INSIGHT_SCHEMA = z
     pasos: z.array(listItem).min(1),
     mensaje_whatsapp: z.coerce.string().optional(),
     mensajeWhatsapp: z.coerce.string().optional(),
+    pieza: z.coerce.string().optional().nullable(),
   })
   .refine(
     (value) =>
@@ -336,10 +352,20 @@ export const CLIENT_INSIGHT_SCHEMA = z
 
 export type ClientInsightRaw = z.infer<typeof CLIENT_INSIGHT_SCHEMA>;
 
+/* 044b-B15 — cada acción puede venir como texto suelto (formato viejo) o como
+ * objeto {texto, pieza}; el objeto es el formato nuevo con la pieza sugerida. */
+const moduleAccion = z.union([
+  listItem,
+  z.object({
+    texto: z.coerce.string().min(1),
+    pieza: z.coerce.string().optional().nullable(),
+  }),
+]);
+
 export const MODULE_INSIGHT_SCHEMA = z.object({
   resumen: z.coerce.string().min(1),
   focos: z.array(listItem).optional(),
-  acciones: z.array(listItem).min(1),
+  acciones: z.array(moduleAccion).min(1),
   mensaje: z.coerce.string().optional(),
 });
 
@@ -373,6 +399,7 @@ export function toClientInsight(
     porQue,
     pasos,
     mensajeWhatsapp: mensaje,
+    pieza: normalizePieza(raw.pieza),
     model,
     generatedAt: new Date().toISOString(),
     cached: false,
@@ -389,10 +416,24 @@ export function toModuleInsight(
       .filter(Boolean)
       .slice(0, max);
 
+  /* 044b-B15 — acciones: texto suelto (viejo) u objeto {texto, pieza}. */
+  const acciones: ModuleAccion[] = raw.acciones
+    .map((item) => {
+      if (typeof item === "string" || typeof item === "number") {
+        const texto = String(item).trim().slice(0, 400);
+        return texto ? { texto, pieza: null } : null;
+      }
+
+      const texto = item.texto.trim().slice(0, 400);
+      return texto ? { texto, pieza: normalizePieza(item.pieza) } : null;
+    })
+    .filter((item): item is ModuleAccion => item !== null)
+    .slice(0, 6);
+
   return {
     resumen: raw.resumen.trim().slice(0, 900),
     focos: toList(raw.focos ?? [], 6),
-    acciones: toList(raw.acciones, 6),
+    acciones,
     mensaje: (raw.mensaje ?? "").trim().slice(0, 900),
     model,
     generatedAt: new Date().toISOString(),

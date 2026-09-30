@@ -316,6 +316,13 @@
       "when": 1790786971245,
       "tag": "0044_organic_karma",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1790791746737,
+      "tag": "0045_wonderful_dagger",
+      "breakpoints": true
     }
   ]
 }

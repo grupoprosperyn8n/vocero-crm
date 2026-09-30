@@ -1857,6 +1857,45 @@ export const pieceTemplate = pgTable(
 );
 
 /**
+ * 044b-B15 — Baúl de análisis de IA (Dashboard Management).
+ * Cada informe que la IA genera sobre un módulo o un cliente se guarda acá
+ * con fecha, modo y modelo, junto al contexto de entrada (para reformularlo).
+ */
+export const aiInsight = pgTable(
+  "ai_insight",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** module | client */
+    scope: text("scope").notNull(),
+    /** id del módulo (pulso, cartera…) o del cliente. */
+    refId: text("ref_id").notNull(),
+    /** Título legible: "Calidad y avance de la migración" o el nombre del cliente. */
+    title: text("title").notNull(),
+    /** dual | ia */
+    mode: text("mode").notNull(),
+    model: text("model").notNull().default(""),
+    /** Salida del informe (resumen/focos/acciones/mensaje o accion/pasos/…). */
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    /** Contexto de entrada que alimentó el informe (para reformular). */
+    input: jsonb("input").$type<Record<string, unknown>>().notNull(),
+    /** Cuándo lo generó la IA (el baúl se ordena por esta fecha). */
+    generatedAt: timestamp("generated_at").notNull(),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("ai_insight_org_scope_idx").on(t.organizationId, t.scope),
+    index("ai_insight_scope_ref_idx").on(t.organizationId, t.scope, t.refId),
+    index("ai_insight_generated_idx").on(t.organizationId, t.generatedAt),
+  ]
+);
+
+/**
  * Propuesta concreta para un cliente: copia editable de la plantilla,
  * token para la página pública (/p/<token>) y el empleado asignado.
  * El embudo (creada → enviada → vista → respondida) se mide acá y en

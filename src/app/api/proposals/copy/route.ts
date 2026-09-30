@@ -28,6 +28,14 @@ const copySchema = z.object({
   benefit: z.string().trim().max(160).optional().nullable(),
   ctaLabel: z.string().trim().max(40).optional().nullable(),
   draftMessage: z.string().trim().max(900).optional().nullable(),
+  /** 044b-B15 — análisis del sistema adjunto desde el Constructor. */
+  analysis: z
+    .object({
+      title: z.string().trim().max(160).optional().nullable(),
+      body: z.string().trim().max(2400).optional().nullable(),
+    })
+    .optional()
+    .nullable(),
 });
 
 export const POST = withAuth(async (session, req: Request) => {
