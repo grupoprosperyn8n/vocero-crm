@@ -1783,6 +1783,9 @@ export function ExecDashboard() {
   const [eqSucursal, setEqSucursal] = useState("");
   const [ofBusca, setOfBusca] = useState("");
 
+  // 045b-r2 — las dos vistas del módulo Equipo, en pestañas separadas.
+  const [equipoVista, setEquipoVista] = useState<"empleados" | "oficinas">("empleados");
+
   // 045b — catálogo: producto / cobertura / compañía → modal con el análisis IA.
   const [catalogoDetalle, setCatalogoDetalle] = useState<
     | { kind: "producto"; row: CatalogProductRow }
@@ -4289,6 +4292,35 @@ export function ExecDashboard() {
                 </section>
               )}
 
+              {/* 045b-r2 — pestañas separadas: rendimiento por empleado / productividad por oficina. */}
+              <div className="flex flex-wrap items-center gap-1 border-b pb-2">
+                <button
+                  type="button"
+                  onClick={() => setEquipoVista("empleados")}
+                  className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${
+                    equipoVista === "empleados"
+                      ? "border-brand bg-brand text-white"
+                      : "bg-card text-text-2 hover:bg-subtle"
+                  }`}
+                >
+                  <Users size={13} />
+                  Rendimiento por empleado ({number(data.team.employees.length)})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEquipoVista("oficinas")}
+                  className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${
+                    equipoVista === "oficinas"
+                      ? "border-brand bg-brand text-white"
+                      : "bg-card text-text-2 hover:bg-subtle"
+                  }`}
+                >
+                  <BriefcaseBusiness size={13} />
+                  Productividad por oficina ({number(data.team.offices.length)})
+                </button>
+              </div>
+
+              {equipoVista === "empleados" ? (
               <Section
                 title="Rendimiento por empleado"
                 subtitle="Gestiones del mes y del año, más el informe de productividad IA"
@@ -4359,7 +4391,7 @@ export function ExecDashboard() {
                   {eqSucursal ? ` · sucursal: ${eqSucursal}` : ""}
                 </p>
               </Section>
-
+              ) : (
               <Section
                 title="Productividad por oficina"
                 subtitle="Gestiones por sucursal, más el informe IA de cada oficina"
@@ -4411,6 +4443,7 @@ export function ExecDashboard() {
                   {number(data.team.offices.length)} sucursales
                 </p>
               </Section>
+              )}
             </>
           )}
         </div>
