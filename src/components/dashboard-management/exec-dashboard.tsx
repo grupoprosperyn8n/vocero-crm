@@ -104,6 +104,8 @@ import type {
   PlaylistItem,
   CatalogCoverageRow,
   CatalogProductRow,
+  CatalogBlock,
+  TeamBlock,
   TeamEmployeeRow,
   TeamOfficeRow,
 } from "@/lib/dashboard-management/types";
@@ -1454,107 +1456,115 @@ const FILTER_SCOPE: Record<TabId, string> = {
   migracion: "Este módulo muestra la base completa: los filtros no lo afectan.",
 };
 
-/**
- * 045 — Modal con el informe completo de la IA de un empleado o una oficina.
- * La lista de Equipo muestra una fila por registro; el informe entero vive acá.
- */
-function EquipoReporteModal({
-  detalle,
-  onClose,
+/* =========================================================================
+ * 045b-r3 — PANELES DE ENTIDAD (estilo «panel del cliente»):
+ * empleado, oficina/sucursal, compañía y producto — con pestañas, KPIs,
+ * navegación cruzada entre entidades y todos los datos disponibles.
+ * ========================================================================= */
+
+type EquipoDetalleT =
+  | { kind: "empleado"; row: TeamEmployeeRow }
+  | { kind: "oficina"; row: TeamOfficeRow };
+
+type CatalogoDetalleT =
+  | { kind: "producto"; row: CatalogProductRow }
+  | { kind: "cobertura"; row: CatalogCoverageRow }
+  | { kind: "compania"; name: string };
+
+/** Pestaña del panel — mismo estilo que las pestañas del panel del cliente. */
+function PanelPill({
+  active,
+  onClick,
+  children,
 }: {
-  detalle: { kind: "empleado"; row: TeamEmployeeRow } | { kind: "oficina"; row: TeamOfficeRow };
-  onClose: () => void;
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
 }) {
-  const { kind, row } = detalle;
-  const esEmpleado = kind === "empleado";
-  const comisionMonth = "commissionMonth" in row ? row.commissionMonth : 0;
-
-  // El modal se cierra con Escape (mismo comportamiento que el panel de filtros).
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const titulo = esEmpleado ? "Informe de productividad IA" : "Informe IA de la oficina";
-
   return (
-    <div
-      role="dialog"
-      aria-label={`${titulo} — ${row.name}`}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${
+        active ? "border-brand bg-brand text-white" : "bg-card text-text-2 hover:bg-subtle"
+      }`}
     >
-      <div className="flex max-h-[88vh] w-full max-w-3xl flex-col rounded-t-2xl border bg-card shadow-2xl sm:rounded-2xl">
-        <div className="flex items-start justify-between gap-3 border-b p-4">
-          <div className="min-w-0">
-            <p className="text-[13.5px] font-bold text-text-1">{titulo}</p>
-            <p className="mt-0.5 truncate text-[12px] font-semibold text-text-2">{row.name}</p>
-            <p className="mt-0.5 text-[11.5px] text-text-3">
-              {number(row.gestionesMonth)} gestiones este mes · {number(row.gestionesYear)} en el
-              año
-              {comisionMonth > 0 ? ` · ${money(comisionMonth)} de comisión (mes)` : ""}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {row.reportLevel && (
-              <Badge tone={nivelIaTone(row.reportLevel)}>{row.reportLevel}</Badge>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Cerrar"
-              className="rounded-lg p-1.5 text-text-2 hover:bg-subtle"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {row.report ? (
-            <p className="whitespace-pre-line text-[12px] leading-relaxed text-text-2">
-              {row.report}
-            </p>
-          ) : (
-            <p className="text-[12px] text-text-3">
-              Este registro todavía no tiene informe de la IA. Cuando el sistema lo genere, va a
-              aparecer acá.
-            </p>
-          )}
-          <p className="mt-3 border-t pt-2.5 text-[10.5px] text-text-3">
-            {esEmpleado
-              ? "Informe de productividad generado por la IA del sistema a partir de las gestiones y comisiones del backoffice (solo lectura)."
-              : "Informe de la IA del sistema para esta sucursal, a partir de las gestiones del backoffice (solo lectura)."}
-          </p>
-        </div>
-      </div>
+      {children}
+    </button>
+  );
+}
+
+/** Métrica del panel (mismo look en las 4 entidades). */
+function PanelKpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="rounded-md border bg-subtle/40 px-3 py-2">
+      <p className="text-[10.5px] uppercase tracking-wide text-text-3">{label}</p>
+      <p className="text-[15px] font-bold tabular-nums text-text-1">{value}</p>
+      {hint ? <p className="mt-0.5 text-[10.5px] text-text-3">{hint}</p> : null}
     </div>
   );
 }
 
 /*
- * 045b — CATÁLOGO: modal con el análisis IA completo de un producto,
- * una cobertura o el detalle de una compañía (con sus productos).
+ * 045b-r3 — la LOCALIDAD del empleado («(2300) RAFAELA», código postal) y el
+ * nombre de la oficina («RAFAELA (7204)») no comparten formato ni numeración:
+ * se relacionan por los nombres significativos, sin tildes ni puntuación.
  */
-function CatalogoReporteModal({
-  detalle,
+function tokensSucursal(s: string): string[] {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\(\d+\)/g, " ")
+    .replace(/[.,-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase()
+    .split(" ")
+    .filter((t) => t.length >= 3);
+}
+
+/** Oficina única que corresponde a la sucursal del empleado (si no es ambigua). */
+function buscarOficinaDelEmpleado(
+  oficina: string | undefined,
+  oficinas: TeamOfficeRow[],
+): TeamOfficeRow | undefined {
+  if (!oficina) return undefined;
+  const tokensEmp = tokensSucursal(oficina);
+  if (tokensEmp.length === 0) return undefined;
+  const ranked = oficinas
+    .map((o) => {
+      const tokensOf = tokensSucursal(o.name);
+      return { o, comunes: tokensOf.filter((t) => tokensEmp.includes(t)).length, total: tokensOf.length };
+    })
+    .filter((x) => x.comunes > 0)
+    .sort((a, b) => b.comunes - a.comunes || a.total - b.total);
+  const [top1, top2] = ranked;
+  if (!top1) return undefined;
+  if (!top2) return top1.o;
+  // Solo navega cuando la mejor opción es claramente la única (evita adivinar).
+  if (top1.comunes > top2.comunes || top1.total < top2.total) return top1.o;
+  return undefined;
+}
+
+/** Wrapper común: overlay + header + barra de pestañas + cuerpo scrolleable. */
+function PanelShell({
+  titulo,
+  nombre,
+  meta,
+  badge,
   onClose,
-  productos,
-  companies,
+  tabs,
+  children,
 }: {
-  detalle:
-    | { kind: "producto"; row: CatalogProductRow }
-    | { kind: "cobertura"; row: CatalogCoverageRow }
-    | { kind: "compania"; name: string };
+  titulo: string;
+  nombre: string;
+  meta?: string;
+  badge?: React.ReactNode;
   onClose: () => void;
-  productos: CatalogProductRow[];
-  companies: { name: string; policies: number; activePremium: number }[];
+  tabs?: React.ReactNode;
+  children: React.ReactNode;
 }) {
-  // El modal se cierra con Escape (mismo comportamiento que el resto).
+  // El panel se cierra con Escape (mismo comportamiento que el resto).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -1562,17 +1572,6 @@ function CatalogoReporteModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-
-  const titulo =
-    detalle.kind === "producto"
-      ? "Análisis IA del producto"
-      : detalle.kind === "cobertura"
-        ? "Análisis IA de la cobertura"
-        : "Detalle de la compañía";
-  const nombre = detalle.kind === "compania" ? detalle.name : detalle.row.name;
-  const nivel = detalle.kind === "producto" || detalle.kind === "cobertura"
-    ? detalle.row.analysisLevel
-    : undefined;
 
   return (
     <div
@@ -1583,17 +1582,15 @@ function CatalogoReporteModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[88vh] w-full max-w-3xl flex-col rounded-t-2xl border bg-card shadow-2xl sm:rounded-2xl">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-t-2xl border bg-card shadow-2xl sm:rounded-2xl">
         <div className="flex items-start justify-between gap-3 border-b p-4">
           <div className="min-w-0">
             <p className="text-[13.5px] font-bold text-text-1">{titulo}</p>
-            <p className="mt-0.5 truncate text-[12px] font-semibold text-text-2">{nombre}</p>
-            {detalle.kind === "producto" && detalle.row.company && (
-              <p className="mt-0.5 text-[11.5px] text-text-3">{detalle.row.company}</p>
-            )}
+            <p className="mt-0.5 truncate text-[12.5px] font-semibold text-text-2">{nombre}</p>
+            {meta ? <p className="mt-0.5 text-[11.5px] text-text-3">{meta}</p> : null}
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            {nivel && <Badge tone={nivelIaTone(nivel)}>{nivel}</Badge>}
+            {badge}
             <button
               type="button"
               onClick={onClose}
@@ -1604,149 +1601,552 @@ function CatalogoReporteModal({
             </button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {detalle.kind === "producto" && (
-            <div className="space-y-4">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
-                  Análisis IA general
-                </p>
-                {detalle.row.analysis ? (
-                  <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
-                    {detalle.row.analysis}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-[12px] text-text-3">
-                    La IA todavía no generó el análisis de este producto.
-                  </p>
-                )}
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
-                  Recomendación IA de mejoras
-                </p>
-                {detalle.row.recommendation ? (
-                  <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
-                    {detalle.row.recommendation}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-[12px] text-text-3">Sin recomendación generada todavía.</p>
-                )}
-              </div>
-              <p className="border-t pt-2.5 text-[10.5px] text-text-3">
-                Generado por la IA del sistema en el backoffice (solo lectura).
-              </p>
-            </div>
-          )}
-
-          {detalle.kind === "cobertura" && (
-            <div className="space-y-4">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
-                  Análisis IA de la cobertura
-                </p>
-                {detalle.row.analysis ? (
-                  <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
-                    {detalle.row.analysis}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-[12px] text-text-3">
-                    La IA todavía no generó el análisis de esta cobertura.
-                  </p>
-                )}
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
-                  Categorización IA de tipo
-                </p>
-                {detalle.row.categorization ? (
-                  <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
-                    {detalle.row.categorization}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-[12px] text-text-3">Sin categorización generada todavía.</p>
-                )}
-              </div>
-              <p className="border-t pt-2.5 text-[10.5px] text-text-3">
-                Generado por la IA del sistema en el backoffice (solo lectura).
-              </p>
-            </div>
-          )}
-
-          {detalle.kind === "compania" &&
-            (() => {
-              const metrics = companies.find((c) => c.name === detalle.name);
-              const prods = productos.filter((p) => p.company === detalle.name);
-              return (
-                <div className="space-y-4">
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-md border bg-subtle/40 px-3 py-2">
-                      <p className="text-[10.5px] uppercase tracking-wide text-text-3">
-                        Pólizas cargadas
-                      </p>
-                      <p className="text-[15px] font-bold tabular-nums text-text-1">
-                        {metrics ? number(metrics.policies) : "—"}
-                      </p>
-                    </div>
-                    <div className="rounded-md border bg-subtle/40 px-3 py-2">
-                      <p className="text-[10.5px] uppercase tracking-wide text-text-3">
-                        Prima activa
-                      </p>
-                      <p className="text-[15px] font-bold tabular-nums text-text-1">
-                        {metrics ? money(metrics.activePremium) : "—"}
-                      </p>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
-                      Productos de la compañía ({number(prods.length)}) · análisis IA
-                    </p>
-                    <div className="mt-1.5 space-y-1.5">
-                      {prods.map((prod) => (
-                        <div key={prod.id} className="rounded-md border bg-subtle/40 px-3 py-2.5">
-                          <div className="flex items-center gap-2">
-                            <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-text-1">
-                              {prod.name}
-                            </span>
-                            {prod.analysisLevel && (
-                              <Badge tone={nivelIaTone(prod.analysisLevel)}>
-                                {prod.analysisLevel}
-                              </Badge>
-                            )}
-                          </div>
-                          {prod.analysis ? (
-                            <p className="mt-1 whitespace-pre-line text-[11.5px] leading-relaxed text-text-2">
-                              {prod.analysis}
-                            </p>
-                          ) : (
-                            <p className="mt-1 text-[11.5px] text-text-3">
-                              Sin análisis IA generado todavía.
-                            </p>
-                          )}
-                          {prod.recommendation && (
-                            <p className="mt-1.5 whitespace-pre-line border-t pt-1.5 text-[11px] leading-relaxed text-text-3">
-                              {prod.recommendation}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                      {prods.length === 0 && (
-                        <p className="text-[12px] text-text-3">
-                          No hay productos cargados para esta compañía en el catálogo.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <p className="border-t pt-2.5 text-[10.5px] text-text-3">
-                    Datos del backoffice (solo lectura). La compañía no tiene un análisis IA
-                    propio: el análisis de la IA se ve en cada uno de sus productos.
-                  </p>
-                </div>
-              );
-            })()}
-        </div>
+        {tabs ? <div className="flex flex-wrap items-center gap-1 border-b px-4 py-2">{tabs}</div> : null}
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
       </div>
     </div>
+  );
+}
+
+/*
+ * 045b-r3 — PANEL DE EQUIPO: empleado u oficina/sucursal.
+ * Resumen (KPIs + posición + navegación), lista de empleados (oficina) e informe IA.
+ */
+function EquipoPanel({
+  detalle,
+  onClose,
+  team,
+  onNavigate,
+}: {
+  detalle: EquipoDetalleT;
+  onClose: () => void;
+  team: TeamBlock;
+  onNavigate: (d: EquipoDetalleT) => void;
+}) {
+  const [pestana, setPestana] = useState<"resumen" | "lista" | "informe">("resumen");
+  const esEmpleado = detalle.kind === "empleado";
+  const { row } = detalle;
+
+  // Al navegar a otra entidad, el panel vuelve a arrancar por el resumen.
+  useEffect(() => {
+    setPestana("resumen");
+  }, [detalle.kind, row.id]);
+
+  const comisionMonth = "commissionMonth" in row ? row.commissionMonth : 0;
+  const comisionYear = detalle.kind === "empleado" ? detalle.row.commissionYear : 0;
+
+  // Navegación cruzada: el empleado lleva a su oficina y la oficina a sus empleados.
+  const oficinaDeEmpleado = detalle.kind === "empleado" ? detalle.row.office : undefined;
+  const oficinaRow = buscarOficinaDelEmpleado(oficinaDeEmpleado, team.offices);
+  // Empleados vinculados a esta oficina: primero los de sucursal única (Localidad
+  // que resuelve a esta oficina) y luego los de localidad parcial («ROSARIO» en
+  // una sucursal de Rosario) que no tienen una sucursal distinta asignada.
+  const genteDeOficina =
+    detalle.kind === "oficina"
+      ? (() => {
+          const unicos: TeamEmployeeRow[] = [];
+          const zona: TeamEmployeeRow[] = [];
+          const tokensOf = tokensSucursal(detalle.row.name);
+          for (const e of team.employees) {
+            const of = buscarOficinaDelEmpleado(e.office, team.offices);
+            if (of) {
+              if (of.name === detalle.row.name) unicos.push(e);
+              continue;
+            }
+            const tokensEmp = tokensSucursal(e.office ?? "");
+            if (tokensOf.some((t) => tokensEmp.includes(t))) zona.push(e);
+          }
+          return { unicos, zona };
+        })()
+      : { unicos: [] as TeamEmployeeRow[], zona: [] as TeamEmployeeRow[] };
+  const totalGenteOficina = genteDeOficina.unicos.length + genteDeOficina.zona.length;
+
+  // Fila de empleado (se reutiliza para los asignados y los de la zona).
+  const filaEmpleado = (empleado: TeamEmployeeRow) => (
+    <button
+      key={empleado.id}
+      type="button"
+      onClick={() => onNavigate({ kind: "empleado", row: empleado })}
+      className="group flex w-full items-center gap-3 rounded-md border bg-subtle/40 px-3 py-2.5 text-left transition-colors hover:bg-subtle"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[12.5px] font-semibold text-text-1">{empleado.name}</span>
+        <span className="block truncate text-[11px] text-text-3">
+          {number(empleado.gestionesMonth)} gestiones este mes · {number(empleado.gestionesYear)} en el año
+          {empleado.office ? ` · ${empleado.office}` : ""}
+        </span>
+      </span>
+      {empleado.reportLevel && <Badge tone={nivelIaTone(empleado.reportLevel)}>{empleado.reportLevel}</Badge>}
+      <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-text-3 group-hover:text-text-2">
+        {empleado.report ? "Informe IA" : "Sin informe"}
+        <ChevronRight size={14} />
+      </span>
+    </button>
+  );
+
+  // Posición en el equipo (ranking por gestiones del mes y del año).
+  const rankMes =
+    detalle.kind === "empleado"
+      ? [...team.employees].sort((a, b) => b.gestionesMonth - a.gestionesMonth).findIndex((e) => e.id === row.id) + 1
+      : 0;
+  const rankAnio =
+    detalle.kind === "empleado"
+      ? [...team.employees].sort((a, b) => b.gestionesYear - a.gestionesYear).findIndex((e) => e.id === row.id) + 1
+      : 0;
+
+  const titulo = esEmpleado ? "Panel del empleado" : "Panel de la oficina";
+  const meta = `${number(row.gestionesMonth)} gestiones este mes · ${number(row.gestionesYear)} en el año${
+    comisionMonth > 0 ? ` · ${money(comisionMonth)} de comisión (mes)` : ""
+  }`;
+
+  return (
+    <PanelShell
+      titulo={titulo}
+      nombre={row.name}
+      meta={meta}
+      badge={row.reportLevel ? <Badge tone={nivelIaTone(row.reportLevel)}>{row.reportLevel}</Badge> : null}
+      onClose={onClose}
+      tabs={
+        <>
+          <PanelPill active={pestana === "resumen"} onClick={() => setPestana("resumen")}>
+            Resumen
+          </PanelPill>
+          {!esEmpleado && (
+            <PanelPill active={pestana === "lista"} onClick={() => setPestana("lista")}>
+              Empleados ({number(totalGenteOficina)})
+            </PanelPill>
+          )}
+          <PanelPill active={pestana === "informe"} onClick={() => setPestana("informe")}>
+            Informe IA
+          </PanelPill>
+        </>
+      }
+    >
+      {pestana === "resumen" && (
+        <div className="space-y-4">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <PanelKpi label="Gestiones del mes" value={number(row.gestionesMonth)} hint="Mes en curso" />
+            <PanelKpi label="Gestiones del año" value={number(row.gestionesYear)} hint="Acumulado" />
+            <PanelKpi
+              label="Informe IA"
+              value={row.report ? "Disponible" : "Sin generar"}
+              hint={row.reportLevel ?? "—"}
+            />
+          </div>
+          {(comisionMonth > 0 || comisionYear > 0) && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <PanelKpi label="Comisiones del mes" value={money(comisionMonth)} hint="Según el sistema" />
+              <PanelKpi label="Comisiones del año" value={money(comisionYear)} hint="Según el sistema" />
+            </div>
+          )}
+          {esEmpleado && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <PanelKpi
+                label="Posición en el equipo (mes)"
+                value={`#${number(rankMes)}`}
+                hint={`de ${number(team.employees.length)} empleados`}
+              />
+              <PanelKpi
+                label="Posición en el equipo (año)"
+                value={`#${number(rankAnio)}`}
+                hint={`de ${number(team.employees.length)} empleados`}
+              />
+            </div>
+          )}
+          {esEmpleado && oficinaRow && (
+            <button
+              type="button"
+              onClick={() => onNavigate({ kind: "oficina", row: oficinaRow })}
+              className="group w-full rounded-md border bg-subtle/40 px-3 py-2.5 text-left transition-colors hover:bg-subtle"
+            >
+              <p className="text-[10.5px] uppercase tracking-wide text-text-3">Su oficina / sucursal</p>
+              <p className="mt-0.5 truncate text-[12.5px] font-semibold text-text-1">{oficinaRow.name}</p>
+              <p className="mt-0.5 text-[11px] text-text-3">
+                {number(oficinaRow.gestionesMonth)} gestiones este mes · {number(oficinaRow.gestionesYear)} en el
+                año · ver el panel de la oficina →
+              </p>
+            </button>
+          )}
+          {esEmpleado && !oficinaRow && oficinaDeEmpleado && (
+            <div className="rounded-md border bg-subtle/40 px-3 py-2.5">
+              <p className="text-[10.5px] uppercase tracking-wide text-text-3">Su oficina / sucursal</p>
+              <p className="mt-0.5 truncate text-[12.5px] font-semibold text-text-1">{oficinaDeEmpleado}</p>
+            </div>
+          )}
+          {!esEmpleado && totalGenteOficina > 0 && (
+            <button
+              type="button"
+              onClick={() => setPestana("lista")}
+              className="w-full rounded-md border bg-subtle/40 px-3 py-2.5 text-left text-[12px] font-semibold text-text-2 transition-colors hover:bg-subtle"
+            >
+              Ver los {number(totalGenteOficina)} empleados vinculados a esta sucursal, con su informe IA →
+            </button>
+          )}
+          {!esEmpleado && totalGenteOficina === 0 && (
+            <p className="rounded-md border bg-subtle/40 px-3 py-2.5 text-[12px] text-text-3">
+              No hay empleados vinculados a esta sucursal por su Localidad.
+            </p>
+          )}
+          <p className="border-t pt-2.5 text-[10.5px] text-text-3">
+            {esEmpleado
+              ? "Datos de gestiones y comisiones del backoffice + informe IA de productividad (solo lectura)."
+              : "Datos de gestiones del backoffice + informe IA de la oficina (solo lectura)."}
+          </p>
+        </div>
+      )}
+      {pestana === "lista" && !esEmpleado && (
+        <div className="space-y-1.5">
+          {genteDeOficina.unicos.map((empleado) => filaEmpleado(empleado))}
+          {genteDeOficina.unicos.length === 0 && genteDeOficina.zona.length > 0 && (
+            <p className="rounded-md border bg-subtle/40 px-3 py-2.5 text-[11.5px] text-text-3">
+              Ningún empleado tiene esta sucursal como Localidad única en el sistema. Se listan los
+              empleados con localidad de la zona.
+            </p>
+          )}
+          {genteDeOficina.zona.length > 0 && (
+            <>
+              <p className="pt-2 text-[10.5px] uppercase tracking-wide text-text-3">
+                Con localidad de la zona (sin sucursal única en Localidad)
+              </p>
+              {genteDeOficina.zona.map((empleado) => filaEmpleado(empleado))}
+            </>
+          )}
+          {totalGenteOficina === 0 && (
+            <p className="rounded-md border bg-subtle/40 px-3 py-6 text-center text-[12px] text-text-3">
+              No hay empleados vinculados a esta sucursal por su Localidad.
+            </p>
+          )}
+        </div>
+      )}
+      {pestana === "informe" && (
+        <div>
+          {row.report ? (
+            <p className="whitespace-pre-line text-[12px] leading-relaxed text-text-2">{row.report}</p>
+          ) : (
+            <p className="text-[12px] text-text-3">
+              Este registro todavía no tiene informe de la IA. Cuando el sistema lo genere, va a aparecer acá.
+            </p>
+          )}
+          <p className="mt-3 border-t pt-2.5 text-[10.5px] text-text-3">
+            {esEmpleado
+              ? "Informe de productividad generado por la IA del sistema a partir de las gestiones y comisiones del backoffice (solo lectura)."
+              : "Informe de la IA del sistema para esta sucursal, a partir de las gestiones del backoffice (solo lectura)."}
+          </p>
+        </div>
+      )}
+    </PanelShell>
+  );
+}
+
+/*
+ * 045b-r3 — PANEL DE CATÁLOGO: compañía, producto o cobertura.
+ * Resumen (KPIs + navegación), productos (compañía) y análisis IA.
+ */
+function CatalogoPanel({
+  detalle,
+  onClose,
+  catalog,
+  companies,
+  currentProducts,
+  historicProducts,
+  onNavigate,
+}: {
+  detalle: CatalogoDetalleT;
+  onClose: () => void;
+  catalog: CatalogBlock;
+  companies: { name: string; policies: number; activePremium: number }[];
+  currentProducts: { name: string; value: number }[];
+  historicProducts: { name: string; value: number }[];
+  onNavigate: (d: CatalogoDetalleT) => void;
+}) {
+  const [pestana, setPestana] = useState<"resumen" | "lista" | "analisis">("resumen");
+  const clave = detalle.kind === "compania" ? detalle.name : detalle.row.id;
+
+  // Al navegar a otra entidad, el panel vuelve a arrancar por el resumen.
+  useEffect(() => {
+    setPestana("resumen");
+  }, [detalle.kind, clave]);
+
+  const norm = (s: string) => s.trim().toUpperCase();
+  const volumen = (name: string) => ({
+    actual: currentProducts.find((p) => norm(p.name) === norm(name))?.value,
+    historico: historicProducts.find((p) => norm(p.name) === norm(name))?.value,
+  });
+
+  if (detalle.kind === "cobertura") {
+    return (
+      <PanelShell
+        titulo="Análisis IA de la cobertura"
+        nombre={detalle.row.name}
+        badge={
+          detalle.row.analysisLevel ? (
+            <Badge tone={nivelIaTone(detalle.row.analysisLevel)}>{detalle.row.analysisLevel}</Badge>
+          ) : null
+        }
+        onClose={onClose}
+      >
+        <div className="space-y-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
+              Análisis IA de la cobertura
+            </p>
+            {detalle.row.analysis ? (
+              <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
+                {detalle.row.analysis}
+              </p>
+            ) : (
+              <p className="mt-1 text-[12px] text-text-3">
+                La IA todavía no generó el análisis de esta cobertura.
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
+              Categorización IA de tipo
+            </p>
+            {detalle.row.categorization ? (
+              <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
+                {detalle.row.categorization}
+              </p>
+            ) : (
+              <p className="mt-1 text-[12px] text-text-3">Sin categorización generada todavía.</p>
+            )}
+          </div>
+          <p className="border-t pt-2.5 text-[10.5px] text-text-3">
+            Generado por la IA del sistema en el backoffice (solo lectura).
+          </p>
+        </div>
+      </PanelShell>
+    );
+  }
+
+  if (detalle.kind === "compania") {
+    const metrics = companies.find((c) => c.name === detalle.name);
+    const prods = catalog.products.filter((p) => p.company === detalle.name);
+    return (
+      <PanelShell
+        titulo="Panel de la compañía"
+        nombre={detalle.name}
+        meta={`${number(metrics?.policies ?? 0)} pólizas cargadas · ${money(
+          metrics?.activePremium ?? 0,
+        )} de prima activa`}
+        onClose={onClose}
+        tabs={
+          <>
+            <PanelPill active={pestana === "resumen"} onClick={() => setPestana("resumen")}>
+              Resumen
+            </PanelPill>
+            <PanelPill active={pestana === "lista"} onClick={() => setPestana("lista")}>
+              Productos ({number(prods.length)})
+            </PanelPill>
+            <PanelPill active={pestana === "analisis"} onClick={() => setPestana("analisis")}>
+              Análisis IA
+            </PanelPill>
+          </>
+        }
+      >
+        {pestana === "resumen" && (
+          <div className="space-y-4">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <PanelKpi
+                label="Pólizas cargadas"
+                value={metrics ? number(metrics.policies) : "—"}
+                hint="Cartera actual"
+              />
+              <PanelKpi
+                label="Prima activa"
+                value={metrics ? money(metrics.activePremium) : "—"}
+                hint="Según el sistema"
+              />
+              <PanelKpi label="Productos" value={number(prods.length)} hint="Con análisis IA en el catálogo" />
+            </div>
+            <button
+              type="button"
+              onClick={() => setPestana("lista")}
+              className="w-full rounded-md border bg-subtle/40 px-3 py-2.5 text-left text-[12px] font-semibold text-text-2 transition-colors hover:bg-subtle"
+            >
+              Ver los {number(prods.length)} productos de esta compañía (pólizas, análisis y
+              recomendaciones) →
+            </button>
+            <p className="border-t pt-2.5 text-[10.5px] text-text-3">
+              Datos del backoffice (solo lectura). La compañía no tiene un análisis IA propio: el
+              análisis de la IA se ve en cada uno de sus productos.
+            </p>
+          </div>
+        )}
+        {pestana === "lista" && (
+          <div className="space-y-1.5">
+            {prods.map((prod) => {
+              const vol = volumen(prod.name);
+              return (
+                <button
+                  key={prod.id}
+                  type="button"
+                  onClick={() => onNavigate({ kind: "producto", row: prod })}
+                  className="group flex w-full items-center gap-3 rounded-md border bg-subtle/40 px-3 py-2.5 text-left transition-colors hover:bg-subtle"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12.5px] font-semibold text-text-1">{prod.name}</span>
+                    <span className="block truncate text-[11px] text-text-3">
+                      {vol.actual !== undefined ? `${number(vol.actual)} pólizas activas` : "—"}
+                      {vol.historico !== undefined ? ` · ${number(vol.historico)} históricas` : ""}
+                      {prod.analysis ? " · análisis IA" : " · sin análisis"}
+                    </span>
+                  </span>
+                  {prod.analysisLevel && (
+                    <Badge tone={nivelIaTone(prod.analysisLevel)}>{prod.analysisLevel}</Badge>
+                  )}
+                  <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-text-3 group-hover:text-text-2">
+                    Abrir
+                    <ChevronRight size={14} />
+                  </span>
+                </button>
+              );
+            })}
+            {prods.length === 0 && (
+              <p className="rounded-md border bg-subtle/40 px-3 py-6 text-center text-[12px] text-text-3">
+                No hay productos cargados para esta compañía en el catálogo.
+              </p>
+            )}
+          </div>
+        )}
+        {pestana === "analisis" && (
+          <div className="space-y-3">
+            {prods.map((prod) => (
+              <div key={prod.id} className="rounded-md border bg-subtle/40 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-text-1">
+                    {prod.name}
+                  </span>
+                  {prod.analysisLevel && (
+                    <Badge tone={nivelIaTone(prod.analysisLevel)}>{prod.analysisLevel}</Badge>
+                  )}
+                </div>
+                {prod.analysis ? (
+                  <p className="mt-1 whitespace-pre-line text-[11.5px] leading-relaxed text-text-2">
+                    {prod.analysis}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11.5px] text-text-3">Sin análisis IA generado todavía.</p>
+                )}
+                {prod.recommendation && (
+                  <p className="mt-1.5 whitespace-pre-line border-t pt-1.5 text-[11px] leading-relaxed text-text-3">
+                    {prod.recommendation}
+                  </p>
+                )}
+              </div>
+            ))}
+            {prods.length === 0 && (
+              <p className="text-[12px] text-text-3">
+                No hay productos cargados para esta compañía en el catálogo.
+              </p>
+            )}
+            <p className="border-t pt-2.5 text-[10.5px] text-text-3">
+              Análisis generados por la IA del sistema en el backoffice (solo lectura).
+            </p>
+          </div>
+        )}
+      </PanelShell>
+    );
+  }
+
+  // Producto (después de cobertura y compañía, el detalle es de tipo producto).
+  const prod = detalle.row;
+  const vol = volumen(prod.name);
+  const compDeProd = prod.company ? companies.find((c) => c.name === prod.company) : undefined;
+  return (
+    <PanelShell
+      titulo="Panel del producto"
+      nombre={prod.name}
+      meta={prod.company ? `Compañía: ${prod.company}` : undefined}
+      badge={
+        prod.analysisLevel ? (
+          <Badge tone={nivelIaTone(prod.analysisLevel)}>{prod.analysisLevel}</Badge>
+        ) : null
+      }
+      onClose={onClose}
+      tabs={
+        <>
+          <PanelPill active={pestana === "resumen"} onClick={() => setPestana("resumen")}>
+            Resumen
+          </PanelPill>
+          <PanelPill active={pestana === "analisis"} onClick={() => setPestana("analisis")}>
+            Análisis IA
+          </PanelPill>
+        </>
+      }
+    >
+      {pestana === "resumen" && (
+        <div className="space-y-4">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <PanelKpi
+              label="Pólizas activas (hoy)"
+              value={vol.actual !== undefined ? number(vol.actual) : "—"}
+              hint="Cartera actual"
+            />
+            <PanelKpi
+              label="Pólizas históricas"
+              value={vol.historico !== undefined ? number(vol.historico) : "—"}
+              hint="Acumulado del sistema"
+            />
+            <PanelKpi label="Compañía" value={prod.company ?? "—"} hint="Del catálogo" />
+          </div>
+          {prod.company && (
+            <button
+              type="button"
+              onClick={() => prod.company && onNavigate({ kind: "compania", name: prod.company })}
+              className="group w-full rounded-md border bg-subtle/40 px-3 py-2.5 text-left transition-colors hover:bg-subtle"
+            >
+              <p className="text-[10.5px] uppercase tracking-wide text-text-3">Compañía</p>
+              <p className="mt-0.5 truncate text-[12.5px] font-semibold text-text-1">{prod.company}</p>
+              <p className="mt-0.5 text-[11px] text-text-3">
+                {compDeProd
+                  ? `${number(compDeProd.policies)} pólizas cargadas · ${money(compDeProd.activePremium)} de prima activa · `
+                  : ""}
+                ver el panel de la compañía →
+              </p>
+            </button>
+          )}
+          <p className="border-t pt-2.5 text-[10.5px] text-text-3">
+            Volúmenes del motor de datos (pólizas agrupadas por producto) y datos del catálogo
+            (solo lectura).
+          </p>
+        </div>
+      )}
+      {pestana === "analisis" && (
+        <div className="space-y-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
+              Análisis IA general
+            </p>
+            {prod.analysis ? (
+              <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
+                {prod.analysis}
+              </p>
+            ) : (
+              <p className="mt-1 text-[12px] text-text-3">
+                La IA todavía no generó el análisis de este producto.
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
+              Recomendación IA de mejoras
+            </p>
+            {prod.recommendation ? (
+              <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
+                {prod.recommendation}
+              </p>
+            ) : (
+              <p className="mt-1 text-[12px] text-text-3">Sin recomendación generada todavía.</p>
+            )}
+          </div>
+          <p className="border-t pt-2.5 text-[10.5px] text-text-3">
+            Generado por la IA del sistema en el backoffice (solo lectura).
+          </p>
+        </div>
+      )}
+    </PanelShell>
   );
 }
 
@@ -5234,17 +5634,25 @@ export function ExecDashboard() {
         onReforward={reforwardFromVault}
       />
 
-      {/* 045 — informe IA completo de Equipo (empleado u oficina). */}
-      {equipoDetalle && (
-        <EquipoReporteModal detalle={equipoDetalle} onClose={() => setEquipoDetalle(null)} />
+      {/* 045b-r3 — paneles de entidad: empleado / oficina / compañía / producto. */}
+      {equipoDetalle && data?.team && (
+        <EquipoPanel
+          detalle={equipoDetalle}
+          team={data.team}
+          onNavigate={setEquipoDetalle}
+          onClose={() => setEquipoDetalle(null)}
+        />
       )}
 
-      {catalogoDetalle && (
-        <CatalogoReporteModal
+      {catalogoDetalle && data?.catalog && (
+        <CatalogoPanel
           detalle={catalogoDetalle}
-          onClose={() => setCatalogoDetalle(null)}
-          productos={data?.catalog?.products ?? []}
+          catalog={data.catalog}
           companies={data?.companies ?? []}
+          currentProducts={data?.currentProducts ?? []}
+          historicProducts={data?.historicProducts ?? []}
+          onNavigate={setCatalogoDetalle}
+          onClose={() => setCatalogoDetalle(null)}
         />
       )}
     </div>
