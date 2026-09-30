@@ -7,6 +7,7 @@
  * pública, copia el link o salta al panel de control del cliente.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Archive,
   ArchiveRestore,
@@ -18,6 +19,7 @@ import {
   PauseCircle,
   Pencil,
   PlayCircle,
+  Send,
   Ticket,
   RefreshCcw,
   Trash2,
@@ -88,6 +90,9 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
   const [vista, setVista] = useState<"propuestas" | "resultados">("propuestas");
   const [resultados, setResultados] = useState<PiezaResultsSummaryDto[] | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  /* 044b-B16 — «Enviar al cliente»: fila con el envío en curso. */
+  const [sendingId, setSendingId] = useState<string | null>(null);
+  const router = useRouter();
 
   const load = useCallback(
     async (dirLoaded: boolean) => {
@@ -183,6 +188,53 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
       setTimeout(() => setCopiedId(null), 1500);
     } catch {
       /* sin clipboard */
+    }
+  };
+
+  /**
+   * 044b-B16 — «Enviar al cliente»: registra el envío en el embudo (marca la
+   * pieza como enviada y garantiza contacto/conversación) y abre el chat del
+   * cliente con el mensaje + el link ya cargados, listos para revisar y
+   * mandar. Si el cliente no tiene teléfono, queda enviada y se copia el link.
+   */
+  const handleSend = async (p: ProposalDto) => {
+    if (sendingId) return;
+    setSendingId(p.id);
+    setError("");
+    try {
+      const res = await fetch(`/api/proposals/${p.id}/send`, { method: "POST" });
+      const body = (await res.json().catch(() => null)) as
+        | { proposal?: ProposalDto & { contactId?: string | null }; error?: { message?: string } }
+        | null;
+      if (!res.ok || !body?.proposal) {
+        throw new Error(body?.error?.message ?? "No se pudo registrar el envío");
+      }
+      const updated = body.proposal;
+      setProposals((prev) =>
+        prev
+          ? prev.map((x) =>
+              x.id === p.id ? { ...x, status: "enviada" as ProposalDto["status"] } : x
+            )
+          : prev
+      );
+      const contactId = updated.contactId ?? null;
+      if (contactId) {
+        const first = (p.clientName || "").trim().split(/\s+/)[0] ?? "";
+        const salute = first ? `Hola ${first}!` : "Hola!";
+        const draft = `${salute} ${p.title || "Te dejo una propuesta"}${
+          p.offer ? ` — ${p.offer}` : ""
+        }\n${window.location.origin}${p.publicUrl}`;
+        router.push(`/inbox?contact=${contactId}&draft=${encodeURIComponent(draft)}`);
+      } else {
+        await copy(p);
+        setError(
+          "El cliente no tiene teléfono en el sistema: la pieza quedó marcada como enviada y el link está copiado para mandarlo por otra vía."
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo enviar la pieza");
+    } finally {
+      setSendingId(null);
     }
   };
 
@@ -390,6 +442,21 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
                 </span>
                 <span className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold ${st.className}`}>{st.label}</span>
                 <div className="flex items-center gap-1">
+                  {/* 044b-B16 — Enviar al cliente: registra el envío y abre el chat cargado. */}
+                  <button
+                    type="button"
+                    onClick={() => void handleSend(p)}
+                    disabled={sendingId === p.id}
+                    className="inline-flex items-center gap-1 rounded-lg border border-brand-soft bg-brand-tint px-2 py-1.5 text-[11px] font-semibold text-brand-text transition-colors hover:opacity-90 disabled:opacity-50"
+                    title="Enviar al cliente: registra el envío y abre el chat con el mensaje y el link listos para revisar y mandar"
+                  >
+                    {sendingId === p.id ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <Send size={12} />
+                    )}
+                    Enviar
+                  </button>
                   <button
                     type="button"
                     onClick={() => setEditing(p)}
