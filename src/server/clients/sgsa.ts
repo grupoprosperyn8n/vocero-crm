@@ -175,6 +175,19 @@ function str(v: unknown): string | null {
   return null;
 }
 
+/**
+ * 045 — Campos aiText de Airtable: llegan como {state, value}.
+ * El texto útil está en `value` (state "generated"); con "error" viene null.
+ */
+function aiTextValue(v: unknown): string | null {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    const o = v as { value?: unknown };
+    if (typeof o.value === "string" && o.value.trim()) return o.value.trim();
+  }
+  return null;
+}
+
 /** Busca clientes por nombre / teléfono / DNI y los mapea a la tarjeta. */
 export async function searchClients(
   q: string,
@@ -206,7 +219,7 @@ export async function searchClients(
     const oficinaId = Array.isArray(f["OFICINAS"])
       ? (f["OFICINAS"] as string[])[0]
       : undefined;
-    const perfil = str(f["PERFIL_DE_RIESGO_IA"]);
+    const perfil = aiTextValue(f["PERFIL_DE_RIESGO_IA"]);
     return {
       recordId: r.id,
       nombre: str(f["NOMBRES"]) ?? "",

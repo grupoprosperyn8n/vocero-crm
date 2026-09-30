@@ -12,6 +12,8 @@ export type TabId =
   | "seguimiento"
   | "campanas"
   | "archivos"
+  | "calidad"
+  | "equipo"
   | "migracion";
 
 export type HelpAction =
@@ -418,6 +420,66 @@ export const MODULE_HELP: Record<
     suggestions: [
       {
         text: "Ver la cartera actual",
+        action: { kind: "goto", tab: "cartera" },
+      },
+    ],
+  },
+
+  calidad: {
+    title: "Calidad y experiencia",
+    tagline:
+      "¿Cómo nos califican los clientes? Las encuestas y las denuncias, con lectura de IA.",
+    what: [
+      "Reúne las encuestas de atención post-venta (estrellas, servicio y comentario) y las denuncias de siniestros (accidente, robo, incendio).",
+      "La IA del sistema ya marcó la urgencia de cada respuesta y la culpabilidad de cada denuncia: acá llegan listas para usar.",
+    ],
+    measures: [
+      "Satisfacción promedio, reparto de estrellas y evolución de las encuestas.",
+      "Urgencia IA de cada respuesta: quiénes hay que contactar ya.",
+      "Denuncias por tipo con la culpabilidad que determinó la IA y su informe.",
+    ],
+    usage: [
+      "Empezá por las respuestas marcadas «Atender urgente»: son clientes enojados o problemas graves.",
+      "Mirá qué servicio saca las mejores y las peores notas: ahí está la mejora concreta.",
+      "Ante una denuncia, leé la culpabilidad IA antes de definir una estrategia con el cliente.",
+    ],
+    suggestions: [
+      {
+        text: "Ver los clientes con perfil de riesgo IA → Retención",
+        action: { kind: "goto", tab: "retencion" },
+      },
+      {
+        text: "Ver quién está listo para ofrecerle algo → Venta cruzada",
+        action: { kind: "goto", tab: "cross" },
+      },
+    ],
+  },
+
+  equipo: {
+    title: "Equipo",
+    tagline:
+      "Cómo viene el rendimiento del equipo y las sucursales, con los informes de IA del sistema.",
+    what: [
+      "Cada empleado y cada oficina con sus gestiones del mes y del año, más el informe de productividad que ya genera la IA del sistema.",
+      "Si el sistema tiene cargadas comisiones, también aparecen acá.",
+    ],
+    measures: [
+      "Gestiones del mes y del año por persona y por sucursal.",
+      "Nivel de productividad IA (🟢/🟡/🟠/🔴) de cada empleado y oficina.",
+      "Comisiones acumuladas (cuando el sistema las tiene cargadas).",
+    ],
+    usage: [
+      "Compará gestiones del mes contra el año para ver el ritmo de cada persona.",
+      "Leé el informe IA del que viene flojo: dice qué está pasando y qué conviene hacer.",
+      "Mirá las oficinas: si una cae, puede ser carga de trabajo o falta de seguimiento.",
+    ],
+    suggestions: [
+      {
+        text: "Ver las pólizas por vencer → Retención",
+        action: { kind: "goto", tab: "retencion" },
+      },
+      {
+        text: "Ver la cartera por oficina",
         action: { kind: "goto", tab: "cartera" },
       },
     ],

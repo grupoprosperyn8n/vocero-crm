@@ -71,6 +71,7 @@ const POLIZA_FIELDS = [
   "COMPANIA LINK",
   "OFICINA",
   "TIPO ENDOSO / ANULACIÓN",
+  "INFORME_POLIZA_IA",
 ] as const;
 
 const GESTION_FIELDS = [
@@ -90,6 +91,29 @@ function str(v: unknown): string | null {
   if (typeof v === "string" && v.trim()) return v.trim();
   if (typeof v === "number") return String(v);
   return null;
+}
+
+/**
+ * 045 — Campos de IA de Airtable (tipo aiText): llegan como {state, value}.
+ * `state: "error"` = la generación falló en el backoffice (el value viene null);
+ * `"generated"` = texto listo. Un string plano se acepta tal cual.
+ */
+function aiText(v: unknown): { value: string | null; state: string | null } {
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    const o = v as { state?: unknown; value?: unknown };
+    const state = typeof o.state === "string" ? o.state : null;
+    const value = typeof o.value === "string" && o.value.trim() ? o.value.trim() : null;
+    return { value, state };
+  }
+  if (typeof v === "string" && v.trim()) return { value: v.trim(), state: "generated" };
+  return { value: null, state: null };
+}
+
+/** Primer semáforo (🟢/🟡/🟠/🔴) del texto IA + su etiqueta corta (ej. «🟡 SEGUIMIENTO»). */
+function nivelDe(text: string | null): string | null {
+  if (!text) return null;
+  const m = text.match(/(?:🟢|🟡|🟠|🔴)\s*[^\n\u2013:,-]{2,28}/);
+  return m ? m[0].trim() : null;
 }
 
 function num(v: unknown): number | null {
@@ -258,6 +282,7 @@ export async function getClientFicha(input: {
   const f = cliente.fields;
   const telDigits =
     str(f["TELEFONO NORMALIZADO"]) ?? phoneDigits(str(f["TELEFONO"]) ?? "");
+  const perfilIa = aiText(f["PERFIL_DE_RIESGO_IA"]);
 
   /* --- Pólizas --- */
   const policyIds = linkIds(f["POLIZAS"]).slice(0, 80);
@@ -285,6 +310,7 @@ export async function getClientFicha(input: {
       const prodId = firstLink(pf["PRODUCTO LINK"]);
       const compId = firstLink(pf["COMPANIA LINK"]);
       const prodInfo = prodId ? productos.get(prodId) : undefined;
+      const informe = aiText(pf["INFORME_POLIZA_IA"]);
       return {
         id: r.id,
         numero: str(pf["N° DE POLIZA"]),
@@ -298,6 +324,8 @@ export async function getClientFicha(input: {
         vencimiento: dayText(pf["FECHA VENCIMIENTO DE LA POLIZA"]),
         anulacion: dayText(pf["FECHA DE ANULACION"]),
         oficina: str(pf["OFICINA"]),
+        informeIa: informe.value,
+        informeNivel: nivelDe(informe.value),
       } satisfies FichaPolicy;
     })
     .sort((a, b) => (b.inicio ?? "").localeCompare(a.inicio ?? ""));
@@ -421,9 +449,11 @@ export async function getClientFicha(input: {
     oficina: null,
     fotoUrl: f["FOTO PERFIL"] ? `/api/avatars/cli:${cliente.id}` : null,
     perfilRiesgo: (() => {
-      const p = str(f["PERFIL_DE_RIESGO_IA"]);
+      const p = perfilIa.value;
       return p ? p.slice(0, 2000) : null;
     })(),
+    perfilRiesgoEstado: perfilIa.state,
+    perfilRiesgoNivel: nivelDe(perfilIa.value),
     fechaAlta: dayText(f["FECHA DE ALTA"]),
     fechaBaja: dayText(f["FECHA DE BAJA"]),
     idUnico: str(f["ID_UNICO_CLIENTE"]),

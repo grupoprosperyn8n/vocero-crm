@@ -19,6 +19,7 @@ import {
   CalendarClock,
   ClipboardCopy,
   ClipboardList,
+  Database,
   ExternalLink,
   FileText,
   History as HistoryIcon,
@@ -30,6 +31,7 @@ import {
   Phone,
   PlayCircle,
   RefreshCw,
+  ShieldCheck,
   Sparkles,
   Star,
   Target,
@@ -317,6 +319,30 @@ function SectionTitle({ icon, children, extra }: { icon: React.ReactNode; childr
   );
 }
 
+/*
+ * 045 — Sello «de dónde viene este dato y para qué mirarlo».
+ * Diego lo pidió textual: «qué dato trae y de dónde, para qué mirarlo».
+ */
+function FuenteNota({ fuente, para }: { fuente: string; para: string }) {
+  return (
+    <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-2.5 text-[10.5px] leading-relaxed text-text-3">
+      <span className="inline-flex items-center gap-1 rounded-full border bg-subtle px-2 py-0.5 font-semibold whitespace-nowrap">
+        <Database size={10} /> {fuente}
+      </span>
+      <span>{para}</span>
+    </p>
+  );
+}
+
+/** 045 — Clase del chip según el semáforo (🟢/🟡/🟠/🔴) que trae el texto IA. */
+function nivelClase(nivel: string | null | undefined): string {
+  if (!nivel) return "border bg-subtle text-text-2";
+  if (nivel.includes("🟢")) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+  if (nivel.includes("🟠")) return "border-orange-500/30 bg-orange-500/10 text-orange-700";
+  if (nivel.includes("🔴")) return "border-rose-500/30 bg-rose-500/10 text-rose-700";
+  return "border-amber-500/30 bg-amber-500/10 text-amber-700";
+}
+
 function ChartCard({ title, children, empty }: { title: string; children: React.ReactNode; empty?: boolean }) {
   return (
     <div className="rounded-xl border bg-card p-3">
@@ -332,9 +358,11 @@ function ChartCard({ title, children, empty }: { title: string; children: React.
   );
 }
 
-/* 044b-B14 — pestañas del dashboard individual del cliente. */
+/* 044b-B14 — pestañas del dashboard individual del cliente.
+   045 — se suma «Análisis IA» (datos de IA con origen y para qué). */
 const TABS_CLIENTE = [
   { id: "resumen", label: "Resumen", icon: <TrendingUp size={13} /> },
+  { id: "ia", label: "Análisis IA", icon: <Sparkles size={13} /> },
   { id: "monitoreo", label: "Monitoreo", icon: <Bell size={13} /> },
   { id: "piezas", label: "Piezas y ventas", icon: <FileText size={13} /> },
   { id: "historial", label: "Historial", icon: <HistoryIcon size={13} /> },
@@ -366,7 +394,7 @@ function PanelBody({
   const [editing, setEditing] = useState<ProposalDto | null>(null);
   const [historyFor, setHistoryFor] = useState<ProposalDto | null>(null);
   /* 044b-B14 — pestañas del dashboard individual del cliente. */
-  const [tab, setTab] = useState<"resumen" | "monitoreo" | "piezas" | "historial">(
+  const [tab, setTab] = useState<"resumen" | "ia" | "monitoreo" | "piezas" | "historial">(
     "resumen"
   );
 
@@ -542,6 +570,14 @@ function PanelBody({
       </div>
       )}
 
+      {tab === "ia" && (
+        <IaDelCliente
+          ficha={ficha}
+          primer={customer.name.split(" ")[0] ?? customer.name}
+          onGoTab={setTab}
+        />
+      )}
+
       {tab === "monitoreo" && <MonitoreoDelCliente customer={customer} dni={ficha.dni} />}
 
       {tab === "piezas" && (
@@ -668,6 +704,10 @@ function PanelBody({
           Respuestas y vouchers del cliente
         </SectionTitle>
         <PiezasDelCliente customer={customer} />
+        <FuenteNota
+          fuente="CRM Vocero › propuestas, respuestas y cupones"
+          para="Ver si el cliente respondió, abrió o canjeó lo que le mandamos (formularios y vouchers)."
+        />
       </section>
       </div>
       )}
@@ -770,6 +810,232 @@ function PanelBody({
  * emitidos. Misma vista para todos los accesos: ficha, cola, retención,
  * reactivación y venta cruzada — «misma información, dos puertas de entrada».
  */
+/*
+ * 045 — Pestaña «Análisis IA» del cliente: los datos de IA que ya genera el
+ * backoffice, SEGMENTADOS y cada uno con su origen («de dónde viene») y su
+ * para qué. Aparte del análisis general del tablero: acá es el cliente UNO.
+ */
+function IaDelCliente({
+  ficha,
+  primer,
+  onGoTab,
+}: {
+  ficha: ClientFichaDto;
+  primer: string;
+  onGoTab: (tab: "monitoreo" | "piezas") => void;
+}) {
+  const conInforme = ficha.policies.filter((p) => p.informeIa);
+  const perfilOk = !!ficha.perfilRiesgo;
+  const perfilError = !ficha.perfilRiesgo && ficha.perfilRiesgoEstado === "error";
+  const perfilViejo = perfilOk && ficha.perfilRiesgoEstado !== "generated";
+
+  return (
+    <div className="space-y-5">
+      {/* Resumen IA */}
+      <section>
+        <SectionTitle icon={<Sparkles size={13} />}>Análisis IA de {primer}</SectionTitle>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <KpiChip
+            icon={<ShieldCheck size={15} />}
+            label="Perfil de riesgo"
+            value={
+              perfilOk
+                ? (ficha.perfilRiesgoNivel ?? "generado")
+                : perfilError
+                  ? "error en backoffice"
+                  : "sin generar"
+            }
+            tone={
+              perfilOk
+                ? ficha.perfilRiesgoNivel?.includes("🔴") || ficha.perfilRiesgoNivel?.includes("🟠")
+                  ? "warn"
+                  : "good"
+                : perfilError
+                  ? "bad"
+                  : "default"
+            }
+          />
+          <KpiChip
+            icon={<FileText size={15} />}
+            label="Pólizas con informe IA"
+            value={`${conInforme.length} de ${ficha.policies.length}`}
+            tone={conInforme.length > 0 ? "good" : "default"}
+          />
+          <KpiChip
+            icon={<FileText size={15} />}
+            label="Propuestas del cliente"
+            value={String(ficha.proposals.length)}
+          />
+        </div>
+      </section>
+
+      {/* Perfil de riesgo IA */}
+      <section className="rounded-xl border bg-card p-4">
+        <SectionTitle icon={<ShieldCheck size={13} />}>Perfil de riesgo IA</SectionTitle>
+        {perfilOk ? (
+          <>
+            {ficha.perfilRiesgoNivel && (
+              <span
+                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11.5px] font-bold ${nivelClase(
+                  ficha.perfilRiesgoNivel
+                )}`}
+              >
+                {ficha.perfilRiesgoNivel}
+              </span>
+            )}
+            <p className="mt-2 whitespace-pre-line text-[12.5px] leading-relaxed text-text-2">
+              {ficha.perfilRiesgo}
+            </p>
+            {perfilViejo && (
+              <p className="mt-2 rounded-lg border border-dashed bg-subtle/40 px-3 py-2 text-[11px] leading-relaxed text-text-3">
+                Última versión disponible: el backoffice no pudo regenerar este análisis
+                ({ficha.perfilRiesgoEstado === "error" ? "dependencia vacía o límite de IA" : ficha.perfilRiesgoEstado}).
+              </p>
+            )}
+          </>
+        ) : perfilError ? (
+          <p className="rounded-lg border border-dashed bg-subtle/40 px-3 py-3 text-[12.5px] leading-relaxed text-text-3">
+            El backoffice reportó un <strong>error</strong> al generar el análisis de riesgo IA de
+            este cliente (no hay texto disponible). Se puede reintentar la generación desde el
+            sistema de gestión.
+          </p>
+        ) : (
+          <p className="rounded-lg border border-dashed bg-subtle/40 px-3 py-3 text-[12.5px] text-text-3">
+            Todavía no se generó el perfil de riesgo IA de {primer}.
+          </p>
+        )}
+        <FuenteNota
+          fuente="Airtable SGSA › CLIENTES › PERFIL_DE_RIESGO_IA"
+          para="Anticipar riesgo de fuga y priorizar la atención (fidelizar, subir cobertura o intervenir) antes de la renovación."
+        />
+      </section>
+
+      {/* Informes IA de las pólizas */}
+      <section className="rounded-xl border bg-card p-4">
+        <SectionTitle
+          icon={<FileText size={13} />}
+          extra={
+            conInforme.length > 0 ? (
+              <span className="rounded-full border bg-subtle px-2 py-0.5 text-[10.5px] font-semibold text-text-3">
+                {conInforme.length} {conInforme.length === 1 ? "informe" : "informes"}
+              </span>
+            ) : undefined
+          }
+        >
+          Informes IA de sus pólizas
+        </SectionTitle>
+        {conInforme.length === 0 ? (
+          <p className="rounded-lg border border-dashed bg-subtle/40 px-3 py-3 text-[12.5px] text-text-3">
+            Ninguna póliza de {primer} tiene informe IA generado todavía.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {conInforme.map((p) => (
+              <article key={p.id} className="rounded-lg border bg-subtle/40 p-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <strong className="text-[12.5px] text-text-1">
+                    {p.productoNombre ?? "Póliza"}
+                    {p.numero ? ` · ${p.numero}` : ""}
+                  </strong>
+                  {p.informeNivel && (
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-bold ${nivelClase(
+                        p.informeNivel
+                      )}`}
+                    >
+                      {p.informeNivel}
+                    </span>
+                  )}
+                  {!p.vigente && (
+                    <span className="rounded-full border bg-subtle px-2 py-0.5 text-[10.5px] font-semibold text-text-3">
+                      no vigente
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1.5 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
+                  {p.informeIa}
+                </p>
+              </article>
+            ))}
+          </div>
+        )}
+        <FuenteNota
+          fuente="Airtable SGSA › POLIZAS › INFORME_POLIZA_IA"
+          para="Saber cómo está cada póliza a nivel operativo y administrativo (cobro, vigencia, datos incompletos) sin abrir el backoffice, y decidir qué corregir."
+        />
+      </section>
+
+      {/* Mapa de datos del cliente */}
+      <section className="rounded-xl border bg-card p-4">
+        <SectionTitle icon={<Database size={13} />}>
+          Dónde está cada dato de {primer}
+        </SectionTitle>
+        <ul className="space-y-2 text-[12px] leading-relaxed text-text-2">
+          <li className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[10px] font-bold text-brand-text">
+              ★
+            </span>
+            <strong>Calificaciones y urgencia IA</strong>
+            <span className="text-text-3">
+              — Airtable CALIFICACIONES (ESTRELLAS · URGENCIA DE ATENCION (AI))
+            </span>
+            <button
+              type="button"
+              onClick={() => onGoTab("monitoreo")}
+              className="rounded-full border px-2 py-0.5 text-[10.5px] font-semibold text-brand-text transition-colors hover:bg-brand-tint"
+            >
+              Ir a Monitoreo →
+            </button>
+          </li>
+          <li className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[10px] font-bold text-brand-text">
+              !
+            </span>
+            <strong>Alertas del backoffice</strong>
+            <span className="text-text-3">— Airtable ALERTAS (estado y seguimiento)</span>
+            <button
+              type="button"
+              onClick={() => onGoTab("monitoreo")}
+              className="rounded-full border px-2 py-0.5 text-[10.5px] font-semibold text-brand-text transition-colors hover:bg-brand-tint"
+            >
+              Ir a Monitoreo →
+            </button>
+          </li>
+          <li className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[10px] font-bold text-brand-text">
+              ✓
+            </span>
+            <strong>Respuestas y vouchers</strong>
+            <span className="text-text-3">
+              — CRM Vocero (propuestas, respuestas y cupones: si contestó o canjeó)
+            </span>
+            <button
+              type="button"
+              onClick={() => onGoTab("piezas")}
+              className="rounded-full border px-2 py-0.5 text-[10.5px] font-semibold text-brand-text transition-colors hover:bg-brand-tint"
+            >
+              Ir a Piezas →
+            </button>
+          </li>
+          <li className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[10px] font-bold text-brand-text">
+              §
+            </span>
+            <strong>Pólizas, gestiones y prima</strong>
+            <span className="text-text-3">
+              — Airtable SGSA (POLIZAS · GESTIÓN GENERAL), en Resumen e Historial
+            </span>
+          </li>
+        </ul>
+        <FuenteNota
+          fuente="Este mapa"
+          para="Saber de un vistazo dónde vive cada dato del cliente y en qué pestaña mirarlo."
+        />
+      </section>
+    </div>
+  );
+}
+
 function PiezasDelCliente({ customer }: { customer: PanelCustomer }) {
   const [respuestas, setRespuestas] = useState<ClientPiezaRespuestaDto[] | null>(null);
   const [vouchers, setVouchers] = useState<ClientPiezaVoucherDto[] | null>(null);
@@ -1094,6 +1360,10 @@ function MonitoreoDelCliente({ customer, dni }: { customer: PanelCustomer; dni?:
             }
           />
         </div>
+        <FuenteNota
+          fuente="Airtable SGSA › ALERTAS y CALIFICACIONES"
+          para="Seguimiento del backoffice: qué se avisó al cliente y cómo calificó su atención (con la urgencia IA que marcó el sistema)."
+        />
       </section>
 
       {/* Gráficas */}

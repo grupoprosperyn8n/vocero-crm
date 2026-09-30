@@ -206,6 +206,17 @@ function percent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+/*
+ * 045 — Semáforo de los niveles IA que ya genera el sistema (🟢/🟡/🟠/🔴).
+ * El texto llega tal cual de Airtable; acá solo se elige el tono del chip.
+ */
+function nivelIaTone(level?: string): "success" | "warning" | "accent" | "neutral" {
+  if (!level) return "neutral";
+  if (level.includes("🟢")) return "success";
+  if (level.includes("🔴") || level.includes("🟠")) return "warning";
+  return "accent";
+}
+
 function presetRange(preset: "month" | "lastMonth" | "year" | "all") {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -1368,19 +1379,26 @@ const MODULE_TABS: { id: TabId; label: string; Icon: typeof TrendingUp }[] = [
   { id: "seguimiento", label: "Seguimiento", Icon: History },
   { id: "campanas", label: "Campañas 360", Icon: Megaphone },
   { id: "archivos", label: "Archivos", Icon: FolderOpen },
+  { id: "calidad", label: "Calidad y experiencia", Icon: Star },
+  { id: "equipo", label: "Equipo", Icon: Users },
   { id: "migracion", label: "Calidad de datos", Icon: Database },
 ];
 
 /* 044b Bloque 3 — Agrupación de módulos (Camino 3 de la maqueta): 5 grupos con subpestañas. */
 const MODULE_GROUPS: { id: string; label: string; Icon: typeof TrendingUp; tabs: TabId[] }[] = [
-  { id: "analisis", label: "Análisis", Icon: BarChart3, tabs: ["pulso", "cartera", "migracion"] },
+  {
+    id: "analisis",
+    label: "Análisis",
+    Icon: BarChart3,
+    tabs: ["pulso", "cartera", "equipo", "migracion"],
+  },
   {
     id: "oportunidades",
     label: "Oportunidades",
     Icon: Target,
     tabs: ["cola", "retencion", "reactivacion", "cross"],
   },
-  { id: "clientes", label: "Clientes", Icon: Users, tabs: ["clientes", "seguimiento"] },
+  { id: "clientes", label: "Clientes", Icon: Users, tabs: ["clientes", "calidad", "seguimiento"] },
   { id: "marketing", label: "Marketing", Icon: Megaphone, tabs: ["constructor", "propuestas", "campanas", "archivos"] },
   { id: "crm", label: "CRM", Icon: MessageSquareText, tabs: ["crm"] },
 ];
@@ -1407,6 +1425,8 @@ const TAB_FILTERS: Record<
   seguimiento: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   campanas: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   archivos: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
+  calidad: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
+  equipo: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
   migracion: { date: false, office: false, product: false, channel: false, employee: false, company: false, search: false },
 };
 
@@ -1424,6 +1444,8 @@ const FILTER_SCOPE: Record<TabId, string> = {
   seguimiento: "El archivo comercial tiene sus propios filtros: quién gestiona, origen (cola, ficha o propuesta) y búsqueda por cliente.",
   campanas: "El tablero de campañas tiene sus propios filtros: estado del embudo y búsqueda por cliente.",
   archivos: "El contenedor de archivos es global (fotos y videos de todo el equipo): los filtros de cartera no lo afectan.",
+  calidad: "Módulo global de encuestas y denuncias: los filtros de cartera no lo afectan.",
+  equipo: "Módulo global de rendimiento del equipo: los filtros de cartera no lo afectan.",
   migracion: "Este módulo muestra la base completa: los filtros no lo afectan.",
 };
 
@@ -3123,18 +3145,25 @@ export function ExecDashboard() {
               onClick={() => gotoList("pulso", "siniestros")}
               icon={<Activity size={17} />}
             />
+            <Kpi
+              title="Perfil de riesgo IA"
+              value={number(data.opportunity.riskProfiled ?? 0)}
+              subtitle="Clientes con análisis de riesgo generado por la IA"
+              icon={<ShieldCheck size={17} />}
+              tone="accent"
+            />
           </section>
 
           <Section
             title="Retención: de contar bajas a anticiparlas"
-            subtitle="El sistema ya puede combinar historia y situación contractual actual"
+            subtitle="El riesgo ya no es solo una fecha: cada cliente trae su perfil de riesgo IA"
           >
             <div className="rounded-md border border-brand-soft bg-brand-tint px-4 py-3">
-              <h3 className="text-[12.5px] font-bold text-brand-text">Próxima evolución</h3>
+              <h3 className="text-[12.5px] font-bold text-brand-text">Riesgo IA activo en toda la cartera</h3>
               <p className="mt-1 text-[12.5px] text-text-2">
-                Construir un score de riesgo 0–100 combinando antigüedad, anulaciones, siniestros,
-                cantidad de pólizas, forma de pago, cercanía al vencimiento y comportamiento de
-                atención.
+                Cada cliente de las listas muestra su perfil de riesgo IA (🟢 bajo · 🟡 medio · 🔴 alto) y
+                cada póliza su semáforo del informe IA. Abrí una lista para ver el detalle por cliente, o
+                entrá al Cliente 360° para leer el análisis completo y decidir con contexto.
               </p>
             </div>
           </Section>
@@ -3604,6 +3633,289 @@ export function ExecDashboard() {
             <div className="rounded-lg border bg-card px-4 py-8 text-center text-[12.5px] text-text-3">
               Sin resultados. Probá con otro nombre, DNI o teléfono.
             </div>
+          )}
+        </div>
+      )}
+
+      {tab === "calidad" && (
+        <div className="space-y-3">
+          <HelpZone help={MODULE_HELP.calidad} id="calidad" onAction={applyHelpAction} />
+
+          {!data.quality || data.quality.ratings.total === 0 ? (
+            <Section
+              title="Calidad y experiencia"
+              subtitle="Encuestas y denuncias de Airtable con la lectura de la IA (solo lectura)"
+            >
+              <div className="rounded-md border bg-subtle/50 px-4 py-8 text-center text-[12.5px] text-text-3">
+                Todavía no hay encuestas ni denuncias cargadas en el backoffice.
+              </div>
+            </Section>
+          ) : (
+            <>
+              <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Kpi
+                  title="Encuestas post-atención"
+                  value={number(data.quality.ratings.total)}
+                  subtitle="Calificaciones cargadas en el backoffice"
+                  icon={<Star size={17} />}
+                  tone="accent"
+                />
+                <Kpi
+                  title="Satisfacción promedio"
+                  value={`${data.quality.ratings.average.toFixed(2)} ★`}
+                  subtitle="De 1 a 5 estrellas"
+                  icon={<Star size={17} />}
+                  tone={data.quality.ratings.average >= 4 ? "success" : "warning"}
+                />
+                <Kpi
+                  title="Para contactar ya"
+                  value={number(data.quality.ratings.urgent)}
+                  subtitle="La IA marcó estas respuestas como urgentes"
+                  icon={<AlertTriangle size={17} />}
+                  tone={data.quality.ratings.urgent > 0 ? "danger" : "default"}
+                />
+                <Kpi
+                  title="Denuncias de siniestros"
+                  value={number(data.quality.claims.total)}
+                  subtitle="Accidente, robo e incendio"
+                  icon={<ShieldCheck size={17} />}
+                />
+              </section>
+
+              <Section
+                title="Cómo nos califican"
+                subtitle="Reparto de estrellas y urgencia IA de cada respuesta"
+              >
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-2">
+                    {data.quality.ratings.distribution.map((row, _i, dist) => {
+                      const max = Math.max(...dist.map((d) => d.count), 1);
+                      return (
+                        <div key={row.stars} className="flex items-center gap-2">
+                          <span className="w-24 shrink-0 text-[11.5px] font-semibold text-text-2">
+                            {row.stars} {row.stars === 1 ? "estrella" : "estrellas"}
+                          </span>
+                          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-subtle">
+                            <div
+                              className={cn(
+                                "h-full rounded-full",
+                                row.stars >= 4
+                                  ? "bg-[#1fb35b]"
+                                  : row.stars === 3
+                                    ? "bg-[#f2a71b]"
+                                    : "bg-[#d94a4a]"
+                              )}
+                              style={{ width: `${(row.count / max) * 100}%` }}
+                            />
+                          </div>
+                          <span className="w-8 shrink-0 text-right text-[11.5px] tabular-nums text-text-3">
+                            {row.count}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-wrap content-start gap-1.5">
+                    {data.quality.ratings.urgencies.map((u) => (
+                      <Badge
+                        key={u.name}
+                        tone={u.name.toUpperCase().includes("URGENTE") ? "warning" : "neutral"}
+                      >
+                        {u.name} · {u.count}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </Section>
+
+              <Section
+                title="Últimas respuestas"
+                subtitle="El comentario real del cliente y la urgencia que determinó la IA"
+              >
+                <div className="grid gap-2 lg:grid-cols-2">
+                  {data.quality.ratings.latest.map((r) => {
+                    const stars = Math.max(0, Math.min(5, r.stars ?? 0));
+                    return (
+                      <article key={r.id} className="rounded-md border bg-subtle/40 p-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[12px] tabular-nums text-[#f2a71b]">
+                            {"★".repeat(stars)}
+                            <span className="text-text-3/50">{"★".repeat(5 - stars)}</span>
+                          </span>
+                          {r.urgency && (
+                            <Badge
+                              tone={
+                                r.urgency.toUpperCase().includes("URGENTE") ? "warning" : "neutral"
+                              }
+                            >
+                              {r.urgency}
+                            </Badge>
+                          )}
+                          {r.service && <span className="text-[11px] text-text-3">{r.service}</span>}
+                        </div>
+                        {r.comment && (
+                          <p className="mt-1.5 text-[12px] leading-relaxed text-text-2">
+                            «{r.comment}»
+                          </p>
+                        )}
+                        <p className="mt-1 text-[10.5px] text-text-3">
+                          {[r.client, r.employee, r.date].filter(Boolean).join(" · ")}
+                        </p>
+                      </article>
+                    );
+                  })}
+                </div>
+              </Section>
+
+              {data.quality.claims.total > 0 && (
+                <Section title="Denuncias" subtitle="Culpabilidad e informe que determinó la IA">
+                  <div className="grid gap-2 lg:grid-cols-2">
+                    {data.quality.claims.latest.map((c) => (
+                      <article key={c.id} className="rounded-md border bg-subtle/40 p-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <strong className="text-[12px]">{c.type}</strong>
+                          {c.culpability && (
+                            <Badge tone={nivelIaTone(c.culpability)}>{c.culpability}</Badge>
+                          )}
+                          {c.status && <span className="text-[11px] text-text-3">{c.status}</span>}
+                        </div>
+                        {c.report && (
+                          <p className="mt-1.5 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
+                            {c.report}
+                          </p>
+                        )}
+                        <p className="mt-1 text-[10.5px] text-text-3">
+                          {[c.client, c.office, c.date].filter(Boolean).join(" · ")}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                </Section>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {tab === "equipo" && (
+        <div className="space-y-3">
+          <HelpZone help={MODULE_HELP.equipo} id="equipo" onAction={applyHelpAction} />
+
+          {!data.team ? (
+            <Section
+              title="Equipo"
+              subtitle="Rendimiento por empleado y oficina, con los informes IA del sistema (solo lectura)"
+            >
+              <div className="rounded-md border bg-subtle/50 px-4 py-8 text-center text-[12.5px] text-text-3">
+                Todavía no hay datos del equipo en este entorno.
+              </div>
+            </Section>
+          ) : (
+            <>
+              <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Kpi
+                  title="Empleados con actividad"
+                  value={number(data.team.totals.employees)}
+                  subtitle="Sin baja, con gestiones o informe"
+                  icon={<Users size={17} />}
+                />
+                <Kpi
+                  title="Gestiones del mes"
+                  value={number(data.team.totals.gestionesMonth)}
+                  subtitle="Todo el equipo, mes en curso"
+                  icon={<Activity size={17} />}
+                  tone="accent"
+                />
+                <Kpi
+                  title="Gestiones del año"
+                  value={number(data.team.totals.gestionesYear)}
+                  subtitle="Acumulado del equipo"
+                  icon={<TrendingUp size={17} />}
+                  tone="success"
+                />
+                <Kpi
+                  title="Informes IA disponibles"
+                  value={number(data.team.totals.reports)}
+                  subtitle="Empleados y oficinas con informe de productividad"
+                  icon={<Bot size={17} />}
+                />
+              </section>
+
+              {(data.team.totals.commissionMonth > 0 || data.team.totals.commissionYear > 0) && (
+                <section className="grid gap-3 sm:grid-cols-2">
+                  <Kpi
+                    title="Comisiones del mes"
+                    value={money(data.team.totals.commissionMonth)}
+                    subtitle="Acumulado del equipo (según el sistema)"
+                    icon={<CircleDollarSign size={17} />}
+                    tone="success"
+                  />
+                  <Kpi
+                    title="Comisiones del año"
+                    value={money(data.team.totals.commissionYear)}
+                    subtitle="Acumulado del equipo (según el sistema)"
+                    icon={<CircleDollarSign size={17} />}
+                  />
+                </section>
+              )}
+
+              <Section
+                title="Rendimiento por empleado"
+                subtitle="Gestiones del mes y del año, más el informe de productividad IA"
+              >
+                <div className="grid gap-2 lg:grid-cols-2">
+                  {data.team.employees.map((row) => (
+                    <article key={row.id} className="rounded-md border bg-subtle/40 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <strong className="min-w-0 text-[12.5px]">{row.name}</strong>
+                        {row.reportLevel && (
+                          <Badge tone={nivelIaTone(row.reportLevel)}>{row.reportLevel}</Badge>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-[11.5px] text-text-3">
+                        {number(row.gestionesMonth)} gestiones este mes · {number(row.gestionesYear)}{" "}
+                        en el año
+                        {row.commissionMonth > 0
+                          ? ` · ${money(row.commissionMonth)} de comisión (mes)`
+                          : ""}
+                      </p>
+                      {row.report && (
+                        <p className="mt-2 whitespace-pre-line border-t pt-2 text-[11.5px] leading-relaxed text-text-2">
+                          {row.report}
+                        </p>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </Section>
+
+              <Section
+                title="Productividad por oficina"
+                subtitle="Gestiones por sucursal, más el informe IA de cada oficina"
+              >
+                <div className="grid gap-2 lg:grid-cols-2">
+                  {data.team.offices.map((row) => (
+                    <article key={row.id} className="rounded-md border bg-subtle/40 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <strong className="min-w-0 text-[12.5px]">{row.name}</strong>
+                        {row.reportLevel && (
+                          <Badge tone={nivelIaTone(row.reportLevel)}>{row.reportLevel}</Badge>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-[11.5px] text-text-3">
+                        {number(row.gestionesMonth)} gestiones este mes · {number(row.gestionesYear)}{" "}
+                        en el año
+                      </p>
+                      {row.report && (
+                        <p className="mt-2 whitespace-pre-line border-t pt-2 text-[11.5px] leading-relaxed text-text-2">
+                          {row.report}
+                        </p>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </Section>
+            </>
           )}
         </div>
       )}

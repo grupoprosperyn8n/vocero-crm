@@ -586,6 +586,9 @@ export type ClientFichaDto = {
   oficina: string | null;
   fotoUrl: string | null;
   perfilRiesgo: string | null;
+  /** 045 — Estado del aiText (generated/error) y semáforo del perfil de riesgo IA. */
+  perfilRiesgoEstado: string | null;
+  perfilRiesgoNivel: string | null;
   fechaAlta: string | null;
   fechaBaja: string | null;
   idUnico: string | null;
@@ -669,6 +672,9 @@ export type FichaPolicy = {
   vencimiento: string | null;
   anulacion: string | null;
   oficina: string | null;
+  /** 045 — INFORME_POLIZA_IA: informe de la IA del backoffice + su semáforo. */
+  informeIa: string | null;
+  informeNivel: string | null;
 };
 
 export type FichaGestion = {
