@@ -338,8 +338,8 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
                       className="rounded-lg border bg-card p-1.5 text-text-3 hover:bg-subtle hover:text-text-1"
                       title={
                         p.widget.type === "coupon"
-                          ? "Tokens del cupón: emitir, canjear y copiar links"
-                          : "Respuestas recibidas"
+                          ? "Dashboard del cupón: control y tokens"
+                          : "Dashboard de respuestas"
                       }
                     >
                       {p.widget.type === "coupon" ? <Ticket size={13} /> : <ListChecks size={13} />}
