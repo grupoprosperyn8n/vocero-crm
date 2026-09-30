@@ -14,6 +14,7 @@ import {
   CalendarDays,
   CalendarRange,
   ChevronDown,
+  ChevronRight,
   CircleDollarSign,
   ClipboardList,
   Clock3,
@@ -101,6 +102,10 @@ import type {
   PiezaTipo,
   Playlist,
   PlaylistItem,
+  CatalogCoverageRow,
+  CatalogProductRow,
+  TeamEmployeeRow,
+  TeamOfficeRow,
 } from "@/lib/dashboard-management/types";
 import { buildAlgoModuleInsight } from "@/lib/dashboard-management/algo-insight";
 import { InsightVault } from "./insight-vault";
@@ -1449,6 +1454,302 @@ const FILTER_SCOPE: Record<TabId, string> = {
   migracion: "Este módulo muestra la base completa: los filtros no lo afectan.",
 };
 
+/**
+ * 045 — Modal con el informe completo de la IA de un empleado o una oficina.
+ * La lista de Equipo muestra una fila por registro; el informe entero vive acá.
+ */
+function EquipoReporteModal({
+  detalle,
+  onClose,
+}: {
+  detalle: { kind: "empleado"; row: TeamEmployeeRow } | { kind: "oficina"; row: TeamOfficeRow };
+  onClose: () => void;
+}) {
+  const { kind, row } = detalle;
+  const esEmpleado = kind === "empleado";
+  const comisionMonth = "commissionMonth" in row ? row.commissionMonth : 0;
+
+  // El modal se cierra con Escape (mismo comportamiento que el panel de filtros).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const titulo = esEmpleado ? "Informe de productividad IA" : "Informe IA de la oficina";
+
+  return (
+    <div
+      role="dialog"
+      aria-label={`${titulo} — ${row.name}`}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="flex max-h-[88vh] w-full max-w-3xl flex-col rounded-t-2xl border bg-card shadow-2xl sm:rounded-2xl">
+        <div className="flex items-start justify-between gap-3 border-b p-4">
+          <div className="min-w-0">
+            <p className="text-[13.5px] font-bold text-text-1">{titulo}</p>
+            <p className="mt-0.5 truncate text-[12px] font-semibold text-text-2">{row.name}</p>
+            <p className="mt-0.5 text-[11.5px] text-text-3">
+              {number(row.gestionesMonth)} gestiones este mes · {number(row.gestionesYear)} en el
+              año
+              {comisionMonth > 0 ? ` · ${money(comisionMonth)} de comisión (mes)` : ""}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {row.reportLevel && (
+              <Badge tone={nivelIaTone(row.reportLevel)}>{row.reportLevel}</Badge>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Cerrar"
+              className="rounded-lg p-1.5 text-text-2 hover:bg-subtle"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {row.report ? (
+            <p className="whitespace-pre-line text-[12px] leading-relaxed text-text-2">
+              {row.report}
+            </p>
+          ) : (
+            <p className="text-[12px] text-text-3">
+              Este registro todavía no tiene informe de la IA. Cuando el sistema lo genere, va a
+              aparecer acá.
+            </p>
+          )}
+          <p className="mt-3 border-t pt-2.5 text-[10.5px] text-text-3">
+            {esEmpleado
+              ? "Informe de productividad generado por la IA del sistema a partir de las gestiones y comisiones del backoffice (solo lectura)."
+              : "Informe de la IA del sistema para esta sucursal, a partir de las gestiones del backoffice (solo lectura)."}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/*
+ * 045b — CATÁLOGO: modal con el análisis IA completo de un producto,
+ * una cobertura o el detalle de una compañía (con sus productos).
+ */
+function CatalogoReporteModal({
+  detalle,
+  onClose,
+  productos,
+  companies,
+}: {
+  detalle:
+    | { kind: "producto"; row: CatalogProductRow }
+    | { kind: "cobertura"; row: CatalogCoverageRow }
+    | { kind: "compania"; name: string };
+  onClose: () => void;
+  productos: CatalogProductRow[];
+  companies: { name: string; policies: number; activePremium: number }[];
+}) {
+  // El modal se cierra con Escape (mismo comportamiento que el resto).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const titulo =
+    detalle.kind === "producto"
+      ? "Análisis IA del producto"
+      : detalle.kind === "cobertura"
+        ? "Análisis IA de la cobertura"
+        : "Detalle de la compañía";
+  const nombre = detalle.kind === "compania" ? detalle.name : detalle.row.name;
+  const nivel = detalle.kind === "producto" || detalle.kind === "cobertura"
+    ? detalle.row.analysisLevel
+    : undefined;
+
+  return (
+    <div
+      role="dialog"
+      aria-label={`${titulo} — ${nombre}`}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="flex max-h-[88vh] w-full max-w-3xl flex-col rounded-t-2xl border bg-card shadow-2xl sm:rounded-2xl">
+        <div className="flex items-start justify-between gap-3 border-b p-4">
+          <div className="min-w-0">
+            <p className="text-[13.5px] font-bold text-text-1">{titulo}</p>
+            <p className="mt-0.5 truncate text-[12px] font-semibold text-text-2">{nombre}</p>
+            {detalle.kind === "producto" && detalle.row.company && (
+              <p className="mt-0.5 text-[11.5px] text-text-3">{detalle.row.company}</p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {nivel && <Badge tone={nivelIaTone(nivel)}>{nivel}</Badge>}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Cerrar"
+              className="rounded-lg p-1.5 text-text-2 hover:bg-subtle"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {detalle.kind === "producto" && (
+            <div className="space-y-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                  Análisis IA general
+                </p>
+                {detalle.row.analysis ? (
+                  <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
+                    {detalle.row.analysis}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[12px] text-text-3">
+                    La IA todavía no generó el análisis de este producto.
+                  </p>
+                )}
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                  Recomendación IA de mejoras
+                </p>
+                {detalle.row.recommendation ? (
+                  <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
+                    {detalle.row.recommendation}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[12px] text-text-3">Sin recomendación generada todavía.</p>
+                )}
+              </div>
+              <p className="border-t pt-2.5 text-[10.5px] text-text-3">
+                Generado por la IA del sistema en el backoffice (solo lectura).
+              </p>
+            </div>
+          )}
+
+          {detalle.kind === "cobertura" && (
+            <div className="space-y-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                  Análisis IA de la cobertura
+                </p>
+                {detalle.row.analysis ? (
+                  <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
+                    {detalle.row.analysis}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[12px] text-text-3">
+                    La IA todavía no generó el análisis de esta cobertura.
+                  </p>
+                )}
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                  Categorización IA de tipo
+                </p>
+                {detalle.row.categorization ? (
+                  <p className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-text-2">
+                    {detalle.row.categorization}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[12px] text-text-3">Sin categorización generada todavía.</p>
+                )}
+              </div>
+              <p className="border-t pt-2.5 text-[10.5px] text-text-3">
+                Generado por la IA del sistema en el backoffice (solo lectura).
+              </p>
+            </div>
+          )}
+
+          {detalle.kind === "compania" &&
+            (() => {
+              const metrics = companies.find((c) => c.name === detalle.name);
+              const prods = productos.filter((p) => p.company === detalle.name);
+              return (
+                <div className="space-y-4">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-md border bg-subtle/40 px-3 py-2">
+                      <p className="text-[10.5px] uppercase tracking-wide text-text-3">
+                        Pólizas cargadas
+                      </p>
+                      <p className="text-[15px] font-bold tabular-nums text-text-1">
+                        {metrics ? number(metrics.policies) : "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-md border bg-subtle/40 px-3 py-2">
+                      <p className="text-[10.5px] uppercase tracking-wide text-text-3">
+                        Prima activa
+                      </p>
+                      <p className="text-[15px] font-bold tabular-nums text-text-1">
+                        {metrics ? money(metrics.activePremium) : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3">
+                      Productos de la compañía ({number(prods.length)}) · análisis IA
+                    </p>
+                    <div className="mt-1.5 space-y-1.5">
+                      {prods.map((prod) => (
+                        <div key={prod.id} className="rounded-md border bg-subtle/40 px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-text-1">
+                              {prod.name}
+                            </span>
+                            {prod.analysisLevel && (
+                              <Badge tone={nivelIaTone(prod.analysisLevel)}>
+                                {prod.analysisLevel}
+                              </Badge>
+                            )}
+                          </div>
+                          {prod.analysis ? (
+                            <p className="mt-1 whitespace-pre-line text-[11.5px] leading-relaxed text-text-2">
+                              {prod.analysis}
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-[11.5px] text-text-3">
+                              Sin análisis IA generado todavía.
+                            </p>
+                          )}
+                          {prod.recommendation && (
+                            <p className="mt-1.5 whitespace-pre-line border-t pt-1.5 text-[11px] leading-relaxed text-text-3">
+                              {prod.recommendation}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                      {prods.length === 0 && (
+                        <p className="text-[12px] text-text-3">
+                          No hay productos cargados para esta compañía en el catálogo.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <p className="border-t pt-2.5 text-[10.5px] text-text-3">
+                    Datos del backoffice (solo lectura). La compañía no tiene un análisis IA
+                    propio: el análisis de la IA se ve en cada uno de sus productos.
+                  </p>
+                </div>
+              );
+            })()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ExecDashboard() {
   const router = useRouter();
   const [data, setData] = useState<DashboardResponse | null>(null);
@@ -1471,6 +1772,55 @@ export function ExecDashboard() {
   }, [fpanelOpen]);
   // 041 — panel de control del cliente (Cliente 360°), a pantalla completa.
   const [panelClient, setPanelClient] = useState<PanelCustomer | null>(null);
+
+  // 045 — informe IA de Equipo: fila → modal con el detalle completo.
+  const [equipoDetalle, setEquipoDetalle] = useState<
+    { kind: "empleado"; row: TeamEmployeeRow } | { kind: "oficina"; row: TeamOfficeRow } | null
+  >(null);
+
+  // 045b — filtros de Equipo (buscar por empleado o sucursal).
+  const [eqBusca, setEqBusca] = useState("");
+  const [eqSucursal, setEqSucursal] = useState("");
+  const [ofBusca, setOfBusca] = useState("");
+
+  // 045b — catálogo: producto / cobertura / compañía → modal con el análisis IA.
+  const [catalogoDetalle, setCatalogoDetalle] = useState<
+    | { kind: "producto"; row: CatalogProductRow }
+    | { kind: "cobertura"; row: CatalogCoverageRow }
+    | { kind: "compania"; name: string }
+    | null
+  >(null);
+
+  // 045b — sucursales únicas de los empleados (para el filtro por sucursal).
+  const equipoSucursales = useMemo(() => {
+    const set = new Set<string>();
+    (data?.team?.employees ?? []).forEach((row) => {
+      if (row.office) set.add(row.office);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+  }, [data?.team]);
+
+  // 045b — empleados filtrados por búsqueda (nombre o sucursal) y sucursal elegida.
+  const equipoEmpleados = useMemo(() => {
+    const q = eqBusca.trim().toLowerCase();
+    return (data?.team?.employees ?? []).filter((row) => {
+      if (eqSucursal && row.office !== eqSucursal) return false;
+      if (!q) return true;
+      return (
+        row.name.toLowerCase().includes(q) ||
+        (row.office ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [data?.team, eqBusca, eqSucursal]);
+
+  // 045b — oficinas filtradas por búsqueda.
+  const equipoOficinas = useMemo(() => {
+    const q = ofBusca.trim().toLowerCase();
+    return (data?.team?.offices ?? []).filter(
+      (row) => !q || row.name.toLowerCase().includes(q)
+    );
+  }, [data?.team, ofBusca]);
+
   /* 044b B9b — cliente que viaja del Cliente 360° al Constructor de publicaciones. */
   const [constructorFijo, setConstructorFijo] = useState<ClienteFijoWizard | null>(null);
   // 044b-B15 — idea que viaja del análisis de IA al Constructor (acción → pieza).
@@ -3061,7 +3411,82 @@ export function ExecDashboard() {
             </Section>
           </div>
 
-          <Section title="Compañías" subtitle="Distribución de las pólizas ya cargadas">
+          {data.catalog && (
+            <Section
+              title="Análisis IA de productos"
+              subtitle={`${number(data.catalog.products.length)} productos del sistema con el análisis y la recomendación que genera la IA`}
+            >
+              <div className="space-y-1.5">
+                {data.catalog.products.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => setCatalogoDetalle({ kind: "producto", row })}
+                    title="Ver el análisis IA del producto"
+                    className="group flex w-full items-center gap-3 rounded-md border bg-subtle/40 px-3 py-2.5 text-left transition-colors hover:bg-subtle"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] font-semibold text-text-1">
+                        {row.name}
+                      </span>
+                      <span className="block truncate text-[11px] text-text-3">
+                        {row.company ? `${row.company} · ` : ""}
+                        {row.analysis ? "Análisis IA generado" : "Sin análisis generado todavía"}
+                      </span>
+                    </span>
+                    {row.analysisLevel && (
+                      <Badge tone={nivelIaTone(row.analysisLevel)}>{row.analysisLevel}</Badge>
+                    )}
+                    <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-text-3 group-hover:text-text-2">
+                      Ver análisis
+                      <ChevronRight size={14} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {data.catalog && (
+            <Section
+              title="Análisis IA de coberturas"
+              subtitle={`${number(data.catalog.coverages.length)} coberturas del sistema con el análisis de la IA`}
+            >
+              <div className="space-y-1.5">
+                {data.catalog.coverages.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => setCatalogoDetalle({ kind: "cobertura", row })}
+                    title="Ver el análisis IA de la cobertura"
+                    className="group flex w-full items-center gap-3 rounded-md border bg-subtle/40 px-3 py-2.5 text-left transition-colors hover:bg-subtle"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] font-semibold text-text-1">
+                        {row.name}
+                      </span>
+                      <span className="block truncate text-[11px] text-text-3">
+                        {row.analysis ? "Análisis IA generado" : "Sin análisis generado todavía"}
+                        {row.categorization ? " · con categorización IA" : ""}
+                      </span>
+                    </span>
+                    {row.analysisLevel && (
+                      <Badge tone={nivelIaTone(row.analysisLevel)}>{row.analysisLevel}</Badge>
+                    )}
+                    <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-text-3 group-hover:text-text-2">
+                      Ver análisis
+                      <ChevronRight size={14} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          <Section
+            title="Compañías"
+            subtitle="Distribución de las pólizas ya cargadas · clic en una compañía para ver su detalle y sus productos con análisis IA"
+          >
             <div className="overflow-x-auto rounded-md border">
               <table className="w-full">
                 <thead className="bg-subtle text-left text-[11px] uppercase tracking-wide text-text-3">
@@ -3073,7 +3498,12 @@ export function ExecDashboard() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {data.companies.map((company) => (
-                    <tr key={company.name}>
+                    <tr
+                      key={company.name}
+                      onClick={() => setCatalogoDetalle({ kind: "compania", name: company.name })}
+                      title="Ver el detalle de la compañía y sus productos con análisis IA"
+                      className="cursor-pointer transition-colors hover:bg-subtle/60"
+                    >
                       <td className="px-3 py-2 text-[12.5px]">{company.name}</td>
                       <td className="px-3 py-2 text-[12.5px] tabular-nums">
                         {number(company.policies)}
@@ -3863,57 +4293,123 @@ export function ExecDashboard() {
                 title="Rendimiento por empleado"
                 subtitle="Gestiones del mes y del año, más el informe de productividad IA"
               >
-                <div className="grid gap-2 lg:grid-cols-2">
-                  {data.team.employees.map((row) => (
-                    <article key={row.id} className="rounded-md border bg-subtle/40 p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <strong className="min-w-0 text-[12.5px]">{row.name}</strong>
-                        {row.reportLevel && (
-                          <Badge tone={nivelIaTone(row.reportLevel)}>{row.reportLevel}</Badge>
-                        )}
-                      </div>
-                      <p className="mt-0.5 text-[11.5px] text-text-3">
-                        {number(row.gestionesMonth)} gestiones este mes · {number(row.gestionesYear)}{" "}
-                        en el año
-                        {row.commissionMonth > 0
-                          ? ` · ${money(row.commissionMonth)} de comisión (mes)`
-                          : ""}
-                      </p>
-                      {row.report && (
-                        <p className="mt-2 whitespace-pre-line border-t pt-2 text-[11.5px] leading-relaxed text-text-2">
-                          {row.report}
-                        </p>
-                      )}
-                    </article>
-                  ))}
+                {/* 045b — filtros: buscar por empleado o sucursal. */}
+                <div className="mb-3 grid gap-2 sm:grid-cols-2">
+                  <input
+                    type="search"
+                    value={eqBusca}
+                    onChange={(event) => setEqBusca(event.target.value)}
+                    placeholder="Buscar empleado o sucursal…"
+                    className="h-9 w-full rounded-md border bg-surface px-3 text-[12.5px] text-text-1 outline-none placeholder:text-text-3 focus:border-brand"
+                  />
+                  <select
+                    value={eqSucursal}
+                    onChange={(event) => setEqSucursal(event.target.value)}
+                    className="h-9 w-full rounded-md border bg-surface px-3 text-[12.5px] text-text-1 outline-none focus:border-brand"
+                  >
+                    <option value="">Todas las sucursales</option>
+                    {equipoSucursales.map((sucursal) => (
+                      <option key={sucursal} value={sucursal}>
+                        {sucursal}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+                {/* 045 — formato lista: click en el empleado abre el informe IA completo. */}
+                <div className="space-y-1.5">
+                  {equipoEmpleados.map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      onClick={() => setEquipoDetalle({ kind: "empleado", row })}
+                      title="Ver el informe de productividad IA completo"
+                      className="group flex w-full items-center gap-3 rounded-md border bg-subtle/40 px-3 py-2.5 text-left transition-colors hover:bg-subtle"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12.5px] font-semibold text-text-1">
+                          {row.name}
+                        </span>
+                        <span className="block truncate text-[11px] text-text-3">
+                          {row.office ? `${row.office} · ` : ""}
+                          {number(row.gestionesMonth)} gestiones este mes ·{" "}
+                          {number(row.gestionesYear)} en el año
+                          {row.commissionMonth > 0
+                            ? ` · ${money(row.commissionMonth)} de comisión (mes)`
+                            : ""}
+                        </span>
+                      </span>
+                      {row.reportLevel && (
+                        <Badge tone={nivelIaTone(row.reportLevel)}>{row.reportLevel}</Badge>
+                      )}
+                      <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-text-3 group-hover:text-text-2">
+                        {row.report ? "Informe IA" : "Sin informe"}
+                        <ChevronRight size={14} />
+                      </span>
+                    </button>
+                  ))}
+                  {equipoEmpleados.length === 0 && (
+                    <p className="rounded-md border bg-subtle/40 px-3 py-6 text-center text-[12px] text-text-3">
+                      No hay empleados que coincidan con la búsqueda.
+                    </p>
+                  )}
+                </div>
+                <p className="mt-2 text-[11px] text-text-3">
+                  Mostrando {number(equipoEmpleados.length)} de{" "}
+                  {number(data.team.employees.length)} empleados
+                  {eqSucursal ? ` · sucursal: ${eqSucursal}` : ""}
+                </p>
               </Section>
 
               <Section
                 title="Productividad por oficina"
                 subtitle="Gestiones por sucursal, más el informe IA de cada oficina"
               >
-                <div className="grid gap-2 lg:grid-cols-2">
-                  {data.team.offices.map((row) => (
-                    <article key={row.id} className="rounded-md border bg-subtle/40 p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <strong className="min-w-0 text-[12.5px]">{row.name}</strong>
-                        {row.reportLevel && (
-                          <Badge tone={nivelIaTone(row.reportLevel)}>{row.reportLevel}</Badge>
-                        )}
-                      </div>
-                      <p className="mt-0.5 text-[11.5px] text-text-3">
-                        {number(row.gestionesMonth)} gestiones este mes · {number(row.gestionesYear)}{" "}
-                        en el año
-                      </p>
-                      {row.report && (
-                        <p className="mt-2 whitespace-pre-line border-t pt-2 text-[11.5px] leading-relaxed text-text-2">
-                          {row.report}
-                        </p>
+                {/* 045b — buscador por sucursal. */}
+                <input
+                  type="search"
+                  value={ofBusca}
+                  onChange={(event) => setOfBusca(event.target.value)}
+                  placeholder="Buscar sucursal u oficina…"
+                  className="mb-3 h-9 w-full rounded-md border bg-surface px-3 text-[12.5px] text-text-1 outline-none placeholder:text-text-3 focus:border-brand"
+                />
+                {/* 045 — formato lista: click en la sucursal abre el informe IA completo. */}
+                <div className="space-y-1.5">
+                  {equipoOficinas.map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      onClick={() => setEquipoDetalle({ kind: "oficina", row })}
+                      title="Ver el informe IA de la oficina completo"
+                      className="group flex w-full items-center gap-3 rounded-md border bg-subtle/40 px-3 py-2.5 text-left transition-colors hover:bg-subtle"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12.5px] font-semibold text-text-1">
+                          {row.name}
+                        </span>
+                        <span className="block truncate text-[11px] text-text-3">
+                          {number(row.gestionesMonth)} gestiones este mes ·{" "}
+                          {number(row.gestionesYear)} en el año
+                        </span>
+                      </span>
+                      {row.reportLevel && (
+                        <Badge tone={nivelIaTone(row.reportLevel)}>{row.reportLevel}</Badge>
                       )}
-                    </article>
+                      <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-text-3 group-hover:text-text-2">
+                        {row.report ? "Informe IA" : "Sin informe"}
+                        <ChevronRight size={14} />
+                      </span>
+                    </button>
                   ))}
+                  {equipoOficinas.length === 0 && (
+                    <p className="rounded-md border bg-subtle/40 px-3 py-6 text-center text-[12px] text-text-3">
+                      No hay sucursales que coincidan con la búsqueda.
+                    </p>
+                  )}
                 </div>
+                <p className="mt-2 text-[11px] text-text-3">
+                  Mostrando {number(equipoOficinas.length)} de{" "}
+                  {number(data.team.offices.length)} sucursales
+                </p>
               </Section>
             </>
           )}
@@ -4704,6 +5200,20 @@ export function ExecDashboard() {
         onClose={() => setVaultOpen(false)}
         onReforward={reforwardFromVault}
       />
+
+      {/* 045 — informe IA completo de Equipo (empleado u oficina). */}
+      {equipoDetalle && (
+        <EquipoReporteModal detalle={equipoDetalle} onClose={() => setEquipoDetalle(null)} />
+      )}
+
+      {catalogoDetalle && (
+        <CatalogoReporteModal
+          detalle={catalogoDetalle}
+          onClose={() => setCatalogoDetalle(null)}
+          productos={data?.catalog?.products ?? []}
+          companies={data?.companies ?? []}
+        />
+      )}
     </div>
     </div>
   );

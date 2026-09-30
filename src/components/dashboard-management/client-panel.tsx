@@ -828,13 +828,15 @@ function IaDelCliente({
   const perfilOk = !!ficha.perfilRiesgo;
   const perfilError = !ficha.perfilRiesgo && ficha.perfilRiesgoEstado === "error";
   const perfilViejo = perfilOk && ficha.perfilRiesgoEstado !== "generated";
+  const resumenOk = !!ficha.resumenRollupIa;
+  const resumenError = !ficha.resumenRollupIa && ficha.resumenRollupEstado === "error";
 
   return (
     <div className="space-y-5">
       {/* Resumen IA */}
       <section>
         <SectionTitle icon={<Sparkles size={13} />}>Análisis IA de {primer}</SectionTitle>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <KpiChip
             icon={<ShieldCheck size={15} />}
             label="Perfil de riesgo"
@@ -854,6 +856,12 @@ function IaDelCliente({
                   ? "bad"
                   : "default"
             }
+          />
+          <KpiChip
+            icon={<Sparkles size={15} />}
+            label="Resumen IA"
+            value={resumenOk ? "generado" : resumenError ? "error en backoffice" : "sin generar"}
+            tone={resumenOk ? "good" : resumenError ? "bad" : "default"}
           />
           <KpiChip
             icon={<FileText size={15} />}
@@ -907,6 +915,30 @@ function IaDelCliente({
         <FuenteNota
           fuente="Airtable SGSA › CLIENTES › PERFIL_DE_RIESGO_IA"
           para="Anticipar riesgo de fuga y priorizar la atención (fidelizar, subir cobertura o intervenir) antes de la renovación."
+        />
+      </section>
+
+      {/* Resumen rollup IA (todas las tablas del cliente en un solo texto) */}
+      <section className="rounded-xl border bg-card p-4">
+        <SectionTitle icon={<Sparkles size={13} />}>Resumen IA del cliente</SectionTitle>
+        {resumenOk ? (
+          <p className="whitespace-pre-line text-[12.5px] leading-relaxed text-text-2">
+            {ficha.resumenRollupIa}
+          </p>
+        ) : resumenError ? (
+          <p className="rounded-lg border border-dashed bg-subtle/40 px-3 py-3 text-[12.5px] leading-relaxed text-text-3">
+            El backoffice reportó un <strong>error</strong> al generar el resumen IA de este
+            cliente. Se puede reintentar la generación desde el sistema de gestión.
+          </p>
+        ) : (
+          <p className="rounded-lg border border-dashed bg-subtle/40 px-3 py-3 text-[12.5px] text-text-3">
+            Todavía no se generó el resumen IA de {primer}. La base lo va completando de a poco:
+            cuando esté, aparece acá.
+          </p>
+        )}
+        <FuenteNota
+          fuente="Airtable SGSA › CLIENTES › RESUMEN ROLLUP POR TABLA (AI)"
+          para="Ver al cliente completo en un solo texto: la IA resume qué pasa en todas sus tablas relacionadas (pólizas, gestiones, denuncias, alertas)."
         />
       </section>
 

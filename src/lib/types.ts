@@ -589,6 +589,9 @@ export type ClientFichaDto = {
   /** 045 — Estado del aiText (generated/error) y semáforo del perfil de riesgo IA. */
   perfilRiesgoEstado: string | null;
   perfilRiesgoNivel: string | null;
+  /** 045b — resumen rollup IA del cliente (todas sus tablas en un solo texto). */
+  resumenRollupIa: string | null;
+  resumenRollupEstado: string | null;
   fechaAlta: string | null;
   fechaBaja: string | null;
   idUnico: string | null;

@@ -55,6 +55,7 @@ const CLIENTE_FIELDS = [
   "📆 LA_POLIZAS VENCE EN 7 DIAS",
   "OFICINAS",
   "PERFIL_DE_RIESGO_IA",
+  "RESUMEN ROLLUP POR TABLA (AI)",
   "FOTO PERFIL",
   "POLIZAS",
   "GESTIÓN GENERAL",
@@ -283,6 +284,7 @@ export async function getClientFicha(input: {
   const telDigits =
     str(f["TELEFONO NORMALIZADO"]) ?? phoneDigits(str(f["TELEFONO"]) ?? "");
   const perfilIa = aiText(f["PERFIL_DE_RIESGO_IA"]);
+  const resumenIa = aiText(f["RESUMEN ROLLUP POR TABLA (AI)"]);
 
   /* --- Pólizas --- */
   const policyIds = linkIds(f["POLIZAS"]).slice(0, 80);
@@ -454,6 +456,11 @@ export async function getClientFicha(input: {
     })(),
     perfilRiesgoEstado: perfilIa.state,
     perfilRiesgoNivel: nivelDe(perfilIa.value),
+    resumenRollupIa: (() => {
+      const r = resumenIa.value;
+      return r ? r.slice(0, 4000) : null;
+    })(),
+    resumenRollupEstado: resumenIa.state,
     fechaAlta: dayText(f["FECHA DE ALTA"]),
     fechaBaja: dayText(f["FECHA DE BAJA"]),
     idUnico: str(f["ID_UNICO_CLIENTE"]),
