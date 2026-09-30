@@ -26,3 +26,13 @@ export function roleLabel(role: string): string {
 export function canUseDashboard(role: string): boolean {
   return role === "owner" || role === "admin";
 }
+
+/**
+ * 30Sep — Alertas: crear alertas nuevas desde el CRM y elegir/definir sus
+ * tipos queda reservado a dueño, propietario o gerente (pedido Diego: «los
+ * tipos de alerta se deben poder poner online solamente dueño propietario o
+ * gerente»). Mismo set que la asignación de alertas.
+ */
+export function canManageAlerts(role: string): boolean {
+  return role === "owner" || role === "admin" || role === "manager";
+}

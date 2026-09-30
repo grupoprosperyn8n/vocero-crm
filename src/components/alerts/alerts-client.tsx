@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BellOff,
+  BellPlus,
   BellRing,
   CalendarCheck2,
   CheckCircle2,
@@ -24,6 +25,7 @@ import {
 import { ShareAlertDialog } from "@/components/alerts/share-alert-dialog";
 import { AssignAlertDialog } from "@/components/alerts/assign-alert-dialog";
 import { AlertRulesDialog } from "@/components/alerts/alert-rules-dialog";
+import { NewAlertDialog } from "@/components/alerts/new-alert-dialog";
 import { AlertStatsPanel } from "@/components/alerts/alert-stats-panel";
 import { ReviewStatsPanel } from "@/components/reviews/review-stats-panel";
 import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
@@ -171,6 +173,9 @@ export function AlertsClient() {
   // 028 — derivación y reglas: owner/admin/manager derivan; el resto gestiona.
   const [assignFor, setAssignFor] = useState<SgsaAlertDto | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
+  // 30Sep — «Nueva alerta»: dueño/propietario/gerente crean alertas desde el CRM.
+  const [canCreate, setCanCreate] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
   const [mine, setMine] = useState(false);
   const [canManage, setCanManage] = useState(false);
   const [viewerRole, setViewerRole] = useState<string | null>(null);
@@ -242,6 +247,7 @@ export function AlertsClient() {
         error?: string;
         viewerRole?: string;
         canManageAssignments?: boolean;
+        canCreateAlert?: boolean;
       } | null;
       if (!res.ok || data?.error) {
         setError("El sistema de alertas no responde. Reintentá en un momento.");
@@ -256,6 +262,7 @@ export function AlertsClient() {
         // 028 — un miembro ve SOLO lo derivado a él (directo o por su grupo).
         if (!data.canManageAssignments) setMine(true);
       }
+      if (typeof data?.canCreateAlert === "boolean") setCanCreate(data.canCreateAlert);
       const list = data?.alerts ?? [];
       if (!history) {
         // Aviso sonoro solo cuando APARECEN alertas nuevas estando la página
@@ -396,6 +403,17 @@ export function AlertsClient() {
           {hist ? "Historial" : `${pendientes} pendiente${pendientes === 1 ? "" : "s"}`}
         </span>
         <div className="flex-1" />
+        {canCreate && (
+          <button
+            onClick={() => setNewOpen(true)}
+            title="Crear alerta nueva"
+            data-new-alert-btn
+            className="inline-flex items-center gap-1.5 rounded-md border border-brand/40 bg-brand-tint px-2.5 py-1.5 text-[12px] font-semibold text-brand-text transition-opacity hover:opacity-90"
+          >
+            <BellPlus className="h-3.5 w-3.5" strokeWidth={2} />
+            Nueva alerta
+          </button>
+        )}
         <span className="hidden text-[11px] text-text-3 sm:block">
           {lastAt
             ? `Actualizado ${lastAt.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}`
@@ -846,6 +864,18 @@ export function AlertsClient() {
           ).sort()}
           onClose={() => setRulesOpen(false)}
           onSaved={() => void load(histRef.current)}
+        />
+      )}
+      {newOpen && (
+        <NewAlertDialog
+          alertTypes={Array.from(
+            new Set([
+              ...(alerts ?? []).map((a) => a.tipo),
+              REVIEW_ENVIO_ALERT_TYPE,
+            ])
+          ).sort()}
+          onClose={() => setNewOpen(false)}
+          onCreated={() => void load(histRef.current)}
         />
       )}
     </div>

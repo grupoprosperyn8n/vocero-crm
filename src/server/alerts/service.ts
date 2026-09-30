@@ -45,6 +45,49 @@ export function alertsConfigured(): boolean {
   return Boolean(process.env.SGSA_BACKEND_KEY?.trim());
 }
 
+/** Payload para crear una alerta nueva desde el CRM (push al backend SGSA). */
+export type CreateAlertInput = {
+  titulo: string;
+  tipo: string;
+  prioridad: string;
+  detalle: string;
+  clienteNombre: string | null;
+  clienteRecordId: string | null;
+};
+
+/**
+ * 30Sep — crea una alerta NUEVA desde el CRM: push al backend SGSA (el mismo
+ * canal que usa n8n), que la persiste en Airtable (tabla ALERTAS) con origen
+ * «CRM» y, si se eligió cliente, el vínculo `CLIENTE` (rec id) — con eso el
+ * CRM muestra «Abrir cliente» y el match contra los clientes del sistema
+ * funciona igual que en las alertas automáticas.
+ */
+export async function createAlert(
+  input: CreateAlertInput
+): Promise<{ id: string | null; pendientes: number | null }> {
+  const raw = (await backendFetch("/api/alerts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      titulo: input.titulo,
+      tipo_alerta: input.tipo,
+      prioridad: input.prioridad,
+      cuerpo: input.detalle.slice(0, 500),
+      detalle: input.detalle,
+      tabla_origen: "CRM",
+      link_registro: "",
+      record_id_origen: "",
+      cliente_nombre: input.clienteNombre ?? "",
+      cliente_record_id: input.clienteRecordId ?? "",
+    }),
+    timeoutMs: 15_000,
+  })) as Record<string, unknown>;
+  return {
+    id: str(raw.id),
+    pendientes: typeof raw.pendientes === "number" ? raw.pendientes : null,
+  };
+}
+
 function backendKey(): string {
   const key = process.env.SGSA_BACKEND_KEY?.trim();
   if (!key) throw new AlertsBackendError("Sin SGSA_BACKEND_KEY", 401);
