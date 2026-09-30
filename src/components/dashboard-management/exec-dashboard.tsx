@@ -2300,6 +2300,14 @@ export function ExecDashboard() {
             <ArrowUpRight size={11} />
           </button>
           <button
+            className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent"
+            onClick={() => setVaultOpen(true)}
+            title="Baúl de análisis de IA: todos los informes guardados del CRM (módulos y clientes), con fecha — ver, reformular, eliminar o limpiar viejos"
+          >
+            <Archive size={14} />
+            Baúl de análisis IA
+          </button>
+          <button
             className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12px] font-semibold text-text-2 transition-colors hover:bg-accent disabled:opacity-50"
             onClick={() => void load()}
             disabled={loading}
