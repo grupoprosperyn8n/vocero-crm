@@ -24,7 +24,12 @@ import {
   TrendingUp,
   UserRound,
 } from "lucide-react";
-import type { ProposalDto, TeamGroupLiteDto, TeamMemberLiteDto } from "@/lib/types";
+import type {
+  PiezaResultsSummaryDto,
+  ProposalDto,
+  TeamGroupLiteDto,
+  TeamMemberLiteDto,
+} from "@/lib/types";
 import { kindTag, priorityChip, proposalStatusChip, type PanelCustomer } from "./client-panel";
 import { WidgetResultsModal } from "./widget-results";
 import {
@@ -72,9 +77,16 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
   const [editing, setEditing] = useState<ProposalDto | null>(null);
   const [historyFor, setHistoryFor] = useState<ProposalDto | null>(null);
   /* 044b-B11 — respuestas/tokens de la pieza. */
-  const [resultsFor, setResultsFor] = useState<ProposalDto | null>(null);
+  const [resultsFor, setResultsFor] = useState<Pick<
+    ProposalDto,
+    "id" | "title" | "token" | "widget"
+  > | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  /* 044b-B13 — «Propuestas» (el embudo y la lista) y «Resultados» (el general
+     de piezas con respuestas/vouchers: misma información, otra puerta). */
+  const [vista, setVista] = useState<"propuestas" | "resultados">("propuestas");
+  const [resultados, setResultados] = useState<PiezaResultsSummaryDto[] | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const load = useCallback(
@@ -128,6 +140,24 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignee, status, archived]);
 
+  /* 044b-B13 — el general de Resultados se carga la primera vez que se abre. */
+  useEffect(() => {
+    if (vista !== "resultados" || resultados !== null) return;
+    void (async () => {
+      const res = await fetch("/api/proposals/results", { cache: "no-store" }).catch(
+        () => null
+      );
+      if (!res?.ok) {
+        setResultados([]);
+        return;
+      }
+      const data = (await res.json().catch(() => ({}))) as {
+        piezas?: PiezaResultsSummaryDto[];
+      };
+      setResultados(data.piezas ?? []);
+    })();
+  }, [vista, resultados]);
+
   const handleLifecycle = async (p: ProposalDto, action: LifecycleAction) => {
     if (
       action === "delete" &&
@@ -176,6 +206,43 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
 
   return (
     <div className="space-y-4">
+      {/* 044b-B13 — dos puertas: la lista de propuestas y el general de resultados */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setVista("propuestas")}
+          aria-pressed={vista === "propuestas"}
+          className={`inline-flex h-8 items-center rounded-full border px-3.5 text-[12px] font-semibold transition-colors ${
+            vista === "propuestas"
+              ? "border-brand bg-brand text-brand-fg"
+              : "border-border-strong bg-card text-text-2 hover:bg-accent"
+          }`}
+        >
+          📋 Propuestas
+        </button>
+        <button
+          type="button"
+          onClick={() => setVista("resultados")}
+          aria-pressed={vista === "resultados"}
+          className={`inline-flex h-8 items-center rounded-full border px-3.5 text-[12px] font-semibold transition-colors ${
+            vista === "resultados"
+              ? "border-brand bg-brand text-brand-fg"
+              : "border-border-strong bg-card text-text-2 hover:bg-accent"
+          }`}
+        >
+          📊 Resultados
+        </button>
+        <span className="text-[11.5px] text-text-3">
+          {vista === "resultados"
+            ? "Todas las piezas con respuestas o vouchers — tocá una para ver su dashboard."
+            : "El embudo completo y cada pieza con sus acciones."}
+        </span>
+      </div>
+
+      {vista === "resultados" ? (
+        <ResultadosGenerales piezas={resultados} onOpen={(p) => setResultsFor(p)} />
+      ) : (
+        <>
       {/* Embudo */}
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
         <FunnelChip label="Creadas" value={funnel?.total ?? "—"} />
@@ -406,6 +473,8 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
           })}
         </div>
       )}
+        </>
+      )}
 
       {/* 041e — editar / historial */}
       {editing && (
@@ -427,6 +496,87 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
       {resultsFor && (
         <WidgetResultsModal proposal={resultsFor} onClose={() => setResultsFor(null)} />
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * 044b-B13 — el dashboard GENERAL de Resultados: todas las piezas que tienen
+ * respuestas (formularios/encuestas) o vouchers (cupones). Es «misma
+ * información, dos puertas de entrada»: acá el conjunto; en cada pieza, su
+ * dashboard completo.
+ */
+function ResultadosGenerales({
+  piezas,
+  onOpen,
+}: {
+  piezas: PiezaResultsSummaryDto[] | null;
+  onOpen: (p: Pick<ProposalDto, "id" | "title" | "token" | "widget">) => void;
+}) {
+  if (piezas === null) {
+    return (
+      <p className="flex items-center gap-2 rounded-xl border border-dashed bg-card px-4 py-8 text-[12.5px] text-text-3">
+        <Loader2 size={15} className="animate-spin" /> Cargando resultados…
+      </p>
+    );
+  }
+  if (piezas.length === 0) {
+    return (
+      <p className="rounded-xl border border-dashed bg-card px-4 py-8 text-center text-[12.5px] text-text-3">
+        Todavía no hay respuestas ni vouchers. Armá un formulario, encuesta o cupón en el
+        Constructor y compartilo: acá vas a ver los resultados de todas las piezas juntas.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {piezas.map((p) => {
+        const esCupon = p.widget?.type === "coupon";
+        const esEncuesta = p.widget?.type === "survey";
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() =>
+              onOpen({ id: p.id, title: p.title, token: p.token, widget: p.widget })
+            }
+            className="w-full rounded-xl border bg-card px-4 py-3 text-left transition-colors hover:bg-accent"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-bold text-text-1">
+                  {esCupon ? "🎟️" : esEncuesta ? "📊" : "📝"} {p.title}
+                </p>
+                <p className="text-[11px] text-text-3">
+                  {esCupon ? "Cupón / voucher" : esEncuesta ? "Encuesta" : "Formulario"} ·
+                  creada el {new Date(p.createdAt).toLocaleDateString("es-AR")}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {esCupon ? (
+                  <>
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                      {p.tokensEmitidos} emitidos
+                    </span>
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                      {p.tokensCanjeados} canjeados
+                    </span>
+                  </>
+                ) : (
+                  <span className="rounded-full border border-brand-soft bg-brand-tint px-2.5 py-1 text-[11px] font-semibold text-brand-text">
+                    {p.respuestas} {p.respuestas === 1 ? "respuesta" : "respuestas"}
+                  </span>
+                )}
+                <span className="text-[11px] font-semibold text-brand">
+                  Ver dashboard →
+                </span>
+              </div>
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }

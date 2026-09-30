@@ -79,6 +79,64 @@ export type TemplateDto = {
   body: string;
   status: "draft" | "pending" | "approved" | "rejected";
   rejectionReason: string | null;
+  /* 044b-B13 — catálogo segmentado: uso, explicación, componentes y estado local. */
+  segment: string | null;
+  explanation: string | null;
+  header: string | null;
+  footer: string | null;
+  buttons: Array<{ tipo: string; label: string }>;
+  auto: boolean;
+  autoRule: string | null;
+  paused: boolean;
+  seedCode: string | null;
+  pub: {
+    titulo: string;
+    subtitulo?: string | null;
+    cuerpo: string;
+    beneficio?: string | null;
+    cta?: string | null;
+  } | null;
+  waTemplateId: string | null;
+};
+
+/** 044b-B13 — una plantilla del baúl de piezas del Constructor. */
+export type PieceTemplateDto = {
+  id: string;
+  kind: string;
+  name: string;
+  segment: string | null;
+  data: Record<string, unknown>;
+  sourceCode: string | null;
+  autoRule: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** 044b-B13 — dashboard individual: respuestas del cliente a las piezas. */
+export type ClientPiezaRespuestaDto = {
+  id: string;
+  kind: string;
+  data: Array<{ label: string; value: string }>;
+  clientName: string | null;
+  createdAt: string;
+  proposalId: string;
+  proposalTitle: string;
+  proposalKind: string;
+  proposalToken: string;
+};
+
+/** 044b-B13 — dashboard individual: vouchers de cupón del cliente. */
+export type ClientPiezaVoucherDto = {
+  id: string;
+  token: string;
+  status: "emitido" | "canjeado";
+  issuedToName: string | null;
+  redeemedAt: string | null;
+  createdAt: string;
+  proposalId: string;
+  proposalTitle: string;
+  proposalToken: string;
 };
 
 export type StageDto = {
@@ -776,6 +834,19 @@ export type CouponTokenDto = {
   issuedToName: string | null;
   redeemedAt: string | null;
   createdAt: string;
+};
+
+/** 044b-B13 — una pieza en el dashboard GENERAL de Resultados. */
+export type PiezaResultsSummaryDto = {
+  id: string;
+  title: string;
+  kind: string;
+  token: string;
+  widget: ProposalWidget | null;
+  createdAt: string;
+  respuestas: number;
+  tokensEmitidos: number;
+  tokensCanjeados: number;
 };
 
 /** 042f — producto propio del CRM (mini tabla del selector de producto). */

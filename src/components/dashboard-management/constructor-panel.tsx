@@ -34,16 +34,22 @@ import {
 import { LibraryPicker } from "./library-picker";
 
 import { ANGLE_IDS, ANGLES, TONE_IDS, TONES, type ProposalAngleId, type ProposalToneId } from "@/lib/proposals/copy";
-import { PROPOSAL_KINDS, type SystemClientSearchResultDto } from "@/lib/types";
+import { PROPOSAL_KINDS, type PieceTemplateDto, type SystemClientSearchResultDto } from "@/lib/types";
 import { cn, systemClientName } from "@/lib/utils";
 import {
   CamposBuilder,
   CuponBuilder,
-  TipoSelector,
   type BuilderCampo,
   type BuilderCupon,
   type WidgetTipo,
 } from "./constructor-widgets";
+import {
+  ConstructorHub,
+  GuardarPlantillaModal,
+  TIPO_LABEL,
+  type PiezaPlantillaData,
+} from "./constructor-hub";
+import { DevicePreview, PiezaDemo } from "./device-preview";
 import { ProposalPostPanel } from "./proposal-post";
 
 type ClienteSistema = SystemClientSearchResultDto["client"];
@@ -200,6 +206,12 @@ export function ConstructorPanel({
     prefijo: "VCH",
     emitir: 0,
   });
+
+  /* 044b-B13 — el hub de creación (qué se construye · baúl · Plantillas de
+     Meta) y el guardado de la pieza actual como plantilla. */
+  const [hubAbierto, setHubAbierto] = useState(!clienteFijo);
+  const [guardandoPlantilla, setGuardandoPlantilla] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const pasosActuales = [
     PASOS[0],
     tipoCreacion === "formulario"
@@ -750,6 +762,94 @@ export function ConstructorPanel({
   const publicUrlAbs = creada ? `${typeof window !== "undefined" ? window.location.origin : ""}${creada.publicUrl}` : "";
   const portada = media[0];
 
+  /* 044b-B13 — «Usar» una plantilla del baúl: carga todo en el Constructor. */
+  function aplicarPlantilla(t: PieceTemplateDto) {
+    const d = (t.data ?? {}) as PiezaPlantillaData;
+    const kind = (
+      ["publicacion", "formulario", "encuesta", "cupon"].includes(t.kind)
+        ? t.kind
+        : "publicacion"
+    ) as WidgetTipo;
+    setTipoCreacion(kind);
+    setForm((f) => ({
+      ...f,
+      title: d.title ?? f.title,
+      subtitle: d.subtitle ?? f.subtitle,
+      body: d.body ?? f.body,
+      benefit: d.benefit ?? f.benefit,
+      offer: d.offer ?? f.offer,
+      ctaLabel: d.ctaLabel ?? f.ctaLabel,
+      ctaKind:
+        d.ctaKind === "pdf" || d.ctaKind === "agenda" ? d.ctaKind : f.ctaKind,
+    }));
+    if (kind === "formulario" && Array.isArray(d.campos) && d.campos.length > 0) {
+      setCampos(d.campos);
+    }
+    if (kind === "encuesta" && Array.isArray(d.campos) && d.campos.length > 0) {
+      setPreguntas(d.campos);
+    }
+    if (kind === "cupon" && d.cupon) {
+      setCupon((c) => ({
+        beneficio: d.cupon?.beneficio ?? c.beneficio,
+        condiciones: d.cupon?.condiciones ?? c.condiciones,
+        desde: d.cupon?.desde ?? c.desde,
+        hasta: d.cupon?.hasta ?? c.hasta,
+        prefijo: d.cupon?.prefijo ?? c.prefijo,
+        emitir: c.emitir,
+      }));
+    }
+    setHubAbierto(false);
+    setPaso(clienteFijo ? 1 : 0);
+    setToast("Plantilla cargada ✓ — elegí el destinatario y segui.");
+  }
+
+  /* Lo que se guarda en el baúl: los campos que el Constructor ya maneja. */
+  function datosPlantillaActual(): PiezaPlantillaData {
+    const base: PiezaPlantillaData = {
+      title: form.title,
+      subtitle: form.subtitle,
+      body: form.body,
+      offer: form.offer,
+      benefit: form.benefit,
+      ctaLabel: form.ctaLabel,
+      ctaKind: form.ctaKind,
+    };
+    if (tipoCreacion === "formulario") return { ...base, campos };
+    if (tipoCreacion === "encuesta") return { ...base, campos: preguntas };
+    if (tipoCreacion === "cupon") {
+      return {
+        ...base,
+        cupon: {
+          beneficio: cupon.beneficio,
+          condiciones: cupon.condiciones,
+          desde: cupon.desde,
+          hasta: cupon.hasta,
+          prefijo: cupon.prefijo,
+        },
+      };
+    }
+    return base;
+  }
+
+  const hayBorrador = Boolean(
+    form.title.trim() || form.body.trim() || cupon.beneficio.trim()
+  );
+
+  /* Datos del PDF del voucher (demo, con código de ejemplo). */
+  const voucherPdf =
+    tipoCreacion === "cupon"
+      ? {
+          negocio: form.companyName.trim() || "Tu negocio",
+          titulo: form.title.trim() || "Voucher de regalo",
+          beneficio: cupon.beneficio.trim() || "Tu beneficio",
+          condiciones: cupon.condiciones,
+          desde: cupon.desde,
+          hasta: cupon.hasta,
+          codigo: `${cupon.prefijo.trim() || "VCH"}-XXXX-XXXX`,
+          beneficiario: cliente ? systemClientName(cliente) : null,
+        }
+      : null;
+
   /* ———————————————————— Éxito ———————————————————— */
   if (creada) {
     return (
@@ -779,12 +879,62 @@ export function ConstructorPanel({
     );
   }
 
+  /* ———————————————————— Hub: qué se construye ———————————————————— */
+  if (hubAbierto) {
+    return (
+      <ConstructorHub
+        onElegirTipo={(t) => {
+          setTipoCreacion(t);
+          setHubAbierto(false);
+        }}
+        onUsarPlantilla={aplicarPlantilla}
+        hayBorrador={hayBorrador}
+        tipoBorrador={tipoCreacion}
+        onContinuar={() => setHubAbierto(false)}
+      />
+    );
+  }
+
   /* ———————————————————— Wizard ———————————————————— */
   return (
     <div className="space-y-3">
-      {/* Pasos */}
-      {/* 044b-B11 — qué se construye: se elige acá y cambia el paso 2. */}
-      <TipoSelector value={tipoCreacion} onChange={setTipoCreacion} />
+      {/* Aviso de acciones del hub / baúl */}
+      {toast && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-brand-soft bg-brand-tint px-3 py-1.5">
+          <p className="text-[11.5px] font-medium text-brand-text">{toast}</p>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            className="text-brand-text/70 hover:text-brand-text"
+            aria-label="Cerrar aviso"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
+      {/* 044b-B13 — qué se construye: se elige en el hub, con su propio
+          constructor. Acá queda el chip del tipo y las acciones del baúl. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-strong bg-card px-3 text-[12px] font-semibold">
+          {TIPO_LABEL[tipoCreacion] ?? tipoCreacion}
+        </span>
+        <button
+          type="button"
+          onClick={() => setHubAbierto(true)}
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-strong bg-card px-3 text-[11.5px] font-semibold text-text-2 transition-colors hover:bg-accent"
+        >
+          🔄 Cambiar tipo o ver el baúl
+        </button>
+        <button
+          type="button"
+          onClick={() => setGuardandoPlantilla(true)}
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-brand-soft bg-brand-tint px-3 text-[11.5px] font-semibold text-brand-text transition-opacity hover:opacity-90"
+          title="Guardar esta pieza en el baúl de plantillas"
+        >
+          🪄 Guardar como plantilla
+        </button>
+      </div>
 
       <ol className="flex flex-wrap items-center gap-1.5">
         {clienteFijo && (
@@ -837,7 +987,7 @@ export function ConstructorPanel({
         })}
       </ol>
 
-      <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-3 lg:grid-cols-[1fr_432px]">
         {/* Columna de trabajo */}
         <div className="rounded-lg border bg-card p-4">
           {paso === 0 && (
@@ -1696,65 +1846,20 @@ export function ConstructorPanel({
           </div>
         </div>
 
-        {/* Vista previa (al estilo de la pieza pública) */}
-        <aside className="rounded-lg border bg-card p-4">
-          <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-text-3">
-            Vista previa
-          </p>
-          <div className="overflow-hidden rounded-xl border border-border-strong bg-gradient-to-b from-brand-tint to-card">
-            <div className="border-b border-border px-3 py-2 text-[10.5px] font-semibold text-text-2">
-              Propuesta para {cliente ? systemClientName(cliente) : "el cliente"}
-            </div>
-
-            {portada ? (
-              portada.mime.startsWith("video/") ? (
-                <video className="h-36 w-full object-cover" src={portada.url} muted playsInline />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img className="h-36 w-full object-cover" src={portada.url} alt="" />
-              )
-            ) : (
-              <div className="flex h-24 items-center justify-center text-[11px] text-text-3">
-                (la portada va acá)
-              </div>
-            )}
-
-            <div className="space-y-1.5 px-3 py-3">
-              <p className="text-[13.5px] font-bold leading-snug">
-                {form.title || "Título de la publicación"}
-              </p>
-              {form.subtitle && <p className="text-[11.5px] text-text-2">{form.subtitle}</p>}
-              {form.benefit && (
-                <p className="inline-flex rounded-full border border-brand-soft bg-brand-tint px-2 py-0.5 text-[10.5px] font-semibold text-brand-text">
-                  🎁 {form.benefit}
-                </p>
-              )}
-              {form.offer && <p className="text-[10.5px] text-text-3">{form.offer}</p>}
-              {form.productName && (
-                <p className="text-[10.5px] text-text-2">Producto: {form.productName}</p>
-              )}
-              {form.body && (
-                <p className="line-clamp-4 whitespace-pre-line text-[11px] text-text-2">{form.body}</p>
-              )}
-              <div className="flex items-center gap-1.5 pt-1">
-                <span className="inline-flex h-6 items-center rounded-md bg-brand px-2 text-[10.5px] font-semibold text-brand-fg">
-                  Te contacto
-                </span>
-                <span className="inline-flex h-6 items-center rounded-md border px-2 text-[10.5px] font-semibold text-text-2">
-                  WhatsApp
-                </span>
-              </div>
-              {form.companyName && (
-                <p className="pt-1 text-[9.5px] uppercase tracking-wide text-text-3">
-                  Auspicia {form.companyName}
-                </p>
-              )}
-            </div>
-          </div>
-          <p className="mt-2 text-[10.5px] text-text-3">
-            La pieza final (la que abre el cliente con el link) respeta este contenido.
-          </p>
-        </aside>
+        {/* 044b-B13 — el VISOR DEMO multiformato, en vivo mientras se escribe:
+            Celular / Tablet / Web / Pantalla completa (tamaño real). */}
+        <DevicePreview voucher={voucherPdf}>
+          <PiezaDemo
+            tipo={tipoCreacion}
+            form={form}
+            clienteNombre={cliente ? systemClientName(cliente) : (clienteFijo?.nombre ?? null)}
+            portada={portada ?? null}
+            campos={campos}
+            preguntas={preguntas}
+            cupon={cupon}
+            logoPreview={logoPreview}
+          />
+        </DevicePreview>
       </div>
 
       {/* Contenedor universal — elegir fotos/video o el logo desde el estante compartido. */}
@@ -1768,6 +1873,19 @@ export function ConstructorPanel({
           kind={pickerTarget === "media" ? "all" : "image"}
           onPick={(asset) => pickFromLibrary({ id: asset.id, mime: asset.mime })}
           onClose={() => setPickerTarget(null)}
+        />
+      )}
+
+      {/* 044b-B13 — guardar la pieza actual como plantilla del baúl. */}
+      {guardandoPlantilla && (
+        <GuardarPlantillaModal
+          tipo={tipoCreacion}
+          data={datosPlantillaActual()}
+          onClose={() => setGuardandoPlantilla(false)}
+          onSaved={(msg) => {
+            setGuardandoPlantilla(false);
+            setToast(msg);
+          }}
         />
       )}
     </div>

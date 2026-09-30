@@ -68,6 +68,8 @@ const prefixes = {
   widgetField: "fwf",
   proposalResponse: "presp",
   couponToken: "cptok",
+  // 044b-B13 — baúl de plantillas de piezas (publicación/formulario/encuesta/cupón)
+  pieceTemplate: "btpl",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

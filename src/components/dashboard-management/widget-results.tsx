@@ -334,7 +334,8 @@ function ListaTokens({
   copiado,
   onCopiar,
 }: {
-  proposal: ProposalDto;
+  /** Solo el token para el link de canje (044b-B13). */
+  proposal: Pick<ProposalDto, "token">;
   payload: TokensPayload;
   busy: boolean;
   onEmitir: (cantidad: number, nombre: string) => void;
@@ -459,7 +460,8 @@ export function WidgetResultsModal({
   proposal,
   onClose,
 }: {
-  proposal: ProposalDto;
+  /** Solo necesita identidad + tipo de widget: el resto lo trae por API. */
+  proposal: Pick<ProposalDto, "id" | "title" | "token" | "widget">;
   onClose: () => void;
 }) {
   const esCupon = proposal.widget?.type === "coupon";

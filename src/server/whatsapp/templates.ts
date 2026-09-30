@@ -1,9 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   countVariables,
   renderBody,
   validateBodyVariables,
 } from "@/lib/templates";
+import { CATALOGO_PLANTILLAS } from "@/lib/templates-catalog";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
@@ -62,6 +63,18 @@ export function serializeTemplate(t: TemplateRow) {
     body: t.body,
     status: t.status,
     rejectionReason: t.rejectionReason,
+    // 044b-B13 — catálogo segmentado: uso, explicación, componentes y estado local.
+    segment: t.segment ?? null,
+    explanation: t.explanation ?? null,
+    header: t.header ?? null,
+    footer: t.footer ?? null,
+    buttons: t.buttons ?? [],
+    auto: t.auto,
+    autoRule: t.autoRule ?? null,
+    paused: t.paused,
+    seedCode: t.seedCode ?? null,
+    pub: t.pub ?? null,
+    waTemplateId: t.waTemplateId ?? null,
   };
 }
 
@@ -407,4 +420,247 @@ export async function sendTemplate(input: {
   });
 
   return { messageId: message.id };
+}
+
+/* ============================================================
+ * 044b-B13 — Catálogo de Plantillas de Meta segmentado
+ * ============================================================ */
+
+/**
+ * Crea una plantilla LOCAL del CRM (catálogo): queda en estado Borrador y NO
+ * se envía a Meta — el modo directo no tiene WABA. Si algún día se conecta la
+ * API oficial, se sube desde Meta aparte.
+ */
+export async function createLocalTemplate(
+  organizationId: string,
+  input: {
+    name: string;
+    language?: string;
+    category: string;
+    body: string;
+    segment?: string | null;
+    explanation?: string | null;
+    header?: string | null;
+    footer?: string | null;
+    buttons?: Array<{ tipo: string; label: string }> | null;
+    auto?: boolean;
+    autoRule?: string | null;
+  }
+): Promise<TemplateRow> {
+  const trimmedBody = input.body.trim();
+  if (!trimmedBody) throw new TemplateError("invalid", "El cuerpo no puede quedar vacío");
+  const variableError = validateBodyVariables(trimmedBody);
+  if (variableError) throw new TemplateError("invalid", variableError);
+
+  const name = input.name
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "");
+  if (!name) throw new TemplateError("invalid", "Nombre de plantilla inválido");
+
+  const db = getDb();
+  const inserted = await db
+    .insert(schema.template)
+    .values({
+      id: newId("template"),
+      organizationId,
+      name,
+      language: input.language ?? "es_AR",
+      category: input.category,
+      body: trimmedBody,
+      status: "draft",
+      segment: input.segment ?? null,
+      explanation: input.explanation ?? null,
+      header: input.header ?? null,
+      footer: input.footer ?? null,
+      buttons: input.buttons ?? [],
+      auto: input.auto ?? false,
+      autoRule: input.autoRule ?? null,
+    })
+    .onConflictDoNothing()
+    .returning();
+  const row = inserted[0];
+  if (!row) {
+    throw new TemplateError("invalid", "Ya existe una plantilla con ese nombre");
+  }
+  return row;
+}
+
+/** Campos editables localmente de una plantilla (catálogo o de Meta). */
+export type TemplatePatch = {
+  name?: string;
+  body?: string;
+  category?: string;
+  segment?: string | null;
+  explanation?: string | null;
+  header?: string | null;
+  footer?: string | null;
+  buttons?: Array<{ tipo: string; label: string }> | null;
+  auto?: boolean;
+  autoRule?: string | null;
+  paused?: boolean;
+  pub?: TemplateRow["pub"];
+};
+
+/** Actualiza una plantilla de la organización (los campos locales del catálogo). */
+export async function updateTemplate(
+  organizationId: string,
+  id: string,
+  patch: TemplatePatch
+): Promise<TemplateRow> {
+  const db = getDb();
+  const sets: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.name !== undefined) {
+    const name = patch.name
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .replace(/[^a-z0-9_]/g, "");
+    if (!name) throw new TemplateError("invalid", "Nombre de plantilla inválido");
+    sets.name = name;
+  }
+  if (patch.body !== undefined) {
+    const trimmed = patch.body.trim();
+    if (!trimmed) throw new TemplateError("invalid", "El cuerpo no puede quedar vacío");
+    const variableError = validateBodyVariables(trimmed);
+    if (variableError) throw new TemplateError("invalid", variableError);
+    sets.body = trimmed;
+  }
+  if (patch.category !== undefined) sets.category = patch.category;
+  if (patch.segment !== undefined) sets.segment = patch.segment;
+  if (patch.explanation !== undefined) sets.explanation = patch.explanation;
+  if (patch.header !== undefined) sets.header = patch.header;
+  if (patch.footer !== undefined) sets.footer = patch.footer;
+  if (patch.buttons !== undefined) sets.buttons = patch.buttons ?? [];
+  if (patch.auto !== undefined) sets.auto = patch.auto;
+  if (patch.autoRule !== undefined) sets.autoRule = patch.autoRule;
+  if (patch.paused !== undefined) sets.paused = patch.paused;
+  if (patch.pub !== undefined) sets.pub = patch.pub;
+
+  const updated = await db
+    .update(schema.template)
+    .set(sets)
+    .where(
+      scoped(
+        schema.template.organizationId,
+        organizationId,
+        eq(schema.template.id, id)
+      )
+    )
+    .returning();
+  const row = updated[0];
+  if (!row) throw new TemplateError("not_found", "Plantilla no encontrada");
+  return row;
+}
+
+/** Elimina una plantilla de la organización. El catálogo no la re-crea solo. */
+export async function deleteTemplate(
+  organizationId: string,
+  id: string
+): Promise<void> {
+  const db = getDb();
+  const deleted = await db
+    .delete(schema.template)
+    .where(
+      scoped(
+        schema.template.organizationId,
+        organizationId,
+        eq(schema.template.id, id)
+      )
+    )
+    .returning({ id: schema.template.id });
+  if (!deleted[0]) throw new TemplateError("not_found", "Plantilla no encontrada");
+}
+
+/**
+ * Siembra el catálogo de Plantillas de Meta (44b-B13) para la organización:
+ * inserta las que falten (por seedCode) y de cada una siembra su pieza
+ * pre-cargada del Constructor (piece_template, sourceCode = code).
+ * Idempotente: correrlo dos veces NO duplica. Una plantilla borrada a
+ * propósito vuelve solo si se vuelve a apretar «Cargar catálogo».
+ */
+export async function seedTemplateCatalog(
+  organizationId: string
+): Promise<{ templates: number; pieces: number }> {
+  const db = getDb();
+  const codes = CATALOGO_PLANTILLAS.map((p) => p.code);
+
+  const existingTpl = await db
+    .select({ seedCode: schema.template.seedCode })
+    .from(schema.template)
+    .where(
+      and(
+        scoped(schema.template.organizationId, organizationId),
+        inArray(schema.template.seedCode, codes)
+      )
+    );
+  const haveTpl = new Set(existingTpl.map((r) => r.seedCode));
+
+  const existingPie = await db
+    .select({ sourceCode: schema.pieceTemplate.sourceCode })
+    .from(schema.pieceTemplate)
+    .where(
+      and(
+        scoped(schema.pieceTemplate.organizationId, organizationId),
+        inArray(schema.pieceTemplate.sourceCode, codes)
+      )
+    );
+  const havePie = new Set(existingPie.map((r) => r.sourceCode));
+
+  let templates = 0;
+  let pieces = 0;
+  for (const p of CATALOGO_PLANTILLAS) {
+    if (!haveTpl.has(p.code)) {
+      const inserted = await db
+        .insert(schema.template)
+        .values({
+          id: newId("template"),
+          organizationId,
+          name: p.code,
+          language: "es_AR",
+          category: p.categoriaMeta === "Marketing" ? "MARKETING" : "UTILITY",
+          body: p.cuerpo,
+          status: "draft",
+          segment: p.segmento,
+          explanation: p.cuando,
+          header: p.encabezado ?? null,
+          footer: p.pie ?? null,
+          buttons: p.botones ?? [],
+          auto: p.auto,
+          autoRule: p.reglaAuto ?? null,
+          seedCode: p.code,
+          pub: p.publicacion ?? null,
+        })
+        .onConflictDoNothing()
+        .returning({ id: schema.template.id });
+      if (inserted[0]) templates += 1;
+    }
+    if (!havePie.has(p.code)) {
+      const inserted = await db
+        .insert(schema.pieceTemplate)
+        .values({
+          id: newId("pieceTemplate"),
+          organizationId,
+          kind: "publicacion",
+          name: p.nombre,
+          segment: p.segmento,
+          data: {
+            title: p.publicacion.titulo,
+            subtitle: p.publicacion.subtitulo ?? "",
+            body: p.publicacion.cuerpo,
+            benefit: p.publicacion.beneficio ?? "",
+            ctaLabel: p.publicacion.cta ?? "",
+            ctaKind: "link",
+          },
+          sourceCode: p.code,
+          autoRule: p.reglaAuto ?? null,
+          createdBy: null,
+        })
+        .onConflictDoNothing()
+        .returning({ id: schema.pieceTemplate.id });
+      if (inserted[0]) pieces += 1;
+    }
+  }
+  return { templates, pieces };
 }

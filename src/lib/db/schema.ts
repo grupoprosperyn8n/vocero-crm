@@ -797,6 +797,26 @@ export const template = pgTable(
       .default("draft"),
     rejectionReason: text("rejection_reason"),
     waTemplateId: text("wa_template_id"),
+    /* 044b-B13 — catálogo de Plantillas de Meta segmentado: uso, explicación,
+     * encabezado/pie/botones, uso automático y pausa (Offline). Las plantillas
+     * nacidas del catálogo llevan seedCode (idempotencia del seed) y `pub` con
+     * su derivada pre-cargada para el Constructor de publicaciones. */
+    segment: text("segment"),
+    explanation: text("explanation"),
+    header: text("header"),
+    footer: text("footer"),
+    buttons: jsonb("buttons").$type<Array<{ tipo: string; label: string }>>(),
+    auto: boolean("auto").notNull().default(false),
+    autoRule: text("auto_rule"),
+    paused: boolean("paused").notNull().default(false),
+    seedCode: text("seed_code"),
+    pub: jsonb("pub").$type<{
+      titulo: string;
+      subtitulo?: string | null;
+      cuerpo: string;
+      beneficio?: string | null;
+      cta?: string | null;
+    } | null>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -806,6 +826,7 @@ export const template = pgTable(
       t.name,
       t.language
     ),
+    index("template_org_seed_idx").on(t.organizationId, t.seedCode),
   ]
 );
 
@@ -1794,6 +1815,45 @@ export const proposalTemplate = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("proposal_template_org_kind_uq").on(t.organizationId, t.kind)]
+);
+
+/**
+ * 044b-B13 — el BAÚL de plantillas de piezas: cualquier pieza del Constructor
+ * (publicación, formulario, encuesta o cupón/voucher) se puede guardar como
+ * plantilla con su nombre y segmento, y reusarse desde el hub «Crear».
+ * Las derivadas del catálogo de Plantillas de Meta entran con sourceCode.
+ * Las usan TODOS los roles (propietario · administrador · gerente · empleado).
+ */
+export const pieceTemplate = pgTable(
+  "piece_template",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** publicacion | formulario | encuesta | cupon (WidgetTipo del Constructor). */
+    kind: text("kind").notNull(),
+    name: text("name").notNull(),
+    /** Segmento / etiqueta libre para filtrar el baúl. */
+    segment: text("segment"),
+    /** Datos de la pieza: campos del Constructor (title/subtitle/body/offer/
+     * benefit/ctaLabel/ctaKind/accent) + widget (form/survey/coupon). */
+    data: jsonb("data").$type<Record<string, unknown>>().notNull(),
+    /** Si nació del catálogo de Plantillas de Meta, el código (source). */
+    sourceCode: text("source_code"),
+    /** Cuándo la usa el sistema solo (texto de la regla; del catálogo). */
+    autoRule: text("auto_rule"),
+    active: boolean("active").notNull().default(true),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("piece_template_org_kind_idx").on(t.organizationId, t.kind),
+    index("piece_template_org_source_idx").on(t.organizationId, t.sourceCode),
+  ]
 );
 
 /**

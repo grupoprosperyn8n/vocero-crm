@@ -17,6 +17,7 @@ import {
   ArchiveRestore,
   CalendarClock,
   ClipboardCopy,
+  ClipboardList,
   ExternalLink,
   FileText,
   History as HistoryIcon,
@@ -48,6 +49,8 @@ import {
 import {
   PROPOSAL_KINDS,
   type ClientFichaDto,
+  type ClientPiezaRespuestaDto,
+  type ClientPiezaVoucherDto,
   type ProposalDto,
   type ProposalPriority,
 } from "@/lib/types";
@@ -615,6 +618,14 @@ function PanelBody({
         )}
       </section>
 
+      {/* 044b-B13 — el dashboard individual: respuestas y vouchers */}
+      <section>
+        <SectionTitle icon={<ClipboardList size={13} />}>
+          Respuestas y vouchers del cliente
+        </SectionTitle>
+        <PiezasDelCliente customer={customer} />
+      </section>
+
       {/* 5 · Historial de gestiones */}
       <section>
         <SectionTitle icon={<Archive size={13} />}>
@@ -696,6 +707,160 @@ function PanelBody({
           </p>
         </section>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * 044b-B13 — DASHBOARD INDIVIDUAL: lo que este cliente respondió en las
+ * piezas del Constructor (formularios y encuestas) y los vouchers que tiene
+ * emitidos. Misma vista para todos los accesos: ficha, cola, retención,
+ * reactivación y venta cruzada — «misma información, dos puertas de entrada».
+ */
+function PiezasDelCliente({ customer }: { customer: PanelCustomer }) {
+  const [respuestas, setRespuestas] = useState<ClientPiezaRespuestaDto[] | null>(null);
+  const [vouchers, setVouchers] = useState<ClientPiezaVoucherDto[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const params = new URLSearchParams({ ref: customer.id });
+      if (customer.name) params.set("name", customer.name);
+      if (customer.phone) params.set("phone", customer.phone);
+      const res = await fetch(`/api/clients/piezas?${params.toString()}`, {
+        cache: "no-store",
+      }).catch(() => null);
+      if (!alive) return;
+      if (!res?.ok) {
+        setRespuestas([]);
+        setVouchers([]);
+        return;
+      }
+      const data = (await res.json().catch(() => ({}))) as {
+        respuestas?: ClientPiezaRespuestaDto[];
+        vouchers?: ClientPiezaVoucherDto[];
+      };
+      setRespuestas(data.respuestas ?? []);
+      setVouchers(data.vouchers ?? []);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [customer.id, customer.name, customer.phone]);
+
+  const fecha = (iso: string) => new Date(iso).toLocaleDateString("es-AR");
+
+  if (respuestas === null || vouchers === null) {
+    return (
+      <p className="flex items-center gap-2 rounded-xl border border-dashed bg-card px-4 py-4 text-[12.5px] text-text-3">
+        <Loader2 size={14} className="animate-spin" /> Buscando respuestas y vouchers…
+      </p>
+    );
+  }
+
+  const total = respuestas.length + vouchers.length;
+  if (total === 0) {
+    return (
+      <p className="rounded-xl border border-dashed bg-card px-4 py-4 text-center text-[12.5px] text-text-3">
+        Todavía no hay respuestas ni vouchers de {customer.name.split(" ")[0]} — cuando
+        complete un formulario o encuesta que le mandes (o use un cupón), aparece acá.
+      </p>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-2">
+      {/* Respuestas */}
+      <div className="space-y-2">
+        <p className="text-[11px] font-bold tracking-wide text-text-3 uppercase">
+          📝 Respuestas {respuestas.length > 0 && `(${respuestas.length})`}
+        </p>
+        {respuestas.length === 0 ? (
+          <p className="rounded-xl border border-dashed bg-card px-3 py-3 text-[12px] text-text-3">
+            Sin respuestas todavía.
+          </p>
+        ) : (
+          respuestas.map((r) => (
+            <div key={r.id} className="rounded-xl border bg-card px-3 py-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                <p className="text-[12px] font-bold text-text-1">
+                  {r.proposalKind === "survey" || r.kind === "survey" ? "📊" : "📝"}{" "}
+                  {r.proposalTitle}
+                </p>
+                <span className="text-[10.5px] text-text-3">{fecha(r.createdAt)}</span>
+              </div>
+              <ul className="mt-1.5 space-y-0.5">
+                {r.data.slice(0, 8).map((f, i) => (
+                  <li key={i} className="text-[11.5px] text-text-2">
+                    <span className="font-semibold text-text-3">{f.label}:</span>{" "}
+                    {f.value || "—"}
+                  </li>
+                ))}
+              </ul>
+              {r.proposalToken && (
+                <a
+                  href={`/p/${r.proposalToken}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-brand hover:underline"
+                >
+                  <ExternalLink size={10} /> Ver la pieza
+                </a>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Vouchers */}
+      <div className="space-y-2">
+        <p className="text-[11px] font-bold tracking-wide text-text-3 uppercase">
+          🎟️ Vouchers {vouchers.length > 0 && `(${vouchers.length})`}
+        </p>
+        {vouchers.length === 0 ? (
+          <p className="rounded-xl border border-dashed bg-card px-3 py-3 text-[12px] text-text-3">
+            Sin vouchers emitidos todavía.
+          </p>
+        ) : (
+          vouchers.map((v) => (
+            <div key={v.id} className="rounded-xl border bg-card px-3 py-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                <p className="font-mono text-[13px] font-bold tracking-wide text-text-1">
+                  {v.token}
+                </p>
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold ${
+                    v.status === "canjeado"
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                      : "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                  }`}
+                >
+                  {v.status === "canjeado"
+                    ? `Canjeado${v.redeemedAt ? ` el ${fecha(v.redeemedAt)}` : ""}`
+                    : "Emitido (sin canjear)"}
+                </span>
+              </div>
+              <p className="mt-1 text-[11.5px] text-text-2">
+                🎁 {v.proposalTitle}
+                {v.issuedToName ? ` · para ${v.issuedToName}` : ""} · emitido el{" "}
+                {fecha(v.createdAt)}
+              </p>
+              {v.proposalToken && (
+                <a
+                  href={`/p/${v.proposalToken}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-brand hover:underline"
+                >
+                  <ExternalLink size={10} /> Ver el cupón
+                </a>
+              )}
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

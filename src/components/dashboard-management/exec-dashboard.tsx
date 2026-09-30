@@ -87,6 +87,7 @@ import {
 import type {
   ClientInsight,
   DashboardResponse,
+  DrillItem,
   DrillList,
   InsightMode,
   ModuleAiId,
@@ -759,6 +760,9 @@ function SuggestionsStrip({
 
 /* —————————————————————— Listas del módulo —————————————————————— */
 
+/** 044b-B13 — módulos cuyos listados de clientes permiten abrir el dashboard individual. */
+const MODULOS_CON_DASHBOARD_CLIENTE = ["retencion", "reactivacion", "cross", "cartera", "pulso"];
+
 function ModuleLists({
   module,
   lists,
@@ -767,6 +771,7 @@ function ModuleLists({
   onToggle,
   onSelect,
   onClose,
+  onOpenClient,
 }: {
   module: string;
   lists: DrillList[];
@@ -775,8 +780,43 @@ function ModuleLists({
   onToggle: () => void;
   onSelect: (id: string) => void;
   onClose: () => void;
+  /** 044b-B13 — abre el panel del cliente (con su dashboard individual). */
+  onOpenClient?: (c: PanelCustomer) => void;
 }) {
   const [query, setQuery] = useState("");
+  /* 044b-B13 — «Dashboard» desde un listado: busca la ficha por nombre. */
+  const [buscando, setBuscando] = useState<string | null>(null);
+  const [errorAviso, setErrorAviso] = useState<string | null>(null);
+
+  const abrirDashboard = async (item: DrillItem) => {
+    if (!onOpenClient || buscando) return;
+    setErrorAviso(null);
+    setBuscando(item.name);
+    try {
+      const res = await fetch(`/api/clients/search?q=${encodeURIComponent(item.name)}`, {
+        cache: "no-store",
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => ({}))) as {
+        results?: SystemClientSearchResultDto[];
+      };
+      const hit = data?.results?.[0];
+      if (!res?.ok || !hit) {
+        setErrorAviso(`No encontré la ficha de ${item.name} para abrir su dashboard.`);
+        return;
+      }
+      onOpenClient({
+        id: hit.client.recordId,
+        name: [hit.client.nombre, hit.client.apellido].filter(Boolean).join(" ").trim(),
+        dni: hit.client.dni ?? item.dni ?? null,
+        phone: hit.client.telefono ?? null,
+        backendUrl: item.links?.[0]?.url ?? null,
+      });
+    } catch {
+      setErrorAviso("No se pudo consultar el sistema para abrir el dashboard.");
+    } finally {
+      setBuscando(null);
+    }
+  };
 
   const current = lists.find((list) => list.id === active) || lists[0];
 
@@ -884,6 +924,18 @@ function ModuleLists({
                   <span className="block truncate text-[11px] text-text-3">{item.extra}</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
+                  {onOpenClient && MODULOS_CON_DASHBOARD_CLIENTE.includes(module) && (
+                    <button
+                      type="button"
+                      disabled={buscando !== null}
+                      onClick={() => void abrirDashboard(item)}
+                      className="inline-flex items-center gap-1 rounded-md border border-brand-soft bg-brand-tint px-2 py-0.5 text-[11px] font-semibold text-brand-text transition-opacity hover:opacity-90 disabled:opacity-50"
+                      title="Dashboard individual del cliente: su ficha, respuestas y vouchers (igual que Cliente 360)"
+                    >
+                      <LayoutDashboard size={11} />
+                      {buscando === item.name ? "Abriendo…" : "Dashboard"}
+                    </button>
+                  )}
                   {item.links.map((link) => (
                     <a
                       key={link.url}
@@ -906,6 +958,10 @@ function ModuleLists({
               </div>
             )}
           </div>
+
+          {errorAviso && (
+            <p className="mt-2 text-[11.5px] text-danger-text">{errorAviso}</p>
+          )}
         </div>
       )}
     </div>
@@ -1799,6 +1855,7 @@ export function ExecDashboard() {
           setListOpen((prev) => ({ ...prev, [module]: true }));
         }}
         onClose={() => closeList()}
+        onOpenClient={(c) => setPanelClient(c)}
       />
     );
   };

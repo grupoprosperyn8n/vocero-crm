@@ -11,6 +11,7 @@ import {
 import { getBranding } from "@/server/branding";
 import { PrintButton } from "./print-button";
 import { MediaCarousel } from "./media-carousel";
+import { VoucherDownloadButton } from "./voucher-download-button";
 import { PublicWidgetForm } from "./widget-form";
 
 export const dynamic = "force-dynamic";
@@ -307,6 +308,19 @@ export default async function ProposalPage({ params, searchParams }: Props) {
                   {proposal.widget.condiciones}
                 </p>
               )}
+              {/* 044b-B13 — el cliente descarga su voucher en PDF */}
+              <VoucherDownloadButton
+                data={{
+                  negocio: branding?.name ?? "Tu asesor de seguros",
+                  titulo: proposal.title,
+                  beneficio: proposal.widget.beneficio,
+                  condiciones: proposal.widget.condiciones ?? null,
+                  desde: proposal.widget.desde ?? null,
+                  hasta: proposal.widget.hasta ?? null,
+                  codigo: cuponValido?.token ?? null,
+                  beneficiario: proposal.clientName,
+                }}
+              />
             </div>
           )}
 
