@@ -275,7 +275,11 @@ export const PUT = withAdminKey(async (req: Request) => {
     }
   }
 
-  // Membresía (alta o cambio de rol; nunca dejar sin dueño a la instancia).
+  // Membresía: alta con el rol que manda el productor. Si la cuenta YA tiene
+  // membresía el rol NO se toca: el rol del CRM se elige en el CRM (026) y el
+  // sync no lo pisa — igual criterio que el estado offline. Antes se
+  // re-escribía y cualquier cambio hecho en Ajustes → Equipo volvía atrás en
+  // la siguiente corrida del sync («no guardaba el rol»).
   const membership = await findMembership(orgId, user.id);
   if (!membership) {
     await db.insert(schema.member).values({
@@ -285,23 +289,6 @@ export const PUT = withAdminKey(async (req: Request) => {
       role,
     });
     changes.push("member");
-  } else if (membership.role !== role) {
-    if (
-      membership.role === "owner" &&
-      role !== "owner" &&
-      (await countOwners(orgId)) <= 1
-    ) {
-      return apiError(
-        409,
-        "last_owner",
-        "No se puede quitar el rol de propietario al único dueño de la instancia"
-      );
-    }
-    await db
-      .update(schema.member)
-      .set({ role })
-      .where(eq(schema.member.id, membership.id));
-    changes.push("role");
   }
 
   // Ficha del empleado: solo si el productor mandó algún dato. Sin cambios
