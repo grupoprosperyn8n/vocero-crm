@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getSessionOrNull } from "@/lib/auth/session";
+import { canUseDashboard } from "@/lib/roles";
 import { dashboardManagementUrl } from "@/server/dashboard-management/flag";
 import { ExecDashboard } from "@/components/dashboard-management/exec-dashboard";
 
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 export default async function DashboardManagementPage() {
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
-  if (session.role === "member") redirect("/inbox");
+  if (!canUseDashboard(session.role)) redirect("/inbox");
   const url = dashboardManagementUrl();
   if (!url) notFound();
   return <ExecDashboard />;

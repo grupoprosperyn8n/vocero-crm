@@ -1,4 +1,5 @@
 import { apiError, withAuth } from "@/lib/api";
+import { canUseDashboard } from "@/lib/roles";
 import { dashboardAiStatus } from "@/server/dashboard-management/ai";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
  * modelo y el uso del tope diario.
  */
 export const GET = withAuth(async (session) => {
-  if (session.role === "member") {
+  if (!canUseDashboard(session.role)) {
     return apiError(403, "forbidden", "Solo dueño y propietarios.");
   }
 

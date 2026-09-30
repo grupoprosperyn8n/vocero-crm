@@ -1,8 +1,9 @@
 import { z } from "zod";
 
-import { parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
+import { canUseDashboard } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,9 @@ const bodySchema = z.object({
 });
 
 export const POST = withAuth(async (session, req: Request) => {
+  if (!canUseDashboard(session.role)) {
+    return apiError(403, "forbidden", "Solo dueño y propietarios.");
+  }
   const parsed = await parseBody(req, bodySchema);
   if (!parsed.ok) {
     return parsed.response;

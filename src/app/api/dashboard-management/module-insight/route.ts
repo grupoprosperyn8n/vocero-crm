@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { MODULE_AI_IDS } from "@/lib/dashboard-management/types";
+import { canUseDashboard } from "@/lib/roles";
 import { generateModuleInsight } from "@/server/dashboard-management/ai";
 import {
   MODULE_BRIEFS,
@@ -37,7 +38,7 @@ const bodySchema = z.object({
 });
 
 export const POST = withAuth(async (session, req: Request) => {
-  if (session.role === "member") {
+  if (!canUseDashboard(session.role)) {
     return apiError(403, "forbidden", "Solo dueño y propietarios.");
   }
 

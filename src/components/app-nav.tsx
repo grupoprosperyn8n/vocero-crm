@@ -23,6 +23,7 @@ import {
 import type { Branding } from "@/lib/branding";
 import type { ThemePreference } from "@/lib/theme";
 import { cn, initials } from "@/lib/utils";
+import { canUseDashboard } from "@/lib/roles";
 import { signOut } from "@/lib/auth/client";
 import { useEvents } from "@/components/use-events";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -193,9 +194,9 @@ export function AppNav({
   // Ajustes solo por Equipo. 027 — "Alertas" solo en instancias configuradas.
   let nav = role === "owner" ? NAV : NAV.filter((i) => i.href !== "/agent");
   if (!alerts) nav = nav.filter((i) => i.href !== "/alerts");
-  // 038 — Dashboard Management: dueño y propietarios, solo con cockpit
-  // configurado en esta instancia.
-  if (!dashboardManagement || role === "member")
+  // 038/044b — Dashboard Management: dueño y propietarios (owner/admin), solo
+  // con cockpit configurado en esta instancia. Gerente y miembro no lo ven.
+  if (!dashboardManagement || !canUseDashboard(role))
     nav = nav.filter((i) => i.href !== "/dashboard-management");
   // Citas va después del Flujo de Venta/Gestión: es el paso siguiente de un trato, no una
   // sección aparte.

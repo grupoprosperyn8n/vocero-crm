@@ -17,3 +17,12 @@ export function roleLabel(role: string): string {
   if (role === "manager") return "Gerente";
   return "Miembro";
 }
+
+/**
+ * 044b — Dashboard Management: sección del propietario y el dueño (owner y
+ * admin). El gerente y el miembro no entran: misma regla en la página, el nav
+ * y las APIs (`/api/dashboard-management/*`).
+ */
+export function canUseDashboard(role: string): boolean {
+  return role === "owner" || role === "admin";
+}

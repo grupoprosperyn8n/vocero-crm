@@ -1,5 +1,6 @@
 import { apiError, withAuth } from "@/lib/api";
 import type { InsightScope } from "@/lib/dashboard-management/types";
+import { canUseDashboard } from "@/lib/roles";
 import {
   deleteInsight,
   deleteInsightsOlderThan,
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
  */
 
 export const GET = withAuth(async (session, req: Request) => {
-  if (session.role === "member") {
+  if (!canUseDashboard(session.role)) {
     return apiError(403, "forbidden", "Solo dueño y propietarios.");
   }
 
@@ -40,7 +41,7 @@ export const GET = withAuth(async (session, req: Request) => {
 });
 
 export const DELETE = withAuth(async (session, req: Request) => {
-  if (session.role === "member") {
+  if (!canUseDashboard(session.role)) {
     return apiError(403, "forbidden", "Solo dueño y propietarios.");
   }
 

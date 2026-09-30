@@ -1,4 +1,5 @@
 import { apiError, withAuth } from "@/lib/api";
+import { canUseDashboard } from "@/lib/roles";
 import { CockpitUnavailableError, cockpitFetch } from "@/server/dashboard-management/cockpit";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
  * propietarios únicamente — la misma regla que la página.
  */
 export const GET = withAuth(async (session, req: Request) => {
-  if (session.role === "member") {
+  if (!canUseDashboard(session.role)) {
     return apiError(403, "forbidden", "Solo dueño y propietarios.");
   }
 
