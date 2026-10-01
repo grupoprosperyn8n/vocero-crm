@@ -23,7 +23,7 @@ import {
 import type { Branding } from "@/lib/branding";
 import type { ThemePreference } from "@/lib/theme";
 import { cn, initials } from "@/lib/utils";
-import { canUseDashboard } from "@/lib/roles";
+import { canUseDashboard, canUseLab } from "@/lib/roles";
 import { signOut } from "@/lib/auth/client";
 import { useEvents } from "@/components/use-events";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -198,6 +198,8 @@ export function AppNav({
   // con cockpit configurado en esta instancia. Gerente y miembro no lo ven.
   if (!dashboardManagement || !canUseDashboard(role))
     nav = nav.filter((i) => i.href !== "/dashboard-management");
+  // 30Sep — Laboratorio: solo propietario y administrador (pedido Diego).
+  if (!canUseLab(role)) nav = nav.filter((i) => i.href !== "/lab");
   // Citas va después del Flujo de Venta/Gestión: es el paso siguiente de un trato, no una
   // sección aparte.
   const items = agenda
@@ -332,8 +334,11 @@ export function AppNav({
       {/* 023 — Sucursal del día: dónde trabaja hoy (rota entre oficinas). */}
       <OfficeTodayPicker compact={collapsed} />
 
-      {/* 021 — Ajustes: el administrador entra solo por Equipo; el miembro no lo ve. */}
-      {role !== "member" && (
+      {/* 021 v2 — Ajustes: propietario y administrador (Equipo y operación).
+          30Sep — Alineado con las pestañas (SettingsNav, vacías para el
+          gerente), la raíz (/settings) y las guardas de página: el gerente y
+          el miembro no ven ni entran. */}
+      {(role === "owner" || role === "admin") && (
         <Link
           href="/settings"
           title={collapsed ? "Ajustes" : undefined}

@@ -36,3 +36,12 @@ export function canUseDashboard(role: string): boolean {
 export function canManageAlerts(role: string): boolean {
   return role === "owner" || role === "admin" || role === "manager";
 }
+
+/**
+ * 30Sep — Laboratorio: sección del propietario y el administrador (pedido de
+ * Diego: «laboratorio es solo para propietario y administrador nada más»).
+ * Misma regla en la página, el nav y las APIs (`/api/lab/*`).
+ */
+export function canUseLab(role: string): boolean {
+  return role === "owner" || role === "admin";
+}

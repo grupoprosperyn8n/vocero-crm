@@ -4,7 +4,7 @@ import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
-import { customizationGate } from "@/server/settings/access";
+import { labGate } from "@/server/settings/access";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ const bodySchema = z.object({
 });
 
 export const POST = withAuth(async (session, req: Request) => {
-  const gate = customizationGate(session);
+  const gate = labGate(session);
   if (gate) return gate;
   const body = await parseBody(req, bodySchema);
   if (!body.ok) return body.response;

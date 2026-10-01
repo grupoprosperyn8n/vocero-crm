@@ -535,6 +535,7 @@ export function InboxClient({
           selectedId={selectedId}
           onSelect={select}
           onSeeded={() => void refetchConversations("open")}
+          canSeedDemo={viewerRole === "owner"}
           onNewConversation={newConversationOpened}
           view={view}
           onViewChange={changeView}

@@ -26,9 +26,12 @@ const STAGE_DOT_FALLBACK = "#8391aa";
 function EmptyState({
   onSeeded,
   onNew,
+  canSeed,
 }: {
   onSeeded: () => void;
   onNew: () => void;
+  /** 30Sep — La demo (FR-075) es del propietario: al resto no se le ofrece. */
+  canSeed: boolean;
 }) {
   const [seeding, setSeeding] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -57,7 +60,7 @@ function EmptyState({
           <Plus className="h-4 w-4" strokeWidth={1.7} />
           Nueva conversación
         </Button>
-        {!failed && (
+        {canSeed && !failed && (
           <Button
             size="sm"
             variant="outline"
@@ -79,6 +82,7 @@ export function ConversationList({
   selectedId,
   onSelect,
   onSeeded,
+  canSeedDemo,
   onNewConversation,
   view,
   onViewChange,
@@ -98,6 +102,8 @@ export function ConversationList({
   selectedId: string | null;
   onSelect: (id: string) => void;
   onSeeded: () => void;
+  /** 30Sep — FR-075: cargar la demo es del propietario. */
+  canSeedDemo: boolean;
   /** 2026-09-13: "Nueva conversación" — el hilo abierto se selecciona solo. */
   onNewConversation: (contactId: string) => void;
   /** 2A/026: cola viva (En curso), archivo global (Cerradas) o MI archivo. */
@@ -490,7 +496,11 @@ export function ConversationList({
               </div>
             </div>
           ) : (
-            <EmptyState onSeeded={onSeeded} onNew={() => setNova(true)} />
+            <EmptyState
+              onSeeded={onSeeded}
+              onNew={() => setNova(true)}
+              canSeed={canSeedDemo}
+            />
           )
         ) : visible.length === 0 ? (
           <p className="p-6 text-center text-xs text-text-3">

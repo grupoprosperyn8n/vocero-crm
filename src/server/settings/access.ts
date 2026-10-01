@@ -1,4 +1,5 @@
 import { apiError } from "@/lib/api";
+import { canUseLab } from "@/lib/roles";
 
 /**
  * 021 — Reparto de la configuración del CRM (definido por Diego, 2026-09-11):
@@ -28,5 +29,19 @@ export function teamGate(session: { role: string }): Response | null {
     403,
     "FORBIDDEN",
     "Solo el propietario o un administrador pueden ver o cambiar esto."
+  );
+}
+
+/**
+ * 30Sep — Laboratorio (evaluación del agente, sugerencias, datos del
+ * negocio): propietario y administrador (pedido Diego). Reemplaza al gate de
+ * customización en las rutas del lab: quien abre el Laboratorio lo usa entero.
+ */
+export function labGate(session: { role: string }): Response | null {
+  if (canUseLab(session.role)) return null;
+  return apiError(
+    403,
+    "FORBIDDEN",
+    "Solo el propietario o un administrador pueden usar el Laboratorio."
   );
 }

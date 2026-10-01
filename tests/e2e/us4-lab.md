@@ -1,5 +1,9 @@
 # Guion E2E — US4: Laboratorio (SIEMPRE contra ai-mock, determinista)
 
+> **Acceso (30Sep):** el Laboratorio es del propietario y el administrador.
+> Gerente y miembro no ven el ítem en el nav; `/lab` los rebota a la Bandeja y
+> `/api/lab/*` les responde 403.
+
 > Conducido con Playwright (MCP) contra `pnpm dev` con ai-mock. El KB inicial
 > NO cubre garantías/devoluciones (hueco intencional del guion).
 
