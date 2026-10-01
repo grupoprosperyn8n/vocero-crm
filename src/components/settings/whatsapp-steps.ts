@@ -1,5 +1,6 @@
 /**
- * 043 — Asistente de conexión: datos de los pasos y resumen de handoff.
+ * 043/045 — Asistente de conexión: datos de los pasos, requisitos previos,
+ * datos del negocio para el alta y resumen de handoff.
  *
  * Sin JSX a propósito: el resumen y el catálogo de pasos se testean con
  * Vitest sin montar React (whatsapp-assistant.tsx solo los renderiza).
@@ -25,6 +26,35 @@ export type AssistantStep = {
 };
 
 export const TOTAL_ASSISTANT_STEPS = 7;
+
+/**
+ * 045-A — «Antes de empezar»: lo que conviene tener listo antes del paso 1.
+ * Contenido de referencia: no se captura nada de acá.
+ */
+export type PrerequisiteItem = { title: string; text: string };
+
+export const PREREQUISITES: PrerequisiteItem[] = [
+  {
+    title: "El número que vas a conectar",
+    text: "Si hoy lo usas en la app de WhatsApp del celular, al conectarlo sale de la app (el chip queda para llamadas y SMS). Si quieres seguir usando WhatsApp en el celular, usa OTRO número.",
+  },
+  {
+    title: "Una tarjeta de pago en tu cuenta de Meta",
+    text: "Los envíos de WhatsApp se facturan por mensaje: sin un método de pago cargado en Meta, los mensajes no salen.",
+  },
+  {
+    title: "La cuenta de Facebook que administra el negocio",
+    text: "Es la del dueño (o la del celular del local): con esa cuenta se hacen todos los pasos.",
+  },
+  {
+    title: "Documentos, si vas a enviar avisos o crecer",
+    text: "Para levantar los límites de envío, Meta pide verificar el negocio: constancia fiscal, comprobante de domicilio y una web funcionando. No es obligatorio para arrancar, pero Meta demora unos días: conviene empezarlo temprano.",
+  },
+  {
+    title: "Los datos del negocio a mano (opcional)",
+    text: "Nombre visible, rubro, descripción, web y correo: los puedes cargar en «Datos del negocio para el alta», más abajo, y se suman al resumen para quien te ayude.",
+  },
+];
 
 export const ASSISTANT_STEPS: AssistantStep[] = [
   {
@@ -133,7 +163,7 @@ export const ASSISTANT_STEPS: AssistantStep[] = [
     capture: null,
     warning:
       "Trata el token como una contraseña: no lo mandes por chat. Si algún día se revoca, se genera otro y se pega de nuevo acá.",
-    tip: "El token del usuario del sistema no vence: se genera una vez.",
+    tip: "El token del usuario del sistema no vence: se genera una vez. Ojo: el token temporal que muestra «API Setup» dura 24 horas — no sirve para el CRM.",
   },
   {
     n: 6,
@@ -165,6 +195,29 @@ export const ASSISTANT_STEPS: AssistantStep[] = [
   },
 ];
 
+/** 045-B — Datos del negocio para el alta (perfil de WhatsApp), opcionales. */
+export type BusinessProfile = {
+  name: string;
+  category: string;
+  description: string;
+  website: string;
+  email: string;
+  address: string;
+};
+
+export const EMPTY_BUSINESS_PROFILE: BusinessProfile = {
+  name: "",
+  category: "",
+  description: "",
+  website: "",
+  email: "",
+  address: "",
+};
+
+/** Deep link a «Personas» de la Configuración del negocio (acceso de quien ayuda). */
+export const META_PEOPLE_URL =
+  "https://business.facebook.com/settings/people";
+
 export type AssistantState = {
   step: number;
   done: number[];
@@ -172,6 +225,7 @@ export type AssistantState = {
   wabaId: string;
   phoneNumberId: string;
   connected: boolean;
+  profile?: BusinessProfile;
 };
 
 /**
@@ -205,6 +259,22 @@ export function buildHandoffSummary(s: AssistantState): string {
   if (datos.length > 0) {
     lines.push("", "Datos que ya conseguí:", ...datos);
   }
+
+  const perfil: string[] = [];
+  if (s.profile) {
+    const p = s.profile;
+    if (p.name.trim()) perfil.push(`- Nombre visible: ${p.name.trim()}`);
+    if (p.category.trim()) perfil.push(`- Rubro: ${p.category.trim()}`);
+    if (p.description.trim())
+      perfil.push(`- Descripción: ${p.description.trim()}`);
+    if (p.website.trim()) perfil.push(`- Sitio web: ${p.website.trim()}`);
+    if (p.email.trim()) perfil.push(`- Correo de contacto: ${p.email.trim()}`);
+    if (p.address.trim()) perfil.push(`- Dirección: ${p.address.trim()}`);
+  }
+  if (perfil.length > 0) {
+    lines.push("", "Datos del negocio (para el alta):", ...perfil);
+  }
+
   lines.push(
     "",
     "(El token de acceso no se comparte por acá: se genera y se pega al final, en el CRM → Ajustes → WhatsApp.)"
@@ -222,8 +292,9 @@ export function buildHandoffSummary(s: AssistantState): string {
   lines.push(
     "",
     "¿Cómo me puedes dar una mano?",
-    "1) En mi CRM: te doy acceso desde Ajustes → Equipo (rol Administrador) y sigues los pasos en Ajustes → WhatsApp.",
-    "2) O me dices qué necesitas y lo hago yo.",
+    `1) Para los pasos de Meta: te doy acceso a mi Configuración del negocio (Personas → rol Administrador): ${META_PEOPLE_URL}`,
+    "2) En mi CRM: te doy acceso desde Ajustes → Equipo (rol Administrador) y sigues los pasos en Ajustes → WhatsApp.",
+    "3) O me dices qué necesitas y lo hago yo.",
     "",
     "¡Gracias!"
   );

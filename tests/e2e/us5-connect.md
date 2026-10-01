@@ -46,3 +46,20 @@
     previa queda intacta).
 12. Webhook GET handshake con verify token correcto → challenge; segmento
     incorrecto → 404 (cubierto también en guion US1).
+
+## Mejoras 045 — requisitos, datos del alta y delegación
+
+13. «Antes de empezar: revisa estos requisitos» arriba del paso 1, abierto por
+    defecto (número, tarjeta de pago, cuenta del dueño, documentos, datos del
+    negocio); se puede plegar.
+14. Paso 5: el tip avisa por el token temporal de «API Setup» (24 h) — y el
+    formulario (paso 6 / reconectar) repite el aviso bajo el campo del token.
+15. «Datos del negocio para el alta» (opcional): nombre visible, rubro, web,
+    correo, dirección y descripción.
+    ✅ Lo completado aparece en «Resumen para pasarle a quien te ayuda» bajo
+    «Datos del negocio (para el alta):», sin el token.
+16. Resumen: opción de delegación a Meta.
+    ✅ Incluye «Personas → rol Administrador» con el link
+    https://business.facebook.com/settings/people además de las opciones del CRM.
+17. Regresión: caminos conectado/reconectar/webhook siguen OK y móvil 390 sin
+    desborde horizontal.

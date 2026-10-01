@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   ConnectForm,
@@ -34,9 +35,29 @@ import {
 } from "./whatsapp-connect";
 import {
   ASSISTANT_STEPS,
+  EMPTY_BUSINESS_PROFILE,
+  PREREQUISITES,
   TOTAL_ASSISTANT_STEPS,
   buildHandoffSummary,
+  type BusinessProfile,
 } from "./whatsapp-steps";
+
+const PROFILE_CATEGORIES = [
+  "Comercio / tienda",
+  "Gastronomía",
+  "Servicios",
+  "Salud y bienestar",
+  "Belleza y estética",
+  "Automotor",
+  "Inmobiliaria",
+  "Educación",
+  "Seguros y finanzas",
+  "Otro",
+] as const;
+
+/** Select nativo con el mismo alto/estilo de los Input del design system. */
+const SELECT_CLASS =
+  "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-[border-color,box-shadow] focus-visible:border-brand focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-soft disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * 043 — Asistente de conexión paso a paso: lleva a una persona no técnica por
@@ -63,6 +84,9 @@ export function WhatsappAssistant({
   const [businessId, setBusinessId] = useState("");
   const [wabaId, setWabaId] = useState("");
   const [phoneNumberId, setPhoneNumberId] = useState("");
+  const [profile, setProfile] = useState<BusinessProfile>(
+    EMPTY_BUSINESS_PROFILE
+  );
   const [copiedSum, setCopiedSum] = useState(false);
 
   const current = ASSISTANT_STEPS.find((s) => s.n === step)!;
@@ -77,8 +101,9 @@ export function WhatsappAssistant({
         wabaId,
         phoneNumberId,
         connected,
+        profile,
       }),
-    [step, done, businessId, wabaId, phoneNumberId, connected]
+    [step, done, businessId, wabaId, phoneNumberId, connected, profile]
   );
 
   function go(n: number) {
@@ -109,6 +134,10 @@ export function WhatsappAssistant({
     if (current.capture?.field === "businessId") setBusinessId(v);
     else if (current.capture?.field === "wabaId") setWabaId(v);
     else setPhoneNumberId(v);
+  }
+
+  function setProfileField(k: keyof BusinessProfile, v: string) {
+    setProfile((p) => ({ ...p, [k]: v }));
   }
 
   return (
@@ -186,6 +215,25 @@ export function WhatsappAssistant({
               );
             })}
           </div>
+
+          {!connected && (
+            <details
+              open
+              className="mt-3 rounded-md border bg-muted/20 p-3 text-sm"
+            >
+              <summary className="cursor-pointer text-muted-foreground">
+                Antes de empezar: revisa estos requisitos
+              </summary>
+              <ul className="mt-2 space-y-2">
+                {PREREQUISITES.map((p) => (
+                  <li key={p.title} className="text-xs">
+                    <span className="font-medium">{p.title}.</span>{" "}
+                    <span className="text-muted-foreground">{p.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </CardContent>
       </Card>
 
@@ -333,6 +381,83 @@ export function WhatsappAssistant({
               </span>
             )}
           </div>
+
+          <details className="rounded-md border bg-muted/20 p-3 text-sm">
+            <summary className="cursor-pointer text-muted-foreground">
+              Datos del negocio para el alta (opcional)
+            </summary>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Con estos datos se completa el perfil de WhatsApp (nombre visible,
+              descripción, rubro, web, correo y dirección). Se suman al resumen
+              para quien te ayuda. El logo se sube directo en WhatsApp Manager.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="prof-name">Nombre visible</Label>
+                <Input
+                  id="prof-name"
+                  value={profile.name}
+                  onChange={(e) => setProfileField("name", e.target.value)}
+                  placeholder="ej. Panadería del Sol"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="prof-category">Rubro</Label>
+                <select
+                  id="prof-category"
+                  value={profile.category}
+                  onChange={(e) => setProfileField("category", e.target.value)}
+                  className={SELECT_CLASS}
+                >
+                  <option value="">Elegir rubro…</option>
+                  {PROFILE_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="prof-website">Sitio web</Label>
+                <Input
+                  id="prof-website"
+                  value={profile.website}
+                  onChange={(e) => setProfileField("website", e.target.value)}
+                  placeholder="https://…"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="prof-email">Correo de contacto</Label>
+                <Input
+                  id="prof-email"
+                  value={profile.email}
+                  onChange={(e) => setProfileField("email", e.target.value)}
+                  placeholder="contacto@tunegocio.com"
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="prof-address">Dirección</Label>
+                <Input
+                  id="prof-address"
+                  value={profile.address}
+                  onChange={(e) => setProfileField("address", e.target.value)}
+                  placeholder="Calle 123, ciudad"
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="prof-description">Descripción</Label>
+                <Textarea
+                  id="prof-description"
+                  rows={3}
+                  value={profile.description}
+                  onChange={(e) =>
+                    setProfileField("description", e.target.value)
+                  }
+                  placeholder="Qué ofrece el negocio, horarios de atención, etc."
+                />
+              </div>
+            </div>
+          </details>
 
           <details className="rounded-md border bg-muted/20 p-3 text-sm">
             <summary className="cursor-pointer text-muted-foreground">

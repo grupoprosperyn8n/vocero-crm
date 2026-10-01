@@ -175,6 +175,10 @@ export function ConnectForm({
             }}
           />
         </div>
+        <p className="text-xs text-muted-foreground">
+          Usa el token permanente de «Usuario del sistema»: el token temporal
+          que muestra «API Setup» dura 24 horas y no sirve acá.
+        </p>
 
         {testResult && (
           <p
