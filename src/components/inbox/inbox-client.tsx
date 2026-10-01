@@ -61,6 +61,8 @@ export function InboxClient({
   // y equipo para poblar el selector.
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [staff, setStaff] = useState<{ userId: string; name: string }[]>([]);
+  // 048 — etapas del embudo (fuente estable para el filtro «Etapa»).
+  const [pipelineStages, setPipelineStages] = useState<string[] | null>(null);
   const canSeeAll = canSeeAllInbox(viewerRole);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageDto[]>([]);
@@ -230,6 +232,24 @@ export function InboxClient({
       );
     })();
   }, [canSeeAll]);
+
+  // 048 — etapas del embudo para el filtro de la Bandeja: se piden una vez
+  // (config del negocio), así el filtro no depende del listado ya filtrado.
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch("/api/pipeline/stages").catch(() => null);
+      if (!res?.ok) {
+        setPipelineStages([]);
+        return;
+      }
+      const data = (await res.json()) as { stages?: { name?: string }[] };
+      setPipelineStages(
+        (data.stages ?? [])
+          .map((s) => s.name ?? "")
+          .filter((n): n is string => n.length > 0)
+      );
+    })();
+  }, []);
 
   const select = useCallback(
     (id: string) => {
@@ -544,6 +564,7 @@ export function InboxClient({
           archivedTotal={archivedTotal}
           canSeeAll={canSeeAll}
           staff={staff}
+          pipelineStages={pipelineStages}
           assigneeFilter={assigneeFilter}
           onAssigneeFilterChange={setAssigneeFilter}
           onArchive={(id, archived) => void archiveConversation(id, archived)}

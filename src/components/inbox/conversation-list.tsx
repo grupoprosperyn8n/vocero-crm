@@ -11,7 +11,7 @@ import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { formatTime, previewText } from "./helpers";
 import { NewConversationDialog } from "./new-conversation";
-import { topicDot, topicLabel } from "@/lib/topics";
+import { TOPIC_LIST, topicDot, topicLabel } from "@/lib/topics";
 
 /* Puntos de etapa con la paleta de la landing: azul, ámbar, verde WhatsApp. */
 const STAGE_DOT: Record<string, string> = {
@@ -91,6 +91,7 @@ export function ConversationList({
   archivedTotal,
   canSeeAll,
   staff,
+  pipelineStages,
   assigneeFilter,
   onAssigneeFilterChange,
   onArchive,
@@ -116,6 +117,9 @@ export function ConversationList({
   canSeeAll: boolean;
   /** 026 — equipo para el filtro «Empleado a cargo». */
   staff: { userId: string; name: string }[];
+  /** 048 — etapas del embudo para el filtro «Etapa» (fuente estable, no
+      depende del listado ya filtrado). */
+  pipelineStages: string[] | null;
   assigneeFilter: string;
   onAssigneeFilterChange: (v: string) => void;
   /** 026 — archivar/desarchivar MI vista de una conversación. */
@@ -184,15 +188,22 @@ export function ConversationList({
   // los renglones ni filtro. La pantalla queda exactamente como antes de 014.
   const multiChannel = channels.length > 1;
 
-  // Etapas presentes en la bandeja, en el orden en que llegan del flujo.
+  // 048 — opciones ESTABLES de los filtros: la etapa sale del embudo del
+  // negocio y el tema del catálogo, no del listado ya filtrado. Antes, al
+  // filtrar por empleado la barra se quedaba sin etapas/temas ("no lo carga")
+  // y los pills se aplastaban entre sí ("animación rara" al cargar el dato).
+  // Se conservan además etapas/temas viejos que sigan apareciendo en la lista.
   const stages: string[] = [];
+  for (const s of pipelineStages ?? []) {
+    if (s && !stages.includes(s)) stages.push(s);
+  }
   for (const c of conversations) {
     if (c.stageName && !stages.includes(c.stageName)) stages.push(c.stageName);
   }
 
-  // 1B: topics presentes (los del catálogo y los desconocidos, raw) y
+  // 1B: topics — el catálogo completo + los desconocidos presentes (raw), y
   // cuántas conversaciones esperan clasificación del operador.
-  const topicIds: string[] = [];
+  const topicIds: string[] = TOPIC_LIST.map((t) => t.id as string);
   for (const c of conversations) {
     if (c.topic && !topicIds.includes(c.topic)) topicIds.push(c.topic);
   }
@@ -353,7 +364,7 @@ export function ConversationList({
       </header>
 
       {(liveQueue || hasTopicFilter) && (
-        <div className="flex items-center gap-1.5 border-b px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2.5">
         {/* 2B/026: en los archivos (Cerradas/Archivadas) la barra existe solo
             para el filtro por etiqueta; Todas/No leídas y etapa son de la cola
             viva. El filtro por empleado (026) aplica a las tres vistas. */}
@@ -387,7 +398,7 @@ export function ConversationList({
         ))}
 
         {(stages.length > 0 || hasTopicFilter || canSeeAll) && (
-          <div className="ml-auto flex min-w-0 items-center gap-1.5">
+          <div className="ml-auto flex min-w-0 basis-full flex-wrap items-center justify-end gap-1.5">
             {/* 026 — filtro por empleado a cargo: solo para quien ve toda la
                 bandeja (gerente, administrador o propietario). */}
             {canSeeAll && (
@@ -396,7 +407,7 @@ export function ConversationList({
                 onChange={(e) => onAssigneeFilterChange(e.target.value)}
                 aria-label="Filtrar por empleado a cargo"
                 className={cn(
-                  "min-w-0 flex-1 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
+                  "max-w-[11rem] shrink-0 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
                   assigneeFilter === "all"
                     ? "border-border-strong bg-background text-text-2 hover:border-text-3"
                     : "border-brand bg-brand text-brand-fg"
@@ -417,13 +428,16 @@ export function ConversationList({
                 onChange={(e) => setStage(e.target.value)}
                 aria-label="Filtrar por etapa del embudo"
                 className={cn(
-                  "min-w-0 flex-1 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
+                  "max-w-[11rem] shrink-0 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
                   stage === "all"
                     ? "border-border-strong bg-background text-text-2 hover:border-text-3"
                     : "border-brand bg-brand text-brand-fg"
                 )}
               >
                 <option value="all">Toda etapa</option>
+                {stage !== "all" && !stages.includes(stage) && (
+                  <option value={stage}>{stage}</option>
+                )}
                 {stages.map((s) => (
                   <option key={s} value={s}>
                     {s}
@@ -439,7 +453,7 @@ export function ConversationList({
                   closed ? "Filtrar por etiqueta" : "Filtrar por tema de la consulta"
                 }
                 className={cn(
-                  "min-w-0 flex-1 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
+                  "max-w-[11rem] shrink-0 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
                   topic === "all"
                     ? "border-border-strong bg-background text-text-2 hover:border-text-3"
                     : "border-brand bg-brand text-brand-fg"
@@ -448,13 +462,18 @@ export function ConversationList({
                 <option value="all">
                   {closed ? "Toda etiqueta" : "Toda clasificación"}
                 </option>
-                {untaggedCount > 0 && (
+                {(untaggedCount > 0 || topic === "untagged") && (
                   <option value="untagged">
                     {closed
                       ? `Sin etiqueta (${untaggedCount})`
                       : `Sin topic (${untaggedCount})`}
                   </option>
                 )}
+                {topic !== "all" &&
+                  topic !== "untagged" &&
+                  !topicIds.includes(topic) && (
+                    <option value={topic}>{topicLabel(topic) ?? topic}</option>
+                  )}
                 {topicIds.map((t) => (
                   <option key={t} value={t}>
                     {topicLabel(t)}
