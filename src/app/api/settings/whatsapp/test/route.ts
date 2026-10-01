@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { connectionsGate } from "@/server/settings/access";
 import { testConnection } from "@/server/whatsapp/connect";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,9 @@ const bodySchema = z.object({
 });
 
 /** Prueba de conexión: valida token↔número, NO guarda (FR-040). */
-export const POST = withAuth(async (_session, req: Request) => {
+export const POST = withAuth(async (session, req: Request) => {
+  const gate = connectionsGate(session);
+  if (gate) return gate;
   const body = await parseBody(req, bodySchema);
   if (!body.ok) return body.response;
 

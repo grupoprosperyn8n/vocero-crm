@@ -22,6 +22,8 @@ describe("judgeCase (FR-032)", () => {
       transcript: [{ role: "cliente", text: "hola" }],
       kbText: "kb",
       behaviorText: "b",
+      organizationId: "org-test",
+      systemAllowed: true,
     });
     expect(outcome.status).toBe("done");
     // usa el modelo del juez (opts.judge)
@@ -39,6 +41,8 @@ describe("judgeCase (FR-032)", () => {
       transcript: [],
       kbText: "",
       behaviorText: "",
+      organizationId: "org-test",
+      systemAllowed: true,
     });
     expect(outcome.status).toBe("judge_failed");
   });

@@ -9,7 +9,7 @@
  * diario (DASHBOARD_AI_DAILY_LIMIT, default 300).
  */
 
-import { chatJson } from "@/lib/ai";
+import { chatJsonTracked } from "@/server/ai/tracked";
 import { resolveAi } from "@/server/ai/resolve";
 
 import type {
@@ -180,7 +180,7 @@ export async function generateClientInsight(
 
   const { system, user } = buildClientPrompt(context, input.mode);
 
-  const result = await chatJson(
+  const result = await chatJsonTracked(
     CLIENT_INSIGHT_SCHEMA,
     [
       { role: "system", content: system },
@@ -190,6 +190,14 @@ export async function generateClientInsight(
       model: ai.model ?? undefined,
       timeoutMs: 90_000,
       config: ai.callConfig,
+    },
+    {
+      organizationId,
+      source: "paneles-clientes",
+      provider: ai.provider ?? "openrouter",
+      connectionId: ai.connectionId,
+      via: ai.via ?? "system",
+      model: ai.model ?? "sistema",
     }
   );
 
@@ -251,7 +259,7 @@ export async function generateModuleInsight(
 
   const { system, user } = buildModulePrompt(input.module, context);
 
-  const result = await chatJson(
+  const result = await chatJsonTracked(
     MODULE_INSIGHT_SCHEMA,
     [
       { role: "system", content: system },
@@ -261,6 +269,14 @@ export async function generateModuleInsight(
       model: ai.model ?? undefined,
       timeoutMs: 90_000,
       config: ai.callConfig,
+    },
+    {
+      organizationId,
+      source: "paneles-modulos",
+      provider: ai.provider ?? "openrouter",
+      connectionId: ai.connectionId,
+      via: ai.via ?? "system",
+      model: ai.model ?? "sistema",
     }
   );
 

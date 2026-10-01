@@ -55,15 +55,24 @@ export function SettingsNav({
     ...(agenda ? [AGENDA_TAB] : []),
     ...(atribucion ? [ADS_TAB] : []),
   ];
-  // 021 v2 — Customización (IA, Automejora, Marca): solo propietario.
-  // La operación (plantillas, etapas, agenda) y Equipo: propietario + administrador;
-  // a los miembros los rebota la guarda del layout.
+  // 021 v2 — Customización (Automejora, Marca): solo propietario.
+  // Operación (plantillas, etapas, agenda), Equipo y — 046 — conexiones
+  // (WhatsApp, Telegram, IA): propietario + dueño (admin).
+  // A los miembros (y gerentes) los rebota la raíz de Ajustes.
   const tabs =
     role === "owner"
       ? all
       : role === "admin"
         ? all.filter((t) =>
-            ["/settings/team", "/settings/templates", "/settings/propuestas", "/settings/calendar"].includes(t.href)
+            [
+              "/settings/whatsapp",
+              "/settings/telegram",
+              "/settings/ai",
+              "/settings/team",
+              "/settings/templates",
+              "/settings/propuestas",
+              "/settings/calendar",
+            ].includes(t.href)
           )
         : [];
   return (

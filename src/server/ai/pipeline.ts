@@ -4,8 +4,10 @@ import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { moveLeadToStage as moveLeadThroughHistory } from "@/server/leads/stage-history";
 import { getEnv, isAiConfigured } from "@/lib/env";
-import { chatJson, type ChatMessage } from "@/lib/ai";
+import { type ChatMessage } from "@/lib/ai";
 import { getOrgAiConfig } from "@/server/ai/config";
+import { isSystemAiEnabled } from "@/server/ai/connections";
+import { chatJsonTracked } from "@/server/ai/tracked";
 import { publish } from "@/server/events/bus";
 import { isWindowOpen } from "@/server/inbox/window";
 import { SendError, sendText } from "@/server/inbox/send";
@@ -107,7 +109,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // 019 — Config de IA de la org (Ajustes → IA) o legacy por env. Sin
   // ninguna de las dos, el agente no tiene proveedor que hablar.
   const aiConfig = await getOrgAiConfig(organizationId);
-  if (!aiConfig && !isAiConfigured()) return;
+  if (!aiConfig && (!(await isSystemAiEnabled(organizationId)) || !isAiConfigured()))
+    return;
 
   // Condiciones de silencio: handoff activo o IA apagada en la conversación.
   if (conversation.handoffAt || !conversation.aiEnabled) return;
@@ -201,10 +204,23 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       : []),
   ];
 
-  const result = await chatJson(agentActionSchema(agenda), messages, {
-    config: aiConfig,
-    model: aiConfig?.model,
-  });
+  const result = await chatJsonTracked(
+    agentActionSchema(agenda),
+    messages,
+    {
+      config: aiConfig,
+      model: aiConfig?.model,
+    },
+    {
+      organizationId,
+      // El Laboratorio corre con is_test → su consumo va con ese módulo.
+      source: conversation.isTest ? "laboratorio" : "agente",
+      provider: aiConfig?.provider ?? "openrouter",
+      connectionId: aiConfig?.connectionId ?? null,
+      via: aiConfig ? "org" : "system",
+      model: aiConfig?.model ?? "sistema",
+    }
+  );
   if (!result.ok) {
     if (result.error === "not_configured") return;
     // Fallo persistente del proveedor o salida imposible → escalar (FR-022).

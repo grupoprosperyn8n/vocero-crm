@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionOrNull } from "@/lib/auth/session";
+import { canManageConnections } from "@/lib/roles";
 
 /**
  * 021 — Guardas de las pantallas de Ajustes: la customización es del
@@ -9,7 +10,9 @@ import { getSessionOrNull } from "@/lib/auth/session";
  * El rebote lleva a cada rol donde SÍ puede estar, nunca a una pantalla
  * muerta.
  */
-export async function guardSettingsTab(kind: "owner" | "team"): Promise<void> {
+export async function guardSettingsTab(
+  kind: "owner" | "team" | "integrations"
+): Promise<void> {
   const session = await getSessionOrNull();
   if (!session) redirect("/login");
   if (kind === "owner" && session.role !== "owner") {
@@ -19,6 +22,11 @@ export async function guardSettingsTab(kind: "owner" | "team"): Promise<void> {
   // tiene pestañas en Ajustes y la página le quedaba a medias (render 200 con
   // las APIs en 403). Se lo rebota igual que al miembro.
   if (kind === "team" && session.role !== "owner" && session.role !== "admin") {
+    redirect("/inbox");
+  }
+  // 046 — Conexiones (WhatsApp, Telegram, IA): propietario y dueño (pedido
+  // Diego 30Sep). Manager y member rebotan igual que en Equipo.
+  if (kind === "integrations" && !canManageConnections(session.role)) {
     redirect("/inbox");
   }
 }

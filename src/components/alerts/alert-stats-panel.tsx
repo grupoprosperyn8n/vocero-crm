@@ -110,6 +110,9 @@ export function AlertStatsPanel() {
           className="h-8 rounded-md border border-border-strong bg-background px-2 text-[12.5px]"
         >
           <option value="all">Todos</option>
+          {filtro !== "all" && !(data?.empleados ?? []).some((e) => e.name === filtro) && (
+            <option value={filtro}>{filtro}</option>
+          )}
           {(data?.empleados ?? []).map((e) => (
             <option key={e.name} value={e.name}>
               {e.name}

@@ -45,3 +45,13 @@ export function canManageAlerts(role: string): boolean {
 export function canUseLab(role: string): boolean {
   return role === "owner" || role === "admin";
 }
+
+/**
+ * 046 — Conexiones de la organización (WhatsApp, Telegram, IA): propietario y
+ * dueño (administrador). Pedido Diego 30Sep: «activemos el rol dueño para que
+ * pueda entrar solamente a whatsapp, telegram y también para conectar una IA».
+ * Misma regla en páginas, nav y APIs (`connectionsGate`).
+ */
+export function canManageConnections(role: string): boolean {
+  return role === "owner" || role === "admin";
+}

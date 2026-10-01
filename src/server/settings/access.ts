@@ -1,5 +1,5 @@
 import { apiError } from "@/lib/api";
-import { canUseLab } from "@/lib/roles";
+import { canManageConnections, canUseLab } from "@/lib/roles";
 
 /**
  * 021 — Reparto de la configuración del CRM (definido por Diego, 2026-09-11):
@@ -7,6 +7,9 @@ import { canUseLab } from "@/lib/roles";
  * PROPIETARIO; la OPERACIÓN (plantillas, etapas del pipeline, agenda) y el
  * área de Equipo las comparten propietario y administrador; los miembros
  * quedan afuera de todo Ajustes.
+ *
+ * 046 (30Sep): las CONEXIONES (WhatsApp, Telegram, IA) suman al dueño —
+ * `connectionsGate`. Páginas: `guardSettingsTab("integrations")`.
  *
  * Los gates devuelven `null` cuando el rol pasa, o la Response 403 cuando no.
  * Patrón en las rutas:  const gate = customizationGate(session); if (gate) return gate;
@@ -43,5 +46,18 @@ export function labGate(session: { role: string }): Response | null {
     403,
     "FORBIDDEN",
     "Solo el propietario o un administrador pueden usar el Laboratorio."
+  );
+}
+
+/**
+ * 046 — Conexiones (WhatsApp, Telegram, IA): propietario y dueño (admin).
+ * Pedido Diego 30Sep. Reemplaza al gate de customización en esas rutas.
+ */
+export function connectionsGate(session: { role: string }): Response | null {
+  if (canManageConnections(session.role)) return null;
+  return apiError(
+    403,
+    "FORBIDDEN",
+    "Solo el propietario o un administrador pueden ver o cambiar esta conexión."
   );
 }

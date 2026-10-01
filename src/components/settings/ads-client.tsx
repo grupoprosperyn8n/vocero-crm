@@ -202,6 +202,12 @@ export function AdsClient() {
               className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"
             >
               <option value="">No reportar leads calificados</option>
+              {qualifiedStageId &&
+                !stages.some((s) => s.id === qualifiedStageId && s.kind === "open") && (
+                  <option value={qualifiedStageId}>
+                    {stages.find((s) => s.id === qualifiedStageId)?.name ?? "Etapa actual"}
+                  </option>
+                )}
               {stages
                 .filter((s) => s.kind === "open")
                 .map((s) => (

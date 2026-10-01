@@ -196,6 +196,8 @@ export function ConstructorPanel({
   const [productos, setProductos] = useState<ProductoOpcion[]>([]);
   const [companias, setCompanias] = useState<CompaniaOpcion[]>([]);
   const [cargandoMenus, setCargandoMenus] = useState(true);
+  /* FIX dropdowns (30Sep): recuerda el texto base aplicado para no volver al placeholder. */
+  const [plantillaSel, setPlantillaSel] = useState("");
   /* Textos base por tipo (los mismos que usa el Cliente 360°). */
   const [plantillas, setPlantillas] = useState<
     Array<{
@@ -1377,8 +1379,9 @@ export function ConstructorPanel({
                   </span>
                   <select
                     className={inputClass}
-                    value=""
+                    value={plantillaSel}
                     onChange={(e) => {
+                      setPlantillaSel(e.target.value);
                       const t = plantillas.find((x) => x.kind === e.target.value);
                       if (t) {
                         setKind(t.kind);
@@ -1640,7 +1643,11 @@ export function ConstructorPanel({
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
                     Producto
                   </span>
-                  {productos.length > 0 ? (
+                  {cargandoMenus ? (
+                    <select className={inputClass} disabled value="">
+                      <option value="">Cargando…</option>
+                    </select>
+                  ) : productos.length > 0 ? (
                     <select
                       className={inputClass}
                       value={form.productRef}
@@ -1653,7 +1660,12 @@ export function ConstructorPanel({
                         }));
                       }}
                     >
-                      <option value="">Sin producto puntual</option>
+                      <option value="">{form.productName.trim() || "Sin producto puntual"}</option>
+                      {form.productRef && !productos.some((p) => p.id === form.productRef) && (
+                        <option value={form.productRef}>
+                          {form.productName.trim() || form.productRef} (no está en la lista)
+                        </option>
+                      )}
                       {productos.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}
@@ -1663,7 +1675,7 @@ export function ConstructorPanel({
                   ) : (
                     <input
                       className={inputClass}
-                      placeholder={cargandoMenus ? "Cargando…" : "Ej.: AUTOMOTOR"}
+                      placeholder="Ej.: AUTOMOTOR"
                       value={form.productName}
                       onChange={(e) => setForm((prev) => ({ ...prev, productName: e.target.value, productRef: "" }))}
                     />
@@ -1674,7 +1686,11 @@ export function ConstructorPanel({
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
                     Compañía auspiciante
                   </span>
-                  {companias.length > 0 ? (
+                  {cargandoMenus ? (
+                    <select className={inputClass} disabled value="">
+                      <option value="">Cargando…</option>
+                    </select>
+                  ) : companias.length > 0 ? (
                     <select
                       className={inputClass}
                       value={form.companyRef}
@@ -1687,7 +1703,12 @@ export function ConstructorPanel({
                         }));
                       }}
                     >
-                      <option value="">Sin compañía</option>
+                      <option value="">{form.companyName.trim() || "Sin compañía"}</option>
+                      {form.companyRef && !companias.some((c) => c.id === form.companyRef) && (
+                        <option value={form.companyRef}>
+                          {form.companyName.trim() || form.companyRef} (no está en la lista)
+                        </option>
+                      )}
                       {companias.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}
@@ -1697,7 +1718,7 @@ export function ConstructorPanel({
                   ) : (
                     <input
                       className={inputClass}
-                      placeholder={cargandoMenus ? "Cargando…" : "Ej.: LA SEGUNDA"}
+                      placeholder="Ej.: LA SEGUNDA"
                       value={form.companyName}
                       onChange={(e) => setForm((prev) => ({ ...prev, companyName: e.target.value, companyRef: "" }))}
                     />

@@ -20,6 +20,20 @@ vi.mock("@/lib/ai", () => ({
   }),
 }));
 
+// 046 — el pipeline consulta la guarda de IA del sistema y pasa por el wrapper
+// de consumo; ambos se mockean para aislar el turno (sin tocar la BD).
+vi.mock("@/server/ai/connections", () => ({
+  isSystemAiEnabled: vi.fn().mockResolvedValue(true),
+  getActiveAiConnection: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("@/server/ai/tracked", () => ({
+  chatJsonTracked: vi.fn().mockResolvedValue({
+    ok: true,
+    data: { action: "reply", text: "respuesta simulada" },
+    raw: "{}",
+  }),
+}));
+
 // BD simulada: cola de resultados de select + capturas de insert/update.
 const selectQueue: unknown[][] = [];
 const inserts: { table: unknown; values: unknown }[] = [];
@@ -96,7 +110,7 @@ describe("sandbox del Laboratorio en el pipeline del agente", () => {
     };
     selectQueue.push(
       [testConversation], // conversación
-      [], // ai_settings (019: sin config de org → el agente usa env vars legacy)
+      // 046: la config de org sale de ai_connections (mockeada en null) → sin select previo.
       [{ id: "agp_1", organizationId: "org_1", enabled: false, name: "Asistente", tone: null, instructions: null, escalationRules: null, greeting: null }], // perfil (apagado: el Lab evalúa igual)
       [
         {

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getEnv } from "@/lib/env";
 import { TelegramApiError, getMe, setWebhook, type TelegramMe } from "@/lib/telegram/client";
-import { customizationGate } from "@/server/settings/access";
+import { connectionsGate } from "@/server/settings/access";
 import {
   channelDisabledResponse,
   isChannelEnabled,
@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 
 /** 021 — Estado de la conexión de Telegram (el token nunca sale entero). */
 export const GET = withAuth(async (session) => {
-  const gate = customizationGate(session);
+  const gate = connectionsGate(session);
   if (gate) return gate;
   if (!isChannelEnabled("telegram")) return channelDisabledResponse();
   const creds = await getTelegramCredentialsByOrg(session.organizationId);
@@ -44,13 +44,14 @@ const putSchema = z.object({
  * canales: un token que no sirve no llega a la base. Además del getMe, acá se
  * configura el webhook — es una llamada NUESTRA, así que el operador no pega
  * ninguna URL: entrega el token y el CRM le dice a Telegram dónde entregar.
- * Solo el propietario de la organización puede hacerlo.
+ * 046 — Propietario o dueño (admin): las conexiones sumaron al dueño por
+ * pedido de Diego (30Sep): «activemos el rol dueño para que pueda entrar
+ * solamente a whatsapp, telegram y también para conectar una IA».
  */
 export const PUT = withAuth(async (session, req: Request) => {
   if (!isChannelEnabled("telegram")) return channelDisabledResponse();
-  if (session.role !== "owner") {
-    return apiError(403, "FORBIDDEN", "Solo el propietario puede conectar el bot");
-  }
+  const gate = connectionsGate(session);
+  if (gate) return gate;
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;
 

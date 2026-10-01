@@ -5,6 +5,7 @@ import { publish } from "@/server/events/bus";
 import { runAgentTurn } from "@/server/ai/pipeline";
 import { renderKb } from "@/server/ai/prompts";
 import { getOrgAiConfig } from "@/server/ai/config";
+import { isSystemAiEnabled } from "@/server/ai/connections";
 import { computeScore, judgeCase } from "@/server/lab/judge";
 import { PERSONAS, type Persona } from "@/server/lab/personas";
 
@@ -112,7 +113,9 @@ async function runAllCases(
 
   // 019 — Config de IA de la org (Ajustes → IA). Una sola resolución por
   // corrida; si no hay config de org, el adaptador usa env vars (legacy).
+  // 046 — La IA del sistema (env) puede estar desconectada por la org.
   const aiConfig = await getOrgAiConfig(organizationId);
+  const systemAllowed = await isSystemAiEnabled(organizationId);
 
   let done = 0;
   const total = cases.length;
@@ -138,6 +141,8 @@ async function runAllCases(
       kbText,
       behaviorText,
       aiConfig,
+      organizationId,
+      systemAllowed,
     });
 
     await db

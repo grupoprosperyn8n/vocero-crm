@@ -4,6 +4,6 @@ import { guardSettingsTab } from "@/server/settings/page-guard";
 export const dynamic = "force-dynamic";
 
 export default async function WhatsappSettingsPage() {
-  await guardSettingsTab("owner");
+  await guardSettingsTab("integrations");
   return <WhatsappWizard />;
 }

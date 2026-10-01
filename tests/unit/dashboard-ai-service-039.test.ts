@@ -19,6 +19,11 @@ vi.mock("@/server/ai/config", () => ({
   getOrgAiConfig: mocks.getOrgAiConfig,
   getOrgAiSettingsView: vi.fn(),
 }));
+// 046 — resolveAi consulta si la org permite la IA del sistema: sin mock,
+// el test tocaría la base real (no configurada en vitest).
+vi.mock("@/server/ai/connections", () => ({
+  isSystemAiEnabled: vi.fn().mockResolvedValue(true),
+}));
 vi.mock("@/lib/env", () => ({
   isAiConfigured: mocks.isAiConfigured,
   getEnv: mocks.getEnv,

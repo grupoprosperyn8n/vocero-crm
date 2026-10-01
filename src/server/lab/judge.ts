@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { chatJson } from "@/lib/ai";
+import { chatJsonTracked } from "@/server/ai/tracked";
 import { buildJudgePrompt } from "@/server/ai/prompts";
 import type { OrgAiConfig } from "@/server/ai/config";
 
@@ -39,6 +39,10 @@ export async function judgeCase(input: {
    * conoce la organización) y la pasa para no duplicar queries por caso.
    */
   aiConfig?: OrgAiConfig | null;
+  /** 046 — Organización que corre la corrida (meta del consumo). */
+  organizationId: string;
+  /** 046 — Si `aiConfig` es null: ¿puede usarse la IA del sistema (env)? */
+  systemAllowed: boolean;
 }): Promise<JudgeOutcome> {
   const { system, user } = buildJudgePrompt({
     persona: input.personaKey,
@@ -46,7 +50,15 @@ export async function judgeCase(input: {
     kbText: input.kbText,
     behaviorText: input.behaviorText,
   });
-  const result = await chatJson(
+  // 046 — Sin conexión propia y con la IA del sistema desconectada, el caso
+  // no tiene proveedor: queda judge_failed con detalle claro.
+  if (!input.aiConfig && !input.systemAllowed) {
+    return {
+      status: "judge_failed",
+      detail: "Sin IA conectada (la IA del sistema está desconectada).",
+    };
+  }
+  const result = await chatJsonTracked(
     Verdict,
     [
       { role: "system", content: system },
@@ -58,6 +70,16 @@ export async function judgeCase(input: {
       model: input.aiConfig
         ? (input.aiConfig.judgeModel ?? input.aiConfig.model)
         : undefined,
+    },
+    {
+      organizationId: input.organizationId,
+      source: "laboratorio",
+      provider: input.aiConfig?.provider ?? "openrouter",
+      connectionId: input.aiConfig?.connectionId ?? null,
+      via: input.aiConfig ? "org" : "system",
+      model: input.aiConfig
+        ? (input.aiConfig.judgeModel ?? input.aiConfig.model)
+        : "sistema",
     }
   );
   if (!result.ok) {

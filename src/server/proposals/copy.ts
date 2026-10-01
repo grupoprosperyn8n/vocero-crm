@@ -6,7 +6,7 @@
  * lo que toca red y base; las piezas puras están en `copy-prompt.ts`.
  */
 
-import { chatJson } from "@/lib/ai";
+import { chatJsonTracked } from "@/server/ai/tracked";
 import { createDailyLimiter, resolveAi } from "@/server/ai/resolve";
 
 import { getKindPrompt } from "./service";
@@ -70,7 +70,7 @@ export async function draftProposalCopy(input: {
 
   const { system, user } = buildCopyPrompt(context);
 
-  const result = await chatJson(
+  const result = await chatJsonTracked(
     COPY_SCHEMA,
     [
       { role: "system", content: system },
@@ -80,6 +80,14 @@ export async function draftProposalCopy(input: {
       model: ai.model ?? undefined,
       timeoutMs: 60_000,
       config: ai.callConfig,
+    },
+    {
+      organizationId: input.organizationId,
+      source: "propuestas",
+      provider: ai.provider ?? "openrouter",
+      connectionId: ai.connectionId,
+      via: ai.via ?? "system",
+      model: ai.model ?? "sistema",
     }
   );
 

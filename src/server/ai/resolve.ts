@@ -1,24 +1,31 @@
 /*
- * Resolución de la conexión de IA del CRM (extraído de 039 para reutilizar):
- * la config de la organización (Ajustes → IA) y, si no hay, la legacy por
- * env (OPENROUTER_*). Nunca expone la key.
+ * 046 — Resolución de la conexión de IA del CRM.
+ *
+ * Orden: conexión propia ACTIVA (Ajustes → IA) → IA del sistema (env
+ * OPENROUTER_*, la puede desactivar cada organización) → apagada.
+ * Nunca expone la key.
  */
 
 import type { AiCallConfig } from "@/lib/ai";
 import { getEnv, isAiConfigured } from "@/lib/env";
 import { getOrgAiConfig } from "@/server/ai/config";
+import { isSystemAiEnabled } from "@/server/ai/connections";
 
 export type ResolvedAi = {
   configured: boolean;
   source: "org" | "env" | null;
+  /** 046 — org = conexión propia · system = IA del sistema (env). */
+  via: "org" | "system" | null;
   provider: string | null;
   model: string | null;
+  /** 046 — modelo auxiliar (juez/curas) de la conexión activa, si tiene. */
+  judgeModel: string | null;
+  /** 046 — id de la conexión activa (para el registro de consumo). */
+  connectionId: string | null;
   callConfig: AiCallConfig | null;
 };
 
-export async function resolveAi(
-  organizationId: string
-): Promise<ResolvedAi> {
+export async function resolveAi(organizationId: string): Promise<ResolvedAi> {
   let org: Awaited<ReturnType<typeof getOrgAiConfig>> = null;
 
   try {
@@ -31,8 +38,11 @@ export async function resolveAi(
     return {
       configured: true,
       source: "org",
+      via: "org",
       provider: org.provider,
       model: org.model,
+      judgeModel: org.judgeModel,
+      connectionId: org.connectionId,
       callConfig: {
         dialect: org.dialect,
         baseUrl: org.baseUrl,
@@ -41,7 +51,8 @@ export async function resolveAi(
     };
   }
 
-  if (isAiConfigured()) {
+  // 046 — Fallback por env: solo si la organización no lo desconectó.
+  if ((await isSystemAiEnabled(organizationId)) && isAiConfigured()) {
     const env = getEnv();
     const model = env.OPENROUTER_MODEL?.trim() || null;
 
@@ -49,8 +60,11 @@ export async function resolveAi(
       return {
         configured: true,
         source: "env",
+        via: "system",
         provider: "openrouter",
         model,
+        judgeModel: env.OPENROUTER_JUDGE_MODEL?.trim() || null,
+        connectionId: null,
         callConfig: null,
       };
     }
@@ -59,8 +73,11 @@ export async function resolveAi(
   return {
     configured: false,
     source: null,
+    via: null,
     provider: null,
     model: null,
+    judgeModel: null,
+    connectionId: null,
     callConfig: null,
   };
 }

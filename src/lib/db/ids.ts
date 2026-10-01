@@ -72,6 +72,9 @@ const prefixes = {
   pieceTemplate: "btpl",
   // 044b-B15 — baúl de análisis de IA (módulos y clientes del tablero)
   aiInsight: "ain",
+  // 046 — conexiones de IA por organización + registro de consumo
+  aiConnection: "aic",
+  aiUsage: "aiu",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

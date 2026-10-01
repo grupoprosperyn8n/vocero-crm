@@ -32,8 +32,22 @@ export type AiCallConfig = {
 };
 
 export type ChatJsonResult<T> =
-  | { ok: true; data: T; raw: string }
+  | {
+      ok: true;
+      data: T;
+      raw: string;
+      /** 046 — tokens reportados por el proveedor (si los hay), para consumos. */
+      tokens?: { in: number; out: number } | null;
+    }
   | { ok: false; error: "not_configured" | "provider_error" | "invalid_output"; detail: string };
+
+/** 046 — Opciones compartidas del adaptador (las usa `chatJsonTracked`). */
+export type ChatJsonOpts = {
+  model?: string;
+  judge?: boolean;
+  timeoutMs?: number;
+  config?: AiCallConfig | null;
+};
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 500;
@@ -41,7 +55,7 @@ const RETRY_DELAY_MS = 500;
 export async function chatJson<T>(
   schema: z.ZodType<T>,
   messages: ChatMessage[],
-  opts?: { model?: string; judge?: boolean; timeoutMs?: number; config?: AiCallConfig | null }
+  opts?: ChatJsonOpts
 ): Promise<ChatJsonResult<T>> {
   const env = getEnv();
   // Config explícita (org) o legacy por env. Sin ninguna → not_configured.
@@ -82,7 +96,7 @@ export async function chatJson<T>(
             },
           ];
     try {
-      const raw = await callProvider(
+      const { content: raw, usage } = await callProvider(
         cfg ?? legacyConfig(env),
         model,
         attemptMessages,
@@ -100,7 +114,7 @@ export async function chatJson<T>(
           .join("; ")} (raw=${truncate(raw)})`;
         continue;
       }
-      return { ok: true, data: parsed.data, raw };
+      return { ok: true, data: parsed.data, raw, tokens: usage };
     } catch (err) {
       lastDetail = err instanceof Error ? err.message : String(err);
       if (attempt < MAX_ATTEMPTS) {
@@ -155,23 +169,26 @@ function legacyConfig(env: ReturnType<typeof getEnv>): AiCallConfig {
   };
 }
 
+/** 046 — Respuesta del proveedor + tokens (para el gestor de consumos). */
+type ProviderReply = { content: string; usage: { in: number; out: number } | null };
+
 async function callProvider(
   cfg: AiCallConfig,
   model: string,
   messages: ChatMessage[],
   timeoutMs = 60_000
-): Promise<string> {
+): Promise<ProviderReply> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const content =
+    const reply =
       cfg.dialect === "anthropic"
         ? await callAnthropic(cfg, model, messages, controller.signal)
         : await callOpenAiCompatible(cfg, model, messages, controller.signal);
-    if (typeof content !== "string" || content.length === 0) {
+    if (typeof reply.content !== "string" || reply.content.length === 0) {
       throw new Error("respuesta del proveedor sin contenido");
     }
-    return content;
+    return reply;
   } finally {
     clearTimeout(timer);
   }
@@ -183,7 +200,7 @@ async function callOpenAiCompatible(
   model: string,
   messages: ChatMessage[],
   signal: AbortSignal
-): Promise<string> {
+): Promise<ProviderReply> {
   // cfg.baseUrl incluye /v1 (ver convención en providers.ts); el legacy
   // histórico (https://openrouter.ai/api) NO lo incluye → se agrega acá.
   const base = cfg.baseUrl.endsWith("/v1") ? cfg.baseUrl : `${cfg.baseUrl}/v1`;
@@ -203,8 +220,17 @@ async function callOpenAiCompatible(
   }
   const json = (await res.json()) as {
     choices?: { message?: { content?: string } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
   };
-  return json.choices?.[0]?.message?.content ?? "";
+  return {
+    content: json.choices?.[0]?.message?.content ?? "",
+    usage: json.usage
+      ? {
+          in: json.usage.prompt_tokens ?? 0,
+          out: json.usage.completion_tokens ?? 0,
+        }
+      : null,
+  };
 }
 
 /** Dialecto Anthropic: POST {base}/v1/messages con x-api-key. */
@@ -213,7 +239,7 @@ async function callAnthropic(
   model: string,
   messages: ChatMessage[],
   signal: AbortSignal
-): Promise<string> {
+): Promise<ProviderReply> {
   const system = messages
     .filter((m) => m.role === "system")
     .map((m) => m.content)
@@ -242,8 +268,17 @@ async function callAnthropic(
   }
   const json = (await res.json()) as {
     content?: { type?: string; text?: string }[];
+    usage?: { input_tokens?: number; output_tokens?: number };
   };
-  return json.content?.find((b) => b.type === "text")?.text ?? "";
+  return {
+    content: json.content?.find((b) => b.type === "text")?.text ?? "",
+    usage: json.usage
+      ? {
+          in: json.usage.input_tokens ?? 0,
+          out: json.usage.output_tokens ?? 0,
+        }
+      : null,
+  };
 }
 
 /**

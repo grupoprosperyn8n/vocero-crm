@@ -5,6 +5,6 @@ export const dynamic = "force-dynamic";
 
 /** 019 — Instalador de IA (Ajustes → IA). */
 export default async function AiSettingsPage() {
-  await guardSettingsTab("owner");
+  await guardSettingsTab("integrations");
   return <IaInstaller />;
 }

@@ -1,6 +1,7 @@
 import {
   boolean,
   check,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -79,6 +80,12 @@ export const organization = pgTable("organization", {
   logo: text("logo"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   metadata: text("metadata"),
+  /**
+   * 046 — IA del sistema (fallback por env): la organización puede
+   * desconectarla desde Ajustes → IA. true (default) = sin conexión propia se
+   * usa la IA del sistema; false = solo conexiones propias (o nada).
+   */
+  systemAiEnabled: boolean("system_ai_enabled").notNull().default(true),
 });
 
 export const member = pgTable("member", {
@@ -1241,6 +1248,73 @@ export const aiSettings = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("ai_settings_org_uq").on(t.organizationId)]
+);
+
+/**
+ * 046 — Conexiones de IA por organización (Ajustes → IA): N conexiones (una
+ * por proveedor), una sola activa. Reemplaza en runtime a `ai_settings`
+ * (que se conserva como legado). La key se cifra AES-256-GCM igual que
+ * WhatsApp/Telegram. `costInPer1M`/`costOutPer1M` (USD por 1M tokens) son
+ * opcionales: si no están, el gestor de consumos usa el catálogo de
+ * referencia (`@/lib/ai/pricing`).
+ */
+export const aiConnections = pgTable(
+  "ai_connections",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    provider: text("provider", {
+      enum: ["openai", "openrouter", "gemini", "deepseek", "anthropic", "custom"],
+    }).notNull(),
+    apiKeyCipher: text("api_key_cipher").notNull(),
+    apiKeyIv: text("api_key_iv").notNull(),
+    apiKeyTag: text("api_key_tag").notNull(),
+    baseUrl: text("base_url"),
+    model: text("model").notNull(),
+    judgeModel: text("judge_model"),
+    costInPer1M: doublePrecision("cost_in_per_1m"),
+    costOutPer1M: doublePrecision("cost_out_per_1m"),
+    isActive: boolean("is_active").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("ai_connections_org_provider_uq").on(t.organizationId, t.provider),
+  ]
+);
+
+/**
+ * 046 — Registro de consumo de IA (fire-and-forget): una fila por llamada
+ * exitosa al proveedor. El costo NO se persiste: se estima al leer con el
+ * precio vigente (override de la conexión → catálogo de referencia).
+ */
+export const aiUsage = pgTable(
+  "ai_usage",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** null = IA del sistema (env) o conexión eliminada. */
+    connectionId: text("connection_id").references(() => aiConnections.id, {
+      onDelete: "set null",
+    }),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    /** Módulo que la usó: laboratorio · agente · paneles-clientes · etc. */
+    source: text("source").notNull(),
+    /** org = conexión propia · system = IA del sistema (env). */
+    via: text("via", { enum: ["org", "system"] }).notNull(),
+    tokensIn: integer("tokens_in").notNull().default(0),
+    tokensOut: integer("tokens_out").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("ai_usage_org_created_idx").on(t.organizationId, t.createdAt),
+    index("ai_usage_org_source_idx").on(t.organizationId, t.source),
+  ]
 );
 
 /**

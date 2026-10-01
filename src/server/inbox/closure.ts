@@ -3,8 +3,9 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { getEnv } from "@/lib/env";
-import { chatJson } from "@/lib/ai";
+import { chatJsonTracked } from "@/server/ai/tracked";
 import { getOrgAiConfig } from "@/server/ai/config";
+import { isSystemAiEnabled } from "@/server/ai/connections";
 
 /**
  * 1F — Cierre de conversación con curado.
@@ -110,11 +111,13 @@ async function curateSummary(
 ): Promise<string | null> {
   if (transcript.length === 0) return null;
   const aiConfig = await getOrgAiConfig(organizationId).catch(() => null);
+  // 046 — Sin conexión propia, la IA del sistema puede estar desconectada.
+  if (!aiConfig && !(await isSystemAiEnabled(organizationId))) return null;
   const lines = transcript
     .slice(-60)
     .map((m) => `${m.role === "cliente" ? "Cliente" : "Agente"}: ${m.text}`)
     .join("\n");
-  const result = await chatJson(
+  const result = await chatJsonTracked(
     summarySchema,
     [
       {
@@ -129,6 +132,14 @@ async function curateSummary(
       model: aiConfig?.judgeModel ?? aiConfig?.model ?? undefined,
       config: aiConfig ?? null,
       timeoutMs: 25_000,
+    },
+    {
+      organizationId,
+      source: "cierres",
+      provider: aiConfig?.provider ?? "openrouter",
+      connectionId: aiConfig?.connectionId ?? null,
+      via: aiConfig ? "org" : "system",
+      model: aiConfig?.judgeModel ?? aiConfig?.model ?? "sistema",
     }
   );
   if (!result.ok) return null;

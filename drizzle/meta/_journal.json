@@ -323,6 +323,13 @@
       "when": 1790791746737,
       "tag": "0045_wonderful_dagger",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1790818074037,
+      "tag": "0046_groovy_vulture",
+      "breakpoints": true
     }
   ]
 }
