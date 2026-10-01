@@ -2,6 +2,7 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { connectionsGate } from "@/server/settings/access";
 import {
+  clearCredentials,
   getCredentialsByOrg,
   saveCredentials,
   tokenLast4,
@@ -62,4 +63,18 @@ export const PUT = withAuth(async (session, req: Request) => {
     ok: true,
     displayPhoneNumber: check.displayPhoneNumber,
   });
+});
+
+/**
+ * 047 — Desconectar el número (Ajustes → WhatsApp): borra las credenciales de
+ * la organización; el webhook deja de enrutar mensajes de ese número. Para
+ * reconectar se vuelve a pasar por el asistente. No se des-suscribe la app en
+ * Meta: la reconexión re-suscribe sola y sin conexión local los eventos
+ * entrantes se ignoran.
+ */
+export const DELETE = withAuth(async (session) => {
+  const gate = connectionsGate(session);
+  if (gate) return gate;
+  await clearCredentials(session.organizationId);
+  return Response.json({ ok: true });
 });

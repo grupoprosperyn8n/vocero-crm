@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Copy, Info } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Info, Power } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +49,8 @@ export function TelegramClient() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/settings/telegram").catch(() => null);
@@ -100,6 +102,22 @@ export function TelegramClient() {
     }
   }
 
+  async function disconnect() {
+    setDisconnecting(true);
+    const res = await fetch("/api/settings/telegram", { method: "DELETE" }).catch(
+      () => null
+    );
+    setDisconnecting(false);
+    if (!res?.ok) {
+      setError("No se pudo desconectar el bot; intenta de nuevo.");
+      return;
+    }
+    setConfirming(false);
+    setSaved(null);
+    setError(null);
+    await refetch();
+  }
+
   if (!loaded) return <p className="text-sm text-muted-foreground">Cargando…</p>;
 
   return (
@@ -132,7 +150,44 @@ export function TelegramClient() {
               Bot {connection.botId} · token que termina en ····{connection.tokenLast4}
             </p>
           </div>
-          <Badge variant="success">Telegram activo</Badge>
+          <div className="flex flex-col items-end gap-1.5">
+            {confirming ? (
+              <>
+                <span className="flex items-center gap-2 text-sm">
+                  ¿Desconectar?
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={disconnecting}
+                    onClick={() => void disconnect()}
+                  >
+                    Sí
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setConfirming(false)}
+                  >
+                    No
+                  </Button>
+                </span>
+                <span className="text-[11px] opacity-80">
+                  Para reconectar, pegá de nuevo el token de BotFather.
+                </span>
+              </>
+            ) : (
+              <span className="flex items-center gap-2">
+                <Badge variant="success">Telegram activo</Badge>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirming(true)}
+                >
+                  <Power className="h-3.5 w-3.5" /> Desconectar
+                </Button>
+              </span>
+            )}
+          </div>
         </div>
       )}
 

@@ -123,6 +123,18 @@ export async function markReconnectRequired(
     .where(scoped(schema.metaCredentials.organizationId, organizationId));
 }
 
+/**
+ * Desconexión (Ajustes → WhatsApp → Desconectar): borra las credenciales de la
+ * organización. Los mensajes entrantes de ese número dejan de enrutarse (el
+ * webhook resuelve la conexión por phone_number_id). Reconectar vuelve a
+ * pasar por el asistente.
+ */
+export async function clearCredentials(organizationId: string): Promise<void> {
+  await getDb()
+    .delete(schema.metaCredentials)
+    .where(scoped(schema.metaCredentials.organizationId, organizationId));
+}
+
 /** Últimos 4 caracteres del token para mostrar en UI (jamás el token). */
 export function tokenLast4(token: string): string {
   return token.slice(-4);

@@ -148,6 +148,15 @@ export async function setWebhook(
   });
 }
 
+/**
+ * Desconecta el webhook del bot (Ajustes → Telegram → Desconectar): Telegram
+ * deja de entregar los mensajes a esta instancia. Se usa best-effort — aunque
+ * Telegram no responda, la conexión local se borra igual.
+ */
+export async function deleteWebhook(token: string): Promise<true> {
+  return request<true>(token, "deleteWebhook", { json: {} });
+}
+
 /** Envía texto plano (sin parse_mode: lo que se escribe es lo que se ve). */
 export async function sendMessageText(
   token: string,

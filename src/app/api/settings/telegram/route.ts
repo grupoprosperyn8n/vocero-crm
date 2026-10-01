@@ -2,13 +2,14 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getEnv } from "@/lib/env";
-import { TelegramApiError, getMe, setWebhook, type TelegramMe } from "@/lib/telegram/client";
+import { TelegramApiError, deleteWebhook, getMe, setWebhook, type TelegramMe } from "@/lib/telegram/client";
 import { connectionsGate } from "@/server/settings/access";
 import {
   channelDisabledResponse,
   isChannelEnabled,
 } from "@/server/channels/enabled";
 import {
+  clearTelegramCredentials,
   getTelegramCredentialsByOrg,
   saveTelegramCredentials,
   tokenLast4,
@@ -101,6 +102,40 @@ export const PUT = withAuth(async (session, req: Request) => {
     botUsername: me.username ?? null,
     webhookUrl: url,
   });
+});
+
+/**
+ * 047 — Desconectar el bot (Ajustes → Telegram): apaga el webhook en Telegram
+ * (best-effort) y borra la conexión local. La UI vuelve al formulario de
+ * conexión; para reconectar se pega el token de BotFather otra vez.
+ */
+export const DELETE = withAuth(async (session) => {
+  if (!isChannelEnabled("telegram")) return channelDisabledResponse();
+  const gate = connectionsGate(session);
+  if (gate) return gate;
+  let creds: Awaited<ReturnType<typeof getTelegramCredentialsByOrg>> = null;
+  try {
+    creds = await getTelegramCredentialsByOrg(session.organizationId);
+  } catch (err) {
+    // Token ilegible (cifrado roto): se desconecta igual — el objetivo es
+    // dejar la organización sin conexión.
+    console.warn(
+      "[telegram] credenciales ilegibles; se desconecta igual:",
+      err instanceof Error ? err.message : err
+    );
+  }
+  if (creds) {
+    try {
+      await deleteWebhook(creds.token);
+    } catch (err) {
+      console.warn(
+        "[telegram] deleteWebhook falló (se desconecta igual):",
+        err instanceof Error ? err.message : err
+      );
+    }
+    await clearTelegramCredentials(session.organizationId);
+  }
+  return Response.json({ ok: true });
 });
 
 function webhookUrlFor(secret: string): string {

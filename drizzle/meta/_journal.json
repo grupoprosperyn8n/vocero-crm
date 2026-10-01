@@ -330,6 +330,13 @@
       "when": 1790818074037,
       "tag": "0046_groovy_vulture",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1790823879844,
+      "tag": "0047_recuperar_conexion_ia",
+      "breakpoints": true
     }
   ]
 }

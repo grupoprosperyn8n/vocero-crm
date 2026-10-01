@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Power } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { WhatsappAssistant } from "./whatsapp-assistant";
@@ -105,12 +105,77 @@ export function WhatsappWizard() {
             onSaved={() => void refetch()}
           />
           {webhook && <WebhookCard webhook={webhook} />}
+          <DisconnectSection
+            onDone={() => {
+              setVista("auto");
+              void refetch();
+            }}
+          />
           <div className="flex justify-center">
             <Button variant="ghost" size="sm" onClick={() => setVista("guia")}>
               Ver la guía de conexión paso a paso
             </Button>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 047 — Desconectar el número: borra las credenciales guardadas y vuelve al
+ * asistente. La reconexión se hace pegando de nuevo los datos de Meta.
+ */
+function DisconnectSection({ onDone }: { onDone: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function disconnect() {
+    setBusy(true);
+    setErr(null);
+    const res = await fetch("/api/settings/whatsapp", { method: "DELETE" }).catch(
+      () => null
+    );
+    setBusy(false);
+    if (!res?.ok) {
+      setErr("No se pudo desconectar; intenta de nuevo.");
+      return;
+    }
+    setConfirming(false);
+    onDone();
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-2 rounded-md border border-danger-soft bg-danger-tint p-4">
+      <p className="text-sm font-medium text-danger-text">
+        Desconectar este número
+      </p>
+      <p className="text-xs text-danger-text opacity-80">
+        Se pausan los envíos y la recepción por WhatsApp y se borran las
+        credenciales guardadas. Para reconectar, volvé a pegar los datos de
+        Meta.
+      </p>
+      {err && <p className="text-xs text-destructive">{err}</p>}
+      {confirming ? (
+        <span className="flex items-center gap-2 text-sm">
+          ¿Desconectar?
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={busy}
+            onClick={() => void disconnect()}
+          >
+            Sí
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+            No
+          </Button>
+        </span>
+      ) : (
+        <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
+          <Power className="h-3.5 w-3.5" /> Desconectar WhatsApp
+        </Button>
       )}
     </div>
   );

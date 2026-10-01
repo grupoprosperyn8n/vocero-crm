@@ -110,6 +110,19 @@ export async function markTelegramReconnectRequired(
     .where(eq(schema.telegramCredentials.organizationId, organizationId));
 }
 
+/**
+ * Desconexión (Ajustes → Telegram → Desconectar): borra la conexión de la
+ * organización para volver al estado «sin bot». El webhook de Telegram lo
+ * apaga la ruta antes de llamar acá (best-effort).
+ */
+export async function clearTelegramCredentials(
+  organizationId: string
+): Promise<void> {
+  await getDb()
+    .delete(schema.telegramCredentials)
+    .where(eq(schema.telegramCredentials.organizationId, organizationId));
+}
+
 export function tokenLast4(token: string): string {
   return token.slice(-4);
 }
