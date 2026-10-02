@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { roleLabel } from "@/lib/roles";
+import { Select } from "@/components/ui/select";
 
 type Viewer = { userId: string; role: string };
 
@@ -346,19 +347,20 @@ export function TeamClient() {
                   server): Gerente ve toda la bandeja; Administrador solo lo
                   reparte el propietario. */}
               {canManageMember(viewer, m) ? (
-                <select
+                <Select
                   value={m.role}
-                  onChange={(e) => void setRole(m, e.target.value)}
+                  onChange={(v) => void setRole(m, v)}
                   disabled={busyId === m.id}
-                  aria-label={`Rol de ${m.name}`}
+                  ariaLabel={`Rol de ${m.name}`}
                   className="rounded-md border bg-background px-2 py-1 text-xs font-medium"
-                >
-                  <option value="member">Miembro</option>
-                  <option value="manager">Gerente</option>
-                  {viewer?.role === "owner" && (
-                    <option value="admin">Administrador</option>
-                  )}
-                </select>
+                  options={[
+                    { value: "member", label: "Miembro" },
+                    { value: "manager", label: "Gerente" },
+                    ...(viewer?.role === "owner"
+                      ? [{ value: "admin", label: "Administrador" }]
+                      : []),
+                  ]}
+                />
               ) : (
                 <Badge variant={m.role === "owner" ? "default" : "secondary"}>
                   {roleLabel(m.role)}

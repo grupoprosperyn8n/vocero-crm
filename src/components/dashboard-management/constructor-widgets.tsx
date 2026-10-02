@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
+import { Select } from "@/components/ui/select";
 
 /**
  * 044b-B11 — los creadores nuevos del Constructor: qué se construye
@@ -178,17 +179,13 @@ export function CamposBuilder({
                 }
                 className="h-7 min-w-0 flex-1 rounded-md border border-border-strong bg-background px-2 text-[12px] text-text"
               />
-              <select
+              <Select
                 value={c.tipo}
-                onChange={(e) => update(i, { tipo: e.target.value })}
+                onChange={(v) => update(i, { tipo: v })}
+                ariaLabel="Tipo de valor"
                 className="h-7 shrink-0 rounded-md border border-border-strong bg-background px-1.5 text-[11.5px] text-text"
-              >
-                {opcionesTipo.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+                options={opcionesTipo.map((t) => ({ value: t.id, label: t.label }))}
+              />
               <label
                 className="flex shrink-0 items-center gap-1 text-[10.5px] text-text-2"
                 title="¿Es obligatorio responderlo?"

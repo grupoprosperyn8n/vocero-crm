@@ -41,6 +41,7 @@ import {
   buildHandoffSummary,
   type BusinessProfile,
 } from "./whatsapp-steps";
+import { Select } from "@/components/ui/select";
 
 const PROFILE_CATEGORIES = [
   "Comercio / tienda",
@@ -403,19 +404,16 @@ export function WhatsappAssistant({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="prof-category">Rubro</Label>
-                <select
+                <Select
                   id="prof-category"
                   value={profile.category}
-                  onChange={(e) => setProfileField("category", e.target.value)}
+                  onChange={(v) => setProfileField("category", v)}
                   className={SELECT_CLASS}
-                >
-                  <option value="">Elegir rubro…</option>
-                  {PROFILE_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: "Elegir rubro…" },
+                    ...PROFILE_CATEGORIES.map((c) => ({ value: c, label: c })),
+                  ]}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="prof-website">Sitio web</Label>

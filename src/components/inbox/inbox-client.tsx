@@ -8,6 +8,7 @@ import { ContactAvatar } from "@/components/avatar";
 import type { ConversationDto, MessageDto } from "@/lib/types";
 import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
 import { ChannelBadge } from "@/components/channel-badge";
+import { Select } from "@/components/ui/select";
 import { useEvents } from "@/components/use-events";
 import { ConversationList } from "./conversation-list";
 import { canSeeAllInbox } from "@/lib/roles";
@@ -643,30 +644,24 @@ export function InboxClient({
                             : "#8391aa",
                         }}
                       />
-                      <select
+                      <Select
                         value={selected.topic ?? ""}
-                        onChange={(e) =>
-                          void patchConversation({
-                            topic: e.target.value || null,
-                          })
-                        }
-                        aria-label="Clasificar el tema de la consulta"
+                        onChange={(v) => void patchConversation({ topic: v || null })}
+                        ariaLabel="Clasificar el tema de la consulta"
                         className={cn(
-                          "truncate rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors",
+                          "rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors",
                           selected.topic
                             ? "border-brand bg-brand-veil text-foreground"
                             : "border-border-strong text-text-3 hover:border-text-3"
                         )}
-                      >
-                        <option value="">
-                          {selected.topic ? "Sin clasificar" : "Clasificar…"}
-                        </option>
-                        {TOPIC_LIST.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.label}
-                          </option>
-                        ))}
-                      </select>
+                        options={[
+                          {
+                            value: "",
+                            label: selected.topic ? "Sin clasificar" : "Clasificar…",
+                          },
+                          ...TOPIC_LIST.map((t) => ({ value: t.id, label: t.label })),
+                        ]}
+                      />
                     </div>
                   )}
                 </div>

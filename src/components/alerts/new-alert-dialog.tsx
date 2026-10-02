@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BellPlus, CheckCircle2, Loader2, Search, UserRound, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SystemClientSearchResultDto } from "@/lib/types";
+import { Select } from "@/components/ui/select";
 
 /**
  * 30Sep — «Nueva alerta»: crear una alerta desde el CRM (pedido Diego:
@@ -217,20 +218,18 @@ export function NewAlertDialog({
                   <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-text-3">
                     Tipo de alerta
                   </span>
-                  <select
+                  <Select
                     value={tipoSel}
-                    onChange={(e) => setTipoSel(e.target.value)}
-                    data-new-alert="tipo"
+                    onChange={setTipoSel}
+                    buttonProps={{ "data-new-alert": "tipo" }}
+                    ariaLabel="Tipo de alerta"
                     className="h-9 w-full rounded-md border bg-card px-2 text-[13px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <option value="">Elegí un tipo…</option>
-                    {tipos.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                    <option value={TIPO_OTRO}>➕ Otro tipo…</option>
-                  </select>
+                    options={[
+                      { value: "", label: "Elegí un tipo…" },
+                      ...tipos.map((t) => ({ value: t, label: t })),
+                      { value: TIPO_OTRO, label: "➕ Otro tipo…" },
+                    ]}
+                  />
                   {tipoSel === TIPO_OTRO && (
                     <input
                       value={tipoLibre}

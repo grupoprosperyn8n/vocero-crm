@@ -6,6 +6,7 @@ import type { StageDto } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 
 /** Gestión de etapas: renombrar, reordenar, agregar, eliminar (con reasignación). */
 export function StageManager({
@@ -153,20 +154,18 @@ export function StageManager({
               &quot;{deleting.name}&quot; tiene tarjetas. Elige a dónde moverlas:
             </p>
             <div className="mt-2 flex gap-2">
-              <select
+              <Select
                 value={moveTo}
-                onChange={(e) => setMoveTo(e.target.value)}
+                onChange={setMoveTo}
+                ariaLabel="Etapa destino"
                 className="h-9 flex-1 rounded-md border border-input bg-card px-3 text-sm"
-              >
-                <option value="">Etapa destino…</option>
-                {sorted
-                  .filter((s) => s.id !== deleting.id)
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-              </select>
+                options={[
+                  { value: "", label: "Etapa destino…" },
+                  ...sorted
+                    .filter((s) => s.id !== deleting.id)
+                    .map((s) => ({ value: s.id, label: s.name })),
+                ]}
+              />
               <Button
                 variant="destructive"
                 size="sm"

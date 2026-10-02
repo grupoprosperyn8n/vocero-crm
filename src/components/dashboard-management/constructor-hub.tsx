@@ -24,6 +24,7 @@ import type { PieceTemplateDto } from "@/lib/types";
 import { CATALOGO_SEGMENTOS } from "@/lib/templates-catalog";
 import { TemplatesClient } from "@/components/settings/templates-client";
 import type { BuilderCampo, WidgetTipo } from "./constructor-widgets";
+import { Select } from "@/components/ui/select";
 
 export const TIPOS_CREAR: Array<{
   id: WidgetTipo;
@@ -464,18 +465,16 @@ function RenombrarModal({
         </label>
         <label className="block space-y-1">
           <span className="text-[11px] font-semibold text-text-2">Segmento</span>
-          <select
+          <Select
             value={segment}
-            onChange={(e) => setSegment(e.target.value)}
+            onChange={setSegment}
+            ariaLabel="Segmento"
             className="h-8 w-full rounded-md border border-border-strong bg-background px-2 text-[12px]"
-          >
-            <option value="">Sin segmento</option>
-            {Object.entries(CATALOGO_SEGMENTOS).map(([id, label]) => (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "Sin segmento" },
+              ...Object.entries(CATALOGO_SEGMENTOS).map(([id, label]) => ({ value: id, label })),
+            ]}
+          />
         </label>
       </div>
       {error && <p className="mt-2 text-[11.5px] text-danger-text">{error}</p>}
@@ -593,18 +592,16 @@ export function GuardarPlantillaModal({
         </label>
         <label className="block space-y-1">
           <span className="text-[11px] font-semibold text-text-2">Segmento</span>
-          <select
+          <Select
             value={segment}
-            onChange={(e) => setSegment(e.target.value)}
+            onChange={setSegment}
+            ariaLabel="Segmento"
             className="h-8 w-full rounded-md border border-border-strong bg-background px-2 text-[12px]"
-          >
-            <option value="">Sin segmento</option>
-            {Object.entries(CATALOGO_SEGMENTOS).map(([id, label]) => (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "Sin segmento" },
+              ...Object.entries(CATALOGO_SEGMENTOS).map(([id, label]) => ({ value: id, label })),
+            ]}
+          />
         </label>
       </div>
       {error && (

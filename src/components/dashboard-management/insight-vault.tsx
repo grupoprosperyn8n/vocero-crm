@@ -12,6 +12,7 @@ import {
 
 import type { InsightRecordDto } from "@/lib/dashboard-management/types";
 import { cn } from "@/lib/utils";
+import { Select } from "@/components/ui/select";
 
 /**
  * 044b-B15 — BAÚL de análisis de IA del Dashboard Management.
@@ -258,15 +259,17 @@ export function InsightVault({
           ))}
           <span className="flex-1" />
           <span className="text-[11px] text-text-3">Eliminar viejos:</span>
-          <select
-            value={olderDays}
-            onChange={(event) => setOlderDays(Number(event.target.value))}
+          <Select
+            value={String(olderDays)}
+            onChange={(v) => setOlderDays(Number(v))}
+            ariaLabel="Antigüedad"
             className="rounded-md border bg-card px-1.5 py-1 text-[11px]"
-          >
-            <option value={30}>+30 días</option>
-            <option value={60}>+60 días</option>
-            <option value={90}>+90 días</option>
-          </select>
+            options={[
+              { value: "30", label: "+30 días" },
+              { value: "60", label: "+60 días" },
+              { value: "90", label: "+90 días" },
+            ]}
+          />
           <button
             className="inline-flex items-center gap-1 rounded-md border border-danger-soft bg-card px-2 py-1 text-[11px] font-semibold text-danger-text transition-colors hover:bg-danger-tint disabled:opacity-60"
             disabled={cleaning}

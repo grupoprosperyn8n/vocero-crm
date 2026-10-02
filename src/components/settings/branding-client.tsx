@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 export function BrandingClient() {
   const router = useRouter();
@@ -97,18 +98,13 @@ export function BrandingClient() {
 
           <div className="space-y-1.5">
             <Label htmlFor="brand-currency">Moneda del negocio</Label>
-            <select
+            <Select
               id="brand-currency"
               value={currency}
-              onChange={(e) => setCurrency(e.target.value as Currency)}
+              onChange={(v) => setCurrency(v as Currency)}
               className="h-9 max-w-xs rounded-md border border-input bg-card px-2 text-sm"
-            >
-              {CURRENCIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+              options={CURRENCIES.map((c) => ({ value: c, label: c }))}
+            />
             <p className="text-xs text-text-3">
               Es la única que el Flujo de Venta/Gestión suma. Los montos capturados en otra
               moneda se muestran, pero quedan fuera del total de su columna.

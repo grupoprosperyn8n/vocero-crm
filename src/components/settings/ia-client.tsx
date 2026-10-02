@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 /**
  * 046 — Ajustes → IA (antes "Instalador de IA", 019).
@@ -552,19 +553,14 @@ export function IaInstaller() {
 
               <div className="grid gap-2">
                 <Label htmlFor="ai-provider">Proveedor</Label>
-                <select
+                <Select
                   id="ai-provider"
                   value={provider}
-                  onChange={(e) => setProvider(e.target.value)}
+                  onChange={setProvider}
                   disabled={Boolean(editingId)}
-                  className="block w-full rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-60"
-                >
-                  {providers.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
+                  className="flex w-full rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-60"
+                  options={providers.map((p) => ({ value: p.id, label: p.label }))}
+                />
                 {meta && (
                   <p className="text-xs text-muted-foreground">
                     Dialecto: {meta.dialect === "anthropic" ? "Anthropic Messages" : "OpenAI-compatible"}

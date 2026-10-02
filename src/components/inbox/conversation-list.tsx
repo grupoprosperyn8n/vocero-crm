@@ -9,6 +9,7 @@ import { matchesQuery } from "@/lib/search";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { formatTime, previewText } from "./helpers";
 import { NewConversationDialog } from "./new-conversation";
 import { TOPIC_LIST, topicDot, topicLabel } from "@/lib/topics";
@@ -402,84 +403,72 @@ export function ConversationList({
             {/* 026 — filtro por empleado a cargo: solo para quien ve toda la
                 bandeja (gerente, administrador o propietario). */}
             {canSeeAll && (
-              <select
+              <Select
                 value={assigneeFilter}
-                onChange={(e) => onAssigneeFilterChange(e.target.value)}
-                aria-label="Filtrar por empleado a cargo"
+                onChange={onAssigneeFilterChange}
+                ariaLabel="Filtrar por empleado a cargo"
                 className={cn(
-                  "max-w-[11rem] shrink-0 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
+                  "max-w-[11rem] shrink-0 rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
                   assigneeFilter === "all"
                     ? "border-border-strong bg-background text-text-2 hover:border-text-3"
                     : "border-brand bg-brand text-brand-fg"
                 )}
-              >
-                <option value="all">Todo el equipo</option>
-                <option value="none">Sin asignar</option>
-                {staff.map((s) => (
-                  <option key={s.userId} value={s.userId}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "all", label: "Todo el equipo" },
+                  { value: "none", label: "Sin asignar" },
+                  ...staff.map((s) => ({ value: s.userId, label: s.name })),
+                ]}
+              />
             )}
             {liveQueue && stages.length > 0 && (
-              <select
+              <Select
                 value={stage}
-                onChange={(e) => setStage(e.target.value)}
-                aria-label="Filtrar por etapa del embudo"
+                onChange={setStage}
+                ariaLabel="Filtrar por etapa del embudo"
                 className={cn(
-                  "max-w-[11rem] shrink-0 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
+                  "max-w-[11rem] shrink-0 rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
                   stage === "all"
                     ? "border-border-strong bg-background text-text-2 hover:border-text-3"
                     : "border-brand bg-brand text-brand-fg"
                 )}
-              >
-                <option value="all">Toda etapa</option>
-                {stage !== "all" && !stages.includes(stage) && (
-                  <option value={stage}>{stage}</option>
-                )}
-                {stages.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "all", label: "Toda etapa" },
+                  ...(stage !== "all" && !stages.includes(stage)
+                    ? [{ value: stage, label: stage }]
+                    : []),
+                  ...stages.map((s) => ({ value: s, label: s })),
+                ]}
+              />
             )}
             {hasTopicFilter && (
-              <select
+              <Select
                 value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                aria-label={
-                  closed ? "Filtrar por etiqueta" : "Filtrar por tema de la consulta"
-                }
+                onChange={setTopic}
+                ariaLabel={closed ? "Filtrar por etiqueta" : "Filtrar por tema de la consulta"}
                 className={cn(
-                  "max-w-[11rem] shrink-0 truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
+                  "max-w-[11rem] shrink-0 rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
                   topic === "all"
                     ? "border-border-strong bg-background text-text-2 hover:border-text-3"
                     : "border-brand bg-brand text-brand-fg"
                 )}
-              >
-                <option value="all">
-                  {closed ? "Toda etiqueta" : "Toda clasificación"}
-                </option>
-                {(untaggedCount > 0 || topic === "untagged") && (
-                  <option value="untagged">
-                    {closed
-                      ? `Sin etiqueta (${untaggedCount})`
-                      : `Sin topic (${untaggedCount})`}
-                  </option>
-                )}
-                {topic !== "all" &&
-                  topic !== "untagged" &&
-                  !topicIds.includes(topic) && (
-                    <option value={topic}>{topicLabel(topic) ?? topic}</option>
-                  )}
-                {topicIds.map((t) => (
-                  <option key={t} value={t}>
-                    {topicLabel(t)}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "all", label: closed ? "Toda etiqueta" : "Toda clasificación" },
+                  ...(untaggedCount > 0 || topic === "untagged"
+                    ? [
+                        {
+                          value: "untagged",
+                          label: closed
+                            ? `Sin etiqueta (${untaggedCount})`
+                            : `Sin topic (${untaggedCount})`,
+                        },
+                      ]
+                    : []),
+                  ...(topic !== "all" && topic !== "untagged" && !topicIds.includes(topic)
+                    ? [{ value: topic, label: topicLabel(topic) ?? topic }]
+                    : []),
+                  ...topicIds.map((t) => ({ value: t, label: topicLabel(t) ?? t })),
+                ]}
+              />
             )}
           </div>
         )}

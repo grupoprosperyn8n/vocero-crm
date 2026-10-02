@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, Send, X } from "lucide-react";
+import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { TaskContactRef } from "@/lib/types";
 
@@ -203,18 +204,16 @@ export function TaskRequestDialog({
               <span className="mb-1 block text-[12px] font-semibold text-text-2">
                 Empleado
               </span>
-              <select
+              <Select
                 value={toUserId}
-                onChange={(e) => setToUserId(e.target.value)}
+                onChange={setToUserId}
+                ariaLabel="Elegir a quién"
                 className="w-full rounded-md border bg-background px-3 py-2 text-[13px] outline-none focus:border-brand"
-              >
-                <option value="">Elegí a quién…</option>
-                {(staff ?? []).map((s) => (
-                  <option key={s.userId} value={s.userId}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: "Elegí a quién…" },
+                  ...(staff ?? []).map((s) => ({ value: s.userId, label: s.name })),
+                ]}
+              />
               {staff === null && (
                 <span className="mt-1 block text-[11px] text-text-3">
                   Cargando equipo…
@@ -278,18 +277,18 @@ export function TaskRequestDialog({
             <span className="mb-1 block text-[12px] font-semibold text-text-2">
               Prioridad
             </span>
-            <select
+            <Select
               value={prioridad}
-              onChange={(e) =>
-                setPrioridad(e.target.value as "" | "alta" | "media" | "baja")
-              }
+              onChange={(v) => setPrioridad(v as "" | "alta" | "media" | "baja")}
+              ariaLabel="Prioridad"
               className="w-full rounded-md border bg-background px-3 py-2 text-[13px] outline-none focus:border-brand"
-            >
-              <option value="">Normal</option>
-              <option value="alta">Alta</option>
-              <option value="media">Media</option>
-              <option value="baja">Baja</option>
-            </select>
+              options={[
+                { value: "", label: "Normal" },
+                { value: "alta", label: "Alta" },
+                { value: "media", label: "Media" },
+                { value: "baja", label: "Baja" },
+              ]}
+            />
           </label>
           {/* 044b-B10 — contactos del pedido: uno o varios, del CRM o del sistema. */}
           <div className="rounded-md border bg-subtle/40 p-2.5">

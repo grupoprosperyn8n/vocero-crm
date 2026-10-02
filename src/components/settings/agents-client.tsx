@@ -25,6 +25,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 /**
  * 019b — Panel de Agentes (Ajustes → Agentes).
@@ -930,25 +931,29 @@ export function AgentsPanel() {
                     <Label htmlFor="agent-sel-chat" className="text-[11px] font-medium text-muted-foreground">
                       Agente
                     </Label>
-                    <select
+                    <Select
                       id="agent-sel-chat"
                       value={agentSel}
-                      onChange={(e) => setAgentSel(e.target.value)}
+                      onChange={setAgentSel}
                       disabled={companion !== "online" || !agents?.length}
+                      ariaLabel="Agente local"
                       className="max-w-[220px] rounded-md border bg-background px-2 py-1 text-xs"
-                    >
-                      {agents?.filter((a) => a.headless).map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.bin}
-                          {a.version ? ` — ${a.version}` : ""}
-                        </option>
-                      ))}
-                      {agents?.filter((a) => !a.headless).map((a) => (
-                        <option key={a.id} value={a.id} disabled>
-                          {a.bin} (sin headless)
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        ...(agents
+                          ?.filter((a) => a.headless)
+                          .map((a) => ({
+                            value: a.id,
+                            label: `${a.bin}${a.version ? ` — ${a.version}` : ""}`,
+                          })) ?? []),
+                        ...(agents
+                          ?.filter((a) => !a.headless)
+                          .map((a) => ({
+                            value: a.id,
+                            label: `${a.bin} (sin headless)`,
+                            disabled: true,
+                          })) ?? []),
+                      ]}
+                    />
                   </>
                 ) : (
                   <Badge variant="secondary" className="gap-1">

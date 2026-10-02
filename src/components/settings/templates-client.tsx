@@ -20,6 +20,7 @@ import {
   validateBodyVariables,
 } from "@/lib/templates";
 import { CATALOGO_NOMBRE, CATALOGO_SEGMENTOS } from "@/lib/templates-catalog";
+import { Select } from "@/components/ui/select";
 
 /**
  * 044b-B13 — «Plantillas de Meta»: el catálogo de mensajes de WhatsApp
@@ -270,18 +271,19 @@ export function TemplatesClient() {
             className="h-8 w-64 rounded-md border border-border-strong bg-card pr-2.5 pl-7 text-[12px]"
           />
         </div>
-        <select
+        <Select
           value={seg}
-          onChange={(e) => setSeg(e.target.value)}
+          onChange={setSeg}
+          ariaLabel="Filtrar por segmento"
           className="h-8 rounded-md border border-border-strong bg-card px-2 text-[12px]"
-        >
-          <option value="todos">Todos los segmentos</option>
-          {segmentosUsados.map(([id, label]) => (
-            <option key={id} value={id}>
-              {label}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "todos", label: "Todos los segmentos" },
+            ...(seg !== "todos" && !segmentosUsados.some(([id]) => id === seg)
+              ? [{ value: seg, label: seg }]
+              : []),
+            ...segmentosUsados.map(([id, label]) => ({ value: id, label })),
+          ]}
+        />
         <div className="flex gap-1">
           {[
             { id: "todas", label: "Todas" },
@@ -303,17 +305,13 @@ export function TemplatesClient() {
             </button>
           ))}
         </div>
-        <select
+        <Select
           value={estado}
-          onChange={(e) => setEstado(e.target.value as EstadoFiltro)}
+          onChange={(v) => setEstado(v as EstadoFiltro)}
+          ariaLabel="Filtrar por estado"
           className="h-8 rounded-md border border-border-strong bg-card px-2 text-[12px]"
-        >
-          {ESTADO_OPCIONES.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+          options={ESTADO_OPCIONES.map((o) => ({ value: o.id, label: o.label }))}
+        />
       </div>
 
       {/* Lista */}
@@ -682,31 +680,29 @@ function EditorModal({
         </label>
         <label className="space-y-1">
           <span className={labelCls}>Segmento (uso)</span>
-          <select
+          <Select
             value={segment}
-            onChange={(e) => setSegment(e.target.value)}
+            onChange={setSegment}
+            ariaLabel="Segmento"
             className={inputCls}
-          >
-            <option value="">Sin segmento</option>
-            {Object.entries(CATALOGO_SEGMENTOS).map(([id, label]) => (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "Sin segmento" },
+              ...Object.entries(CATALOGO_SEGMENTOS).map(([id, label]) => ({ value: id, label })),
+            ]}
+          />
         </label>
         <label className="space-y-1">
           <span className={labelCls}>Categoría Meta</span>
-          <select
+          <Select
             value={category}
-            onChange={(e) =>
-              setCategory(e.target.value as "UTILITY" | "MARKETING")
-            }
+            onChange={(v) => setCategory(v as "UTILITY" | "MARKETING")}
+            ariaLabel="Categoría"
             className={inputCls}
-          >
-            <option value="UTILITY">Utilidad (seguimiento)</option>
-            <option value="MARKETING">Marketing</option>
-          </select>
+            options={[
+              { value: "UTILITY", label: "Utilidad (seguimiento)" },
+              { value: "MARKETING", label: "Marketing" },
+            ]}
+          />
         </label>
         <label className="space-y-1">
           <span className={labelCls}>Encabezado (opcional)</span>

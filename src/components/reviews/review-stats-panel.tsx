@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import type { ReviewEstado } from "@/lib/reviews";
 import { cn } from "@/lib/utils";
+import { Select } from "@/components/ui/select";
 
 /**
  * 033 — Tablero del flujo de siniestros (revisión de envío SGSA): qué se
@@ -166,16 +167,18 @@ export function ReviewStatsPanel() {
           </p>
         </div>
         <label className="text-[12px] font-semibold text-text-2">Período:</label>
-        <select
+        <Select
           value={dias}
-          onChange={(e) => setDias(e.target.value)}
+          onChange={setDias}
+          ariaLabel="Período"
           className="h-8 rounded-md border border-border-strong bg-background px-2 text-[12.5px]"
-        >
-          <option value="7">Últimos 7 días</option>
-          <option value="30">Últimos 30 días</option>
-          <option value="90">Últimos 90 días</option>
-          <option value="todo">Todo</option>
-        </select>
+          options={[
+            { value: "7", label: "Últimos 7 días" },
+            { value: "30", label: "Últimos 30 días" },
+            { value: "90", label: "Últimos 90 días" },
+            { value: "todo", label: "Todo" },
+          ]}
+        />
         {data && (
           <span className="text-[11.5px] text-text-3">
             {diasConDatos} día{diasConDatos === 1 ? "" : "s"} con revisiones

@@ -53,6 +53,7 @@ import {
 } from "./constructor-hub";
 import { DevicePreview, PiezaDemo } from "./device-preview";
 import { ProposalPostPanel } from "./proposal-post";
+import { Select } from "@/components/ui/select";
 
 type ClienteSistema = SystemClientSearchResultDto["client"];
 
@@ -1377,27 +1378,29 @@ export function ConstructorPanel({
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
                     Textos base (opcional)
                   </span>
-                  <select
+                  <Select
                     className={inputClass}
                     value={plantillaSel}
-                    onChange={(e) => {
-                      setPlantillaSel(e.target.value);
-                      const t = plantillas.find((x) => x.kind === e.target.value);
+                    onChange={(v) => {
+                      setPlantillaSel(v);
+                      const t = plantillas.find((x) => x.kind === v);
                       if (t) {
                         setKind(t.kind);
                         applyTemplate(t);
                       }
                     }}
-                  >
-                    <option value="">Elegí un texto base para precargar la pieza…</option>
-                    {plantillas.map((t) => (
-                      <option key={t.kind} value={t.kind}>
-                        {t.label?.trim() ||
+                    ariaLabel="Texto base"
+                    options={[
+                      { value: "", label: "Elegí un texto base para precargar la pieza…" },
+                      ...plantillas.map((t) => ({
+                        value: t.kind,
+                        label:
+                          t.label?.trim() ||
                           PROPOSAL_KINDS.find((k) => k.id === t.kind)?.label ||
-                          t.kind}
-                      </option>
-                    ))}
-                  </select>
+                          t.kind,
+                      })),
+                    ]}
+                  />
                 </label>
               )}
 
@@ -1644,34 +1647,40 @@ export function ConstructorPanel({
                     Producto
                   </span>
                   {cargandoMenus ? (
-                    <select className={inputClass} disabled value="">
-                      <option value="">Cargando…</option>
-                    </select>
+                    <Select
+                      className={inputClass}
+                      disabled
+                      value=""
+                      onChange={() => {}}
+                      ariaLabel="Producto"
+                      options={[{ value: "", label: "Cargando…" }]}
+                    />
                   ) : productos.length > 0 ? (
-                    <select
+                    <Select
                       className={inputClass}
                       value={form.productRef}
-                      onChange={(e) => {
-                        const sel = productos.find((x) => x.id === e.target.value);
+                      onChange={(v) => {
+                        const sel = productos.find((x) => x.id === v);
                         setForm((prev) => ({
                           ...prev,
                           productRef: sel ? sel.id : "",
                           productName: sel ? sel.name : "",
                         }));
                       }}
-                    >
-                      <option value="">{form.productName.trim() || "Sin producto puntual"}</option>
-                      {form.productRef && !productos.some((p) => p.id === form.productRef) && (
-                        <option value={form.productRef}>
-                          {form.productName.trim() || form.productRef} (no está en la lista)
-                        </option>
-                      )}
-                      {productos.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
+                      ariaLabel="Producto"
+                      options={[
+                        { value: "", label: form.productName.trim() || "Sin producto puntual" },
+                        ...(form.productRef && !productos.some((p) => p.id === form.productRef)
+                          ? [
+                              {
+                                value: form.productRef,
+                                label: `${form.productName.trim() || form.productRef} (no está en la lista)`,
+                              },
+                            ]
+                          : []),
+                        ...productos.map((p) => ({ value: p.id, label: p.name })),
+                      ]}
+                    />
                   ) : (
                     <input
                       className={inputClass}
@@ -1687,34 +1696,40 @@ export function ConstructorPanel({
                     Compañía auspiciante
                   </span>
                   {cargandoMenus ? (
-                    <select className={inputClass} disabled value="">
-                      <option value="">Cargando…</option>
-                    </select>
+                    <Select
+                      className={inputClass}
+                      disabled
+                      value=""
+                      onChange={() => {}}
+                      ariaLabel="Compañía"
+                      options={[{ value: "", label: "Cargando…" }]}
+                    />
                   ) : companias.length > 0 ? (
-                    <select
+                    <Select
                       className={inputClass}
                       value={form.companyRef}
-                      onChange={(e) => {
-                        const sel = companias.find((x) => x.id === e.target.value);
+                      onChange={(v) => {
+                        const sel = companias.find((x) => x.id === v);
                         setForm((prev) => ({
                           ...prev,
                           companyRef: sel ? sel.id : "",
                           companyName: sel ? sel.name : "",
                         }));
                       }}
-                    >
-                      <option value="">{form.companyName.trim() || "Sin compañía"}</option>
-                      {form.companyRef && !companias.some((c) => c.id === form.companyRef) && (
-                        <option value={form.companyRef}>
-                          {form.companyName.trim() || form.companyRef} (no está en la lista)
-                        </option>
-                      )}
-                      {companias.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                      ariaLabel="Compañía"
+                      options={[
+                        { value: "", label: form.companyName.trim() || "Sin compañía" },
+                        ...(form.companyRef && !companias.some((c) => c.id === form.companyRef)
+                          ? [
+                              {
+                                value: form.companyRef,
+                                label: `${form.companyName.trim() || form.companyRef} (no está en la lista)`,
+                              },
+                            ]
+                          : []),
+                        ...companias.map((c) => ({ value: c.id, label: c.name })),
+                      ]}
+                    />
                   ) : (
                     <input
                       className={inputClass}
@@ -1758,24 +1773,30 @@ export function ConstructorPanel({
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
                     Botón — tipo
                   </span>
-                  <select
+                  <Select
                     className={inputClass}
                     value={form.ctaKind}
-                    onChange={(e) => {
-                      const v = e.target.value as "link" | "pdf" | "agenda";
+                    onChange={(v) => {
+                      const ck = v as "link" | "pdf" | "agenda";
                       setForm((prev) => ({
                         ...prev,
-                        ctaKind: v,
+                        ctaKind: ck,
                         ctaLabel:
                           prev.ctaLabel ||
-                          (v === "agenda" ? "Agendar videollamada" : v === "pdf" ? "Ver la propuesta" : "Ver más"),
+                          (ck === "agenda"
+                            ? "Agendar videollamada"
+                            : ck === "pdf"
+                              ? "Ver la propuesta"
+                              : "Ver más"),
                       }));
                     }}
-                  >
-                    <option value="link">Enlace</option>
-                    <option value="pdf">PDF</option>
-                    <option value="agenda">Agendar</option>
-                  </select>
+                    ariaLabel="Acción del botón"
+                    options={[
+                      { value: "link", label: "Enlace" },
+                      { value: "pdf", label: "PDF" },
+                      { value: "agenda", label: "Agendar" },
+                    ]}
+                  />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">

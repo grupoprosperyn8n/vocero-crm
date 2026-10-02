@@ -56,6 +56,7 @@ import {
   Wand2,
   X,
 } from "lucide-react";
+import { Select } from "@/components/ui/select";
 import {
   Area,
   AreaChart,
@@ -3254,18 +3255,16 @@ export function ExecDashboard() {
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
                     Oficina
                   </span>
-                  <select
+                  <Select
                     value={filters.office}
-                    onChange={(e) => updateFilter("office", e.target.value)}
+                    onChange={(v) => updateFilter("office", v)}
+                    ariaLabel="Filtrar por oficina"
                     className={cn(selectClass, "w-full")}
-                  >
-                    <option value="">Todas las oficinas</option>
-                    {data.filters.offices.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: "", label: "Todas las oficinas" },
+                      ...data.filters.offices.map((value) => ({ value, label: value })),
+                    ]}
+                  />
                 </label>
               )}
 
@@ -3274,18 +3273,16 @@ export function ExecDashboard() {
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
                     Producto
                   </span>
-                  <select
+                  <Select
                     value={filters.product}
-                    onChange={(e) => updateFilter("product", e.target.value)}
+                    onChange={(v) => updateFilter("product", v)}
+                    ariaLabel="Filtrar por producto"
                     className={cn(selectClass, "w-full")}
-                  >
-                    <option value="">Todos los productos</option>
-                    {data.filters.products.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: "", label: "Todos los productos" },
+                      ...data.filters.products.map((value) => ({ value, label: value })),
+                    ]}
+                  />
                 </label>
               )}
 
@@ -3294,18 +3291,16 @@ export function ExecDashboard() {
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
                     Canal
                   </span>
-                  <select
+                  <Select
                     value={filters.channel}
-                    onChange={(e) => updateFilter("channel", e.target.value)}
+                    onChange={(v) => updateFilter("channel", v)}
+                    ariaLabel="Filtrar por canal"
                     className={cn(selectClass, "w-full")}
-                  >
-                    <option value="">Todos los canales</option>
-                    {data.filters.channels.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: "", label: "Todos los canales" },
+                      ...data.filters.channels.map((value) => ({ value, label: value })),
+                    ]}
+                  />
                 </label>
               )}
 
@@ -3314,18 +3309,16 @@ export function ExecDashboard() {
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
                     Empleado
                   </span>
-                  <select
+                  <Select
                     value={filters.employee}
-                    onChange={(e) => updateFilter("employee", e.target.value)}
+                    onChange={(v) => updateFilter("employee", v)}
+                    ariaLabel="Filtrar por empleado"
                     className={cn(selectClass, "w-full")}
-                  >
-                    <option value="">Todos los empleados</option>
-                    {data.filters.employees.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: "", label: "Todos los empleados" },
+                      ...data.filters.employees.map((value) => ({ value, label: value })),
+                    ]}
+                  />
                 </label>
               )}
 
@@ -3334,18 +3327,16 @@ export function ExecDashboard() {
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-text-3">
                     Compañía
                   </span>
-                  <select
+                  <Select
                     value={filters.company}
-                    onChange={(e) => updateFilter("company", e.target.value)}
+                    onChange={(v) => updateFilter("company", v)}
+                    ariaLabel="Filtrar por compañía"
                     className={cn(selectClass, "w-full")}
-                  >
-                    <option value="">Todas las compañías</option>
-                    {data.filters.companies.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: "", label: "Todas las compañías" },
+                      ...data.filters.companies.map((value) => ({ value, label: value })),
+                    ]}
+                  />
                 </label>
               )}
 
@@ -4734,18 +4725,16 @@ export function ExecDashboard() {
                     placeholder="Buscar empleado o sucursal…"
                     className="h-9 w-full rounded-md border bg-surface px-3 text-[12.5px] text-text-1 outline-none placeholder:text-text-3 focus:border-brand"
                   />
-                  <select
+                  <Select
                     value={eqSucursal}
-                    onChange={(event) => setEqSucursal(event.target.value)}
+                    onChange={setEqSucursal}
+                    ariaLabel="Filtrar por sucursal"
                     className="h-9 w-full rounded-md border bg-surface px-3 text-[12.5px] text-text-1 outline-none focus:border-brand"
-                  >
-                    <option value="">Todas las sucursales</option>
-                    {equipoSucursales.map((sucursal) => (
-                      <option key={sucursal} value={sucursal}>
-                        {sucursal}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: "", label: "Todas las sucursales" },
+                      ...equipoSucursales.map((sucursal) => ({ value: sucursal, label: sucursal })),
+                    ]}
+                  />
                 </div>
                 {/* 045 — formato lista: click en el empleado abre el informe IA completo. */}
                 <div className="space-y-1.5">

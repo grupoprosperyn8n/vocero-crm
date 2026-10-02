@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { SourceValue } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
 const SOURCES: { value: SourceValue; label: string }[] = [
@@ -131,18 +132,13 @@ export function NewContactDialog({
             <label className="text-sm font-medium" htmlFor="nc-source">
               ¿De dónde salió?
             </label>
-            <select
+            <Select
               id="nc-source"
               value={source}
-              onChange={(e) => setSource(e.target.value as SourceValue)}
+              onChange={(v) => setSource(v as SourceValue)}
               className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"
-            >
-              {SOURCES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+              options={SOURCES.map((s) => ({ value: s.value, label: s.label }))}
+            />
           </div>
 
           <div className="space-y-1.5">

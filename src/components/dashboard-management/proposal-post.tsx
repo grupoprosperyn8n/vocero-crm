@@ -41,6 +41,7 @@ import type {
 } from "@/lib/types";
 import { systemClientName } from "@/lib/utils";
 import { TONES, TONE_IDS, type ProposalToneId } from "@/lib/proposals/copy";
+import { Select } from "@/components/ui/select";
 
 type CrmContactLite = { id: string; name: string; phone: string | null };
 
@@ -681,42 +682,42 @@ export function ProposalPostPanel({
                 🛡️ Si al cliente le interesa, seguís vos. La IA atiende y avisa qué pasó.
               </p>
             ) : targetKind === "employee" ? (
-              <select
+              <Select
                 value={assignee}
-                onChange={(e) => setAssignee(e.target.value)}
+                onChange={setAssignee}
+                ariaLabel="Elegir el empleado"
                 className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
-              >
-                <option value="">Elegí el empleado…</option>
-                {(directory ?? []).map((m) => (
-                  <option key={m.userId} value={m.userId}>
-                    {m.name}
-                    {m.locality ? ` — ${m.locality}` : ""}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: "Elegí el empleado…" },
+                  ...(directory ?? []).map((m) => ({
+                    value: m.userId,
+                    label: `${m.name}${m.locality ? ` — ${m.locality}` : ""}`,
+                  })),
+                ]}
+              />
             ) : (
-              <select
+              <Select
                 value={assignee}
-                onChange={(e) => setAssignee(e.target.value)}
+                onChange={setAssignee}
+                ariaLabel="Elegir el grupo del chat"
                 className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
-              >
-                <option value="">Elegí el grupo del chat…</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: "Elegí el grupo del chat…" },
+                  ...groups.map((g) => ({ value: g.id, label: g.name })),
+                ]}
+              />
             )}
-            <select
+            <Select
               value={priority}
-              onChange={(e) => setPriority(e.target.value as ProposalPriority)}
+              onChange={(v) => setPriority(v as ProposalPriority)}
+              ariaLabel="Prioridad"
               className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
-            >
-              <option value="alta">Prioridad alta</option>
-              <option value="media">Prioridad media</option>
-              <option value="baja">Prioridad baja</option>
-            </select>
+              options={[
+                { value: "alta", label: "Prioridad alta" },
+                { value: "media", label: "Prioridad media" },
+                { value: "baja", label: "Prioridad baja" },
+              ]}
+            />
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}

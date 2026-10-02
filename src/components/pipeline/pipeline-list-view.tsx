@@ -6,6 +6,7 @@ import { SOURCE_KIND_LABEL, taskDueState } from "@/lib/pipeline";
 import { formatMoneyCents, sumable } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
+import { Select } from "@/components/ui/select";
 import { PriorityBadge } from "./priority-picker";
 import { TaskDueChip } from "./entity-tasks";
 
@@ -168,18 +169,16 @@ export function PipelineListView({
         <div className="flex-1" />
         <label className="flex items-center gap-1.5 text-[12px] text-text-2">
           Etapa:
-          <select
+          <Select
             value={etapaFiltro}
-            onChange={(e) => setEtapaFiltro(e.target.value)}
+            onChange={setEtapaFiltro}
+            ariaLabel="Filtrar por etapa"
             className="h-8 rounded-md border border-border-strong bg-background px-2 text-[12.5px]"
-          >
-            <option value="todas">Todas</option>
-            {stages.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "todas", label: "Todas" },
+              ...stages.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
         </label>
         {hayVencimiento && (
           <button

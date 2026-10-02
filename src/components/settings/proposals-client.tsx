@@ -30,6 +30,7 @@ import {
   DEFAULT_KIND_PROMPTS,
   GENERIC_KIND_PROMPT,
 } from "@/lib/proposals/kind-prompts";
+import { Select } from "@/components/ui/select";
 
 type Draft = {
   label: string;
@@ -473,16 +474,18 @@ export function ProposalsSettings() {
               disabled={!canEdit}
               className="rounded-lg border bg-card px-3 py-2 text-[12.5px]"
             />
-            <select
+            <Select
               value={current.ctaKind}
-              onChange={(e) => set("ctaKind", e.target.value as "link" | "pdf" | "agenda")}
+              onChange={(v) => set("ctaKind", v as "link" | "pdf" | "agenda")}
               disabled={!canEdit}
+              ariaLabel="Tipo de llamada a la acción"
               className="rounded-lg border bg-card px-2 py-2 text-[12.5px]"
-            >
-              <option value="link">Enlace web</option>
-              <option value="pdf">URL de PDF</option>
-              <option value="agenda">Videollamada (agenda)</option>
-            </select>
+              options={[
+                { value: "link", label: "Enlace web" },
+                { value: "pdf", label: "URL de PDF" },
+                { value: "agenda", label: "Videollamada (agenda)" },
+              ]}
+            />
           </div>
         </div>
 

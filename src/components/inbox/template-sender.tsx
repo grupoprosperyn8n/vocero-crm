@@ -6,6 +6,7 @@ import { countVariables } from "@/lib/templates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 /**
  * Selector de plantilla aprobada para conversaciones con ventana cerrada
@@ -98,22 +99,19 @@ export function TemplateSender({
     <div className="space-y-3">
       <div className="space-y-1.5">
         <Label htmlFor="template-select">Plantilla aprobada</Label>
-        <select
+        <Select
           id="template-select"
           value={selectedId}
-          onChange={(e) => {
-            setSelectedId(e.target.value);
+          onChange={(v) => {
+            setSelectedId(v);
             setVariables([]);
           }}
-          className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          <option value="">Elige una plantilla…</option>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} ({t.language})
-            </option>
-          ))}
-        </select>
+          className="h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          options={[
+            { value: "", label: "Elige una plantilla…" },
+            ...templates.map((t) => ({ value: t.id, label: `${t.name} (${t.language})` })),
+          ]}
+        />
       </div>
       {selected && (
         <p className="rounded-md bg-subtle p-2.5 text-xs text-muted-foreground">

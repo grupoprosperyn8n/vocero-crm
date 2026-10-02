@@ -36,6 +36,7 @@ import type {
   TeamMemberLiteDto,
 } from "@/lib/types";
 import type { PanelCustomer } from "./client-panel";
+import { Select } from "@/components/ui/select";
 
 type Vista = "accion" | "cliente";
 
@@ -202,41 +203,37 @@ export function FollowUpPanel({
             </button>
           ))}
         </div>
-        <select
+        <Select
           value={gestiona}
-          onChange={(e) => setGestiona(e.target.value)}
+          onChange={setGestiona}
+          ariaLabel="Quién gestiona"
           className="rounded-lg border bg-card px-2 py-1.5 text-[12.5px]"
-          aria-label="Quién gestiona"
-        >
-          <option value="">Todo el equipo</option>
-          <optgroup label="Empleados">
-            {directory.map((m) => (
-              <option key={m.userId} value={`u:${m.userId}`}>
-                {m.name}
-              </option>
-            ))}
-          </optgroup>
-          {groups.length > 0 && (
-            <optgroup label="Grupos del chat">
-              {groups.map((g) => (
-                <option key={g.id} value={`g:${g.id}`}>
-                  {g.name}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-        <select
+          options={[
+            { value: "", label: "Todo el equipo" },
+            ...directory.map((m) => ({
+              value: `u:${m.userId}`,
+              label: m.name,
+              group: "Empleados",
+            })),
+            ...groups.map((g) => ({
+              value: `g:${g.id}`,
+              label: g.name,
+              group: "Grupos del chat",
+            })),
+          ]}
+        />
+        <Select
           value={origen}
-          onChange={(e) => setOrigen(e.target.value)}
+          onChange={setOrigen}
+          ariaLabel="Origen"
           className="rounded-lg border bg-card px-2 py-1.5 text-[12.5px]"
-          aria-label="Origen"
-        >
-          <option value="">Todo el origen</option>
-          <option value="cola">Cola de hoy</option>
-          <option value="ficha">Ficha / Cliente 360°</option>
-          <option value="propuesta">Propuestas</option>
-        </select>
+          options={[
+            { value: "", label: "Todo el origen" },
+            { value: "cola", label: "Cola de hoy" },
+            { value: "ficha", label: "Ficha / Cliente 360°" },
+            { value: "propuesta", label: "Propuestas" },
+          ]}
+        />
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}

@@ -40,6 +40,7 @@ import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-link
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { formatTime } from "@/components/inbox/helpers";
 import { StageManager } from "./stage-manager";
 import { LossReasonDialog } from "./loss-reason-dialog";
@@ -378,20 +379,17 @@ export function PipelineClient({ role, meId }: { role: string; meId: string }) {
             </button>
           </div>
           {seesWholeTeam && (
-            <select
+            <Select
               value={assignee}
-              onChange={(e) => setAssignee(e.target.value)}
-              aria-label="Ver el flujo de"
+              onChange={setAssignee}
+              ariaLabel="Ver el flujo de"
               className="h-8 rounded-md border border-border-strong bg-background px-2 text-[12.5px]"
-            >
-              <option value="all">Todo el equipo</option>
-              <option value="me">Solo míos</option>
-              {staff.map((s) => (
-                <option key={s.userId} value={s.userId}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "all", label: "Todo el equipo" },
+                { value: "me", label: "Solo míos" },
+                ...staff.map((s) => ({ value: s.userId, label: s.name })),
+              ]}
+            />
           )}
           {board === "gestiones" && (
             <Button variant="outline" size="sm" onClick={() => setGestionSearch(true)}>

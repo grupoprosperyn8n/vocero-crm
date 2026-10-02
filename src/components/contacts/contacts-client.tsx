@@ -19,6 +19,7 @@ import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { SOURCE_LABELS } from "@/server/contact-source";
 import { priorityRank } from "@/server/leads/priority";
@@ -170,19 +171,19 @@ export function ContactsClient() {
             Ver archivados
           </label>
           {stages.length > 0 && (
-            <select
+            <Select
               value={stage}
-              onChange={(e) => setStage(e.target.value)}
-              aria-label="Filtrar por etapa del embudo"
+              onChange={setStage}
+              ariaLabel="Filtrar por etapa del embudo"
               className="h-9 rounded-md border border-input bg-card px-2 text-sm"
-            >
-              <option value="all">Toda etapa</option>
-              {stages.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "all", label: "Toda etapa" },
+                ...(stage !== "all" && !stages.includes(stage)
+                  ? [{ value: stage, label: stage }]
+                  : []),
+                ...stages.map((s) => ({ value: s, label: s })),
+              ]}
+            />
           )}
           <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

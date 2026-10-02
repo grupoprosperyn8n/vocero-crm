@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 /**
  * 016 — Ajustes → Anuncios: conectar el dataset de Meta, decir qué etapa
@@ -195,27 +196,28 @@ export function AdsClient() {
 
           <div className="space-y-1.5">
             <Label htmlFor="capi-stage">¿Qué etapa es un lead calificado?</Label>
-            <select
+            <Select
               id="capi-stage"
               value={qualifiedStageId}
-              onChange={(e) => setQualifiedStageId(e.target.value)}
+              onChange={setQualifiedStageId}
               className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"
-            >
-              <option value="">No reportar leads calificados</option>
-              {qualifiedStageId &&
-                !stages.some((s) => s.id === qualifiedStageId && s.kind === "open") && (
-                  <option value={qualifiedStageId}>
-                    {stages.find((s) => s.id === qualifiedStageId)?.name ?? "Etapa actual"}
-                  </option>
-                )}
-              {stages
-                .filter((s) => s.kind === "open")
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-            </select>
+              options={[
+                { value: "", label: "No reportar leads calificados" },
+                ...(qualifiedStageId &&
+                !stages.some((s) => s.id === qualifiedStageId && s.kind === "open")
+                  ? [
+                      {
+                        value: qualifiedStageId,
+                        label:
+                          stages.find((s) => s.id === qualifiedStageId)?.name ?? "Etapa actual",
+                      },
+                    ]
+                  : []),
+                ...stages
+                  .filter((s) => s.kind === "open")
+                  .map((s) => ({ value: s.id, label: s.name })),
+              ]}
+            />
             <p className="text-xs text-muted-foreground">
               La venta se reporta sola cuando el trato entra a tu etapa ganada.
             </p>

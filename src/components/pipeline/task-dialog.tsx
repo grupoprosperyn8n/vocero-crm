@@ -5,6 +5,7 @@ import { CalendarClock, X } from "lucide-react";
 import type { PriorityValue } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 
 /** 037 — de dónde cuelga una tarea: el checklist de una entidad. */
 export type TaskOrigin = {
@@ -195,17 +196,18 @@ export function TaskDialog({
         <label className="mt-3 block text-[12px] font-medium" htmlFor="tarea-prioridad">
           Prioridad
         </label>
-        <select
+        <Select
           id="tarea-prioridad"
           value={prioridad}
-          onChange={(e) => setPrioridad(e.target.value as PriorityValue | "")}
+          onChange={(v) => setPrioridad(v as PriorityValue | "")}
           className="mt-1 h-9 w-full rounded-md border border-border-strong bg-background px-2 text-[13px]"
-        >
-          <option value="">Sin prioridad</option>
-          <option value="alta">Alta</option>
-          <option value="media">Media</option>
-          <option value="baja">Baja</option>
-        </select>
+          options={[
+            { value: "", label: "Sin prioridad" },
+            { value: "alta", label: "Alta" },
+            { value: "media", label: "Media" },
+            { value: "baja", label: "Baja" },
+          ]}
+        />
 
         {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
 

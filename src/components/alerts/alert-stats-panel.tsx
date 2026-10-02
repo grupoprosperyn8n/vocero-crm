@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { ALERT_ESTADO_LABEL } from "@/lib/alerts";
 import { cn } from "@/lib/utils";
+import { Select } from "@/components/ui/select";
 
 /**
  * 030 — Estado general de las alertas (administrador, propietario y gerente):
@@ -104,21 +105,19 @@ export function AlertStatsPanel() {
       {/* Filtro por empleado: el mismo estado general, mirado desde cada uno. */}
       <div className="flex flex-wrap items-center gap-2">
         <label className="text-[12px] font-semibold text-text-2">Empleado:</label>
-        <select
+        <Select
           value={filtro}
-          onChange={(e) => setFiltro(e.target.value)}
+          onChange={setFiltro}
+          ariaLabel="Filtrar por empleado"
           className="h-8 rounded-md border border-border-strong bg-background px-2 text-[12.5px]"
-        >
-          <option value="all">Todos</option>
-          {filtro !== "all" && !(data?.empleados ?? []).some((e) => e.name === filtro) && (
-            <option value={filtro}>{filtro}</option>
-          )}
-          {(data?.empleados ?? []).map((e) => (
-            <option key={e.name} value={e.name}>
-              {e.name}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "all", label: "Todos" },
+            ...(filtro !== "all" && !(data?.empleados ?? []).some((e) => e.name === filtro)
+              ? [{ value: filtro, label: filtro }]
+              : []),
+            ...(data?.empleados ?? []).map((e) => ({ value: e.name, label: e.name })),
+          ]}
+        />
         {data && (
           <span className="text-[11.5px] text-text-3">
             {filtro === "all"

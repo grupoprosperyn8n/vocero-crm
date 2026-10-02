@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Hash, Loader2, Search, Settings2, X } from "lucide-react";
 import { REVIEW_ENVIO_ALERT_LABEL, REVIEW_ENVIO_ALERT_TYPE } from "@/lib/reviews";
 import { cn } from "@/lib/utils";
+import { Select } from "@/components/ui/select";
 
 type Rule = {
   id: string;
@@ -143,13 +144,16 @@ export function AlertRulesDialog({
 
         <div className="space-y-3 border-b px-4 py-3">
           <label className="block text-[12px] font-semibold text-text-2">Tipo de alerta</label>
-          <select value={alertType} onChange={(e) => setAlertType(e.target.value)} className="h-9 w-full rounded-md border bg-card px-2.5 text-[13px] outline-none focus-visible:ring-1 focus-visible:ring-ring">
-            {knownTypes.map((t) => (
-              <option key={t} value={t}>
-                {t === REVIEW_ENVIO_ALERT_TYPE ? `${REVIEW_ENVIO_ALERT_LABEL} — ${t}` : t}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={alertType}
+            onChange={setAlertType}
+            ariaLabel="Tipo de alerta"
+            className="h-9 w-full rounded-md border bg-card px-2.5 text-[13px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            options={knownTypes.map((t) => ({
+              value: t,
+              label: t === REVIEW_ENVIO_ALERT_TYPE ? `${REVIEW_ENVIO_ALERT_LABEL} — ${t}` : t,
+            }))}
+          />
           {alertType === REVIEW_ENVIO_ALERT_TYPE && (
             <p className="text-[11.5px] text-text-3">
               El flujo de siniestros vive en el grupo «Alerta de Siniestro» del chat interno (siempre con dueño

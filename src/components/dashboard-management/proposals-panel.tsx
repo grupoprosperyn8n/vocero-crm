@@ -40,6 +40,7 @@ import {
   proposalLifecycle,
   type LifecycleAction,
 } from "./proposal-actions";
+import { Select } from "@/components/ui/select";
 
 type Funnel = {
   total: number;
@@ -310,49 +311,49 @@ export function ProposalsPanel({ onOpenPanel }: { onOpenPanel: (c: PanelCustomer
         <span className="flex items-center gap-1.5 text-[12px] font-semibold text-text-2">
           <UserRound size={13} /> Gestiona:
         </span>
-        <select
+        <Select
           value={assignee}
-          onChange={(e) => setAssignee(e.target.value)}
+          onChange={setAssignee}
+          ariaLabel="Filtrar por quién gestiona"
           className="rounded-lg border bg-card px-2 py-1.5 text-[12.5px]"
-        >
-          <option value="">Todo el equipo</option>
-          <optgroup label="Empleados">
-            {directory.map((m) => (
-              <option key={m.userId} value={`u:${m.userId}`}>
-                {m.name}
-              </option>
-            ))}
-          </optgroup>
-          {groups.length > 0 && (
-            <optgroup label="Grupos del chat">
-              {groups.map((g) => (
-                <option key={g.id} value={`g:${g.id}`}>
-                  {g.name}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-        <select
+          options={[
+            { value: "", label: "Todo el equipo" },
+            ...directory.map((m) => ({
+              value: `u:${m.userId}`,
+              label: m.name,
+              group: "Empleados",
+            })),
+            ...groups.map((g) => ({
+              value: `g:${g.id}`,
+              label: g.name,
+              group: "Grupos del chat",
+            })),
+          ]}
+        />
+        <Select
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          onChange={setStatus}
+          ariaLabel="Filtrar por estado"
           className="rounded-lg border bg-card px-2 py-1.5 text-[12.5px]"
-        >
-          <option value="">Todos los estados</option>
-          <option value="borrador">Borrador</option>
-          <option value="derivada">Derivada</option>
-          <option value="enviada">Enviada</option>
-        </select>
-        <select
+          options={[
+            { value: "", label: "Todos los estados" },
+            { value: "borrador", label: "Borrador" },
+            { value: "derivada", label: "Derivada" },
+            { value: "enviada", label: "Enviada" },
+          ]}
+        />
+        <Select
           value={archived}
-          onChange={(e) => setArchived(e.target.value as "" | "1" | "only")}
-          className="rounded-lg border bg-card px-2 py-1.5 text-[12.5px]"
+          onChange={(v) => setArchived(v as "" | "1" | "only")}
+          ariaLabel="Archivadas"
           title="041e — las archivadas salen del trabajo activo pero se pueden revisar siempre"
-        >
-          <option value="">Activas</option>
-          <option value="1">Activas + archivadas</option>
-          <option value="only">Solo archivadas</option>
-        </select>
+          className="rounded-lg border bg-card px-2 py-1.5 text-[12.5px]"
+          options={[
+            { value: "", label: "Activas" },
+            { value: "1", label: "Activas + archivadas" },
+            { value: "only", label: "Solo archivadas" },
+          ]}
+        />
         <button
           type="button"
           onClick={() => void load(false)}
