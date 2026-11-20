@@ -143,3 +143,43 @@ export function normalizeRecipient(phone: string): string {
   }
   return canonical;
 }
+
+/**
+ * 050 — GET a la Graph API SIN token, para el único paso que no lo lleva:
+ * el canje del `code` de Embedded Signup (`/oauth/access_token`), donde las
+ * credenciales van en la query como `client_id` + `client_secret`.
+ *
+ * Existe para no abrir una segunda puerta de salida hacia Meta: mismo base URL,
+ * misma versión y mismo `MetaApiError` que `graphRequest`.
+ */
+export async function graphRequestPublic<T>(path: string): Promise<T> {
+  const env = getEnv();
+  const url = `${env.META_GRAPH_BASE_URL}/${env.META_GRAPH_API_VERSION}/${path}`;
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch (cause) {
+    throw new MetaApiError("No se pudo contactar la API de Meta", {
+      status: 0,
+      details: cause,
+    });
+  }
+  const text = await res.text();
+  let json: unknown = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    // respuesta no-JSON: se conserva el texto crudo en details
+  }
+  if (!res.ok) {
+    const err = (json as { error?: { message?: string; code?: number; type?: string } })
+      ?.error;
+    throw new MetaApiError(err?.message ?? `Meta respondió ${res.status}`, {
+      status: res.status,
+      code: err?.code ?? null,
+      type: err?.type ?? null,
+      details: json ?? text,
+    });
+  }
+  return json as T;
+}

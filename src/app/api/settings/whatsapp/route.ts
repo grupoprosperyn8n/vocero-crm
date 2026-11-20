@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { getEnv } from "@/lib/env";
 import { connectionsGate } from "@/server/settings/access";
+import { isEmbeddedSignupConfigured } from "@/server/whatsapp/embedded-signup";
 import {
   clearCredentials,
   getCredentialsByOrg,
@@ -14,8 +16,18 @@ export const dynamic = "force-dynamic";
 export const GET = withAuth(async (session) => {
   const gate = connectionsGate(session);
   if (gate) return gate;
+  const env = getEnv();
   const creds = await getCredentialsByOrg(session.organizationId);
-  if (!creds) return Response.json({ connection: null });
+  /**
+   * 050 — Datos públicos del alta automática (app id y configuración de
+   * Facebook Login for Business). No son secretos: van embebidos en el
+   * navegador por diseño de Meta. El App Secret nunca sale del servidor.
+   */
+  const embeddedSignup = isEmbeddedSignupConfigured()
+    ? { enabled: true, appId: env.META_APP_ID ?? null, configId: env.META_ES_CONFIG_ID ?? null }
+    : { enabled: false, appId: null, configId: null };
+
+  if (!creds) return Response.json({ connection: null, embeddedSignup });
   return Response.json({
     connection: {
       wabaId: creds.wabaId,
@@ -23,8 +35,13 @@ export const GET = withAuth(async (session) => {
       displayPhoneNumber: creds.displayPhoneNumber,
       verifiedName: creds.verifiedName,
       status: creds.status,
+      /** 050 — manual | coexistence. */
+      mode: creds.mode,
+      /** 050 — primer evento real recibido; null = vinculada sin tráfico probado. */
+      operationalAt: creds.operationalAt ? creds.operationalAt.toISOString() : null,
       tokenLast4: tokenLast4(creds.token),
     },
+    embeddedSignup,
   });
 });
 

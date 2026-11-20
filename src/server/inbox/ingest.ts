@@ -3,7 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { normalizeMx } from "@/lib/meta/client";
 import { publish } from "@/server/events/bus";
-import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
+import { getCredentialsByPhoneNumberId, markOperational } from "@/server/whatsapp/credentials";
 import { ensureAssetDownload } from "@/server/media/download";
 import { saveMediaFile } from "@/server/whatsapp/media";
 import type { Channel } from "@/lib/channels";
@@ -248,6 +248,10 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
 
   const organizationId = credentials.organizationId;
 
+  // 050 — Evidencia real de que el canal está vivo: el primer evento que llega
+  // marca la conexión como operativa (idempotente, no reescribe la fecha).
+  await markOperational(organizationId);
+
   for (const status of value.statuses ?? []) {
     await applyStatusUpdate(organizationId, status);
   }
@@ -293,6 +297,9 @@ export async function processEchoesValue(value: WebhookValue): Promise<void> {
     );
     return;
   }
+
+  // 050 — un echo también es evidencia de canal vivo.
+  await markOperational(credentials.organizationId);
 
   // Meta documenta `message_echoes`; parser tolerante a `messages` (R1).
   const echoes = value.message_echoes ?? value.messages ?? [];

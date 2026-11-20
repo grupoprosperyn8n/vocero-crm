@@ -72,6 +72,8 @@ const prefixes = {
   pieceTemplate: "btpl",
   // 044b-B15 — baúl de análisis de IA (módulos y clientes del tablero)
   aiInsight: "ain",
+  // 050 — log del alta de WhatsApp por Embedded Signup
+  onboarding: "won",
   // 046 — conexiones de IA por organización + registro de consumo
   aiConnection: "aic",
   aiUsage: "aiu",

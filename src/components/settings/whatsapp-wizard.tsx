@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Power } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { WhatsappAssistant } from "./whatsapp-assistant";
+import { WhatsappEmbeddedSignup } from "./whatsapp-embedded-signup";
 import {
   ConnectForm,
   WebhookCard,
@@ -19,6 +20,12 @@ import {
 export function WhatsappWizard() {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [webhook, setWebhook] = useState<WebhookInfo | null>(null);
+  /** 050 — alta automática disponible en esta instancia (app id + config id). */
+  const [embedded, setEmbedded] = useState<{
+    enabled: boolean;
+    appId: string | null;
+    configId: string | null;
+  } | null>(null);
   const [loaded, setLoaded] = useState(false);
   /**
    * auto: sin conexión → guía; con conexión → estado.
@@ -32,7 +39,10 @@ export function WhatsappWizard() {
       fetch("/api/settings/whatsapp").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/settings/webhook").then((r) => (r.ok ? r.json() : null)),
     ]).catch(() => [null, null]);
-    if (c) setConnection(c.connection);
+    if (c) {
+      setConnection(c.connection);
+      if (c.embeddedSignup) setEmbedded(c.embeddedSignup);
+    }
     if (w) setWebhook(w);
     setLoaded(true);
   }, []);
@@ -76,9 +86,34 @@ export function WhatsappWizard() {
               {connection.verifiedName ? `${connection.verifiedName} · ` : ""}
               token …{connection.tokenLast4}
             </p>
+            {connection.mode === "coexistence" && (
+              <p className="text-success-text opacity-80">
+                Coexistencia: el número sigue activo en la app del celular.
+              </p>
+            )}
+            <p className="text-success-text opacity-80">
+              {connection.operationalAt
+                ? `Recibiendo mensajes desde ${new Date(connection.operationalAt).toLocaleString("es-AR")}`
+                : "Todavía no llegó ningún mensaje: escribile al número desde otro teléfono para probarlo."}
+            </p>
           </div>
-          <Badge variant="success">Conectado</Badge>
+          <Badge variant={connection.operationalAt ? "success" : "secondary"}>
+            {connection.operationalAt ? "Operativo" : "Vinculado"}
+          </Badge>
         </div>
+      )}
+
+      {!connection && embedded?.enabled && embedded.appId && embedded.configId && (
+        <WhatsappEmbeddedSignup
+          appId={embedded.appId}
+          configId={embedded.configId}
+          onConnected={() => void refetch()}
+        />
+      )}
+      {!connection && embedded && !embedded.enabled && (
+        <p className="text-xs text-muted-foreground">
+          Esta instancia no tiene el alta automática habilitada: conectá con la guía manual de abajo.
+        </p>
       )}
 
       {mostrarGuia && (

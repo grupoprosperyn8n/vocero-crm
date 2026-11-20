@@ -20,6 +20,15 @@ const envSchema = z.object({
     }),
   META_WEBHOOK_VERIFY_TOKEN: z.string().min(8),
   META_APP_SECRET: z.string().optional(),
+  // 050: alta automática por Embedded Signup. Sin las tres variables, la UI
+  // esconde esa puerta y el asistente manual (043) sigue siendo el único camino.
+  META_APP_ID: z.string().optional(),
+  META_ES_CONFIG_ID: z.string().optional(),
+  /** 050: PIN de 6 dígitos para registrar un número nuevo (alta estándar). */
+  META_REGISTER_PIN: z
+    .string()
+    .regex(/^\d{6}$/, "META_REGISTER_PIN debe ser de 6 dígitos")
+    .optional(),
   META_GRAPH_API_VERSION: z.string().default("v25.0"),
   META_GRAPH_BASE_URL: z.string().url().default("https://graph.facebook.com"),
   OPENROUTER_API_TOKEN: z.string().optional(),

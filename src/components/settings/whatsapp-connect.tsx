@@ -20,6 +20,10 @@ export type Connection = {
   verifiedName: string | null;
   status: "connected" | "reconnect_required";
   tokenLast4: string;
+  /** 050 — manual | coexistence (ausente en respuestas viejas). */
+  mode?: "manual" | "coexistence";
+  /** 050 — primer evento real recibido; null/ausente = sin tráfico probado. */
+  operationalAt?: string | null;
 };
 
 export type WebhookInfo = {

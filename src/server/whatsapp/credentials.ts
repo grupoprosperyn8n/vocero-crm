@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
@@ -12,6 +12,10 @@ export type Credentials = {
   displayPhoneNumber: string | null;
   verifiedName: string | null;
   status: "connected" | "reconnect_required";
+  /** 050 — cómo se dio de alta: manual (formulario) o coexistencia (Embedded Signup). */
+  mode: "manual" | "coexistence";
+  /** 050 — primer evento real recibido; null = vinculada sin tráfico probado. */
+  operationalAt: Date | null;
   token: string;
 };
 
@@ -26,6 +30,8 @@ function toCredentials(row: Row): Credentials {
     displayPhoneNumber: row.displayPhoneNumber,
     verifiedName: row.verifiedName,
     status: row.status,
+    mode: row.mode,
+    operationalAt: row.operationalAt ?? null,
     token: decryptSecret({
       cipher: row.tokenCipher,
       iv: row.tokenIv,
@@ -79,9 +85,12 @@ export async function saveCredentials(input: {
   token: string;
   displayPhoneNumber?: string | null;
   verifiedName?: string | null;
+  /** 050 — `coexistence` cuando el número sigue activo en la app del celular. */
+  mode?: "manual" | "coexistence";
 }): Promise<void> {
   const db = getDb();
   const enc = encryptSecret(input.token);
+  const mode = input.mode ?? "manual";
   await db
     .insert(schema.metaCredentials)
     .values({
@@ -95,6 +104,7 @@ export async function saveCredentials(input: {
       tokenIv: enc.iv,
       tokenTag: enc.tag,
       status: "connected",
+      mode,
     })
     .onConflictDoUpdate({
       target: [schema.metaCredentials.organizationId],
@@ -107,9 +117,33 @@ export async function saveCredentials(input: {
         tokenIv: enc.iv,
         tokenTag: enc.tag,
         status: "connected",
+        mode,
+        /**
+         * 050 — `operationalAt` sobrevive a una reconexión del MISMO número
+         * (ya probó tráfico); con un número distinto arranca en null porque
+         * esa conexión todavía no recibió nada.
+         */
+        operationalAt: sql`case when ${schema.metaCredentials.phoneNumberId} = ${input.phoneNumberId} then ${schema.metaCredentials.operationalAt} else null end`,
         updatedAt: new Date(),
       },
     });
+}
+
+/**
+ * 050 — Marca la conexión como operativa la primera vez que llega un evento
+ * real (mensaje entrante o echo del celular). Idempotente: no reescribe la
+ * fecha original.
+ */
+export async function markOperational(organizationId: string): Promise<void> {
+  await getDb()
+    .update(schema.metaCredentials)
+    .set({ operationalAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        scoped(schema.metaCredentials.organizationId, organizationId),
+        isNull(schema.metaCredentials.operationalAt)
+      )
+    );
 }
 
 /** Marca la conexión como vencida (token inválido detectado en runtime). */

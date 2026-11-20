@@ -45,6 +45,30 @@ export async function POST(req: Request, { params }: Params) {
 
   const rawBody = await req.text();
   const signature = req.headers.get("x-hub-signature-256");
+
+  // 050 — Fail-closed: sin App Secret no hay firma que verificar. Los eventos
+  // que tienen efectos de negocio (mensajes entrantes y echoes del celular) se
+  // rechazan en vez de procesarse a ciegas; el resto del payload (por ejemplo
+  // estados de plantillas) sigue funcionando como antes.
+  if (!env.META_APP_SECRET) {
+    let probe: WebhookPayload | null = null;
+    try {
+      probe = JSON.parse(rawBody) as WebhookPayload;
+    } catch {
+      // body ilegible: lo resuelve el parseo de abajo
+    }
+    const sensitive = Boolean(
+      probe?.entry?.some((entry) =>
+        entry.changes?.some(
+          (change) => change.field === "messages" || change.field === "smb_message_echoes"
+        )
+      )
+    );
+    if (sensitive) {
+      return new Response(null, { status: 401 });
+    }
+  }
+
   if (!isValidSignature(rawBody, signature, env.META_APP_SECRET)) {
     return new Response(null, { status: 401 });
   }

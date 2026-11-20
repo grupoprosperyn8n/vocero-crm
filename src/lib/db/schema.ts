@@ -618,6 +618,21 @@ export const metaCredentials = pgTable(
     status: text("status", { enum: ["connected", "reconnect_required"] })
       .notNull()
       .default("connected"),
+    /**
+     * 050 — Cómo se dio de alta esta conexión:
+     * `manual` = formulario con WABA/phone/token pegados a mano (043);
+     * `coexistence` = Embedded Signup sobre un número que sigue activo en la
+     * app de WhatsApp Business del celular.
+     */
+    mode: text("mode", { enum: ["manual", "coexistence"] })
+      .notNull()
+      .default("manual"),
+    /**
+     * 050 — Primer evento real recibido por esta conexión (mensaje entrante o
+     * echo del celular). Null = vinculada pero todavía sin probar tráfico:
+     * la UI no la muestra como operativa hasta que hay evidencia.
+     */
+    operationalAt: timestamp("operational_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -625,7 +640,44 @@ export const metaCredentials = pgTable(
     uniqueIndex("meta_credentials_org_uq").on(t.organizationId),
     // El webhook enruta por phone_number_id: debe ser único en la instancia.
     uniqueIndex("meta_credentials_phone_uq").on(t.phoneNumberId),
+    // 050: la WABA identifica la cuenta en eventos a nivel cuenta (plantillas).
+    // Sin este índice, dos filas con la misma WABA hacían que
+    // getCredentialsByWabaId (limit 1) enrutara a la organización equivocada.
+    uniqueIndex("meta_credentials_waba_uq").on(t.wabaId),
   ]
+);
+
+/**
+ * 050 — Log append-only del alta por Embedded Signup (session logging que Meta
+ * exige). Guarda solo la allowlist de campos: evento, resultado, código de
+ * error numérico e ids enmascarados. Nunca tokens, códigos de canje, teléfonos
+ * completos ni el mensaje crudo de Meta.
+ */
+export const whatsappOnboardingLog = pgTable(
+  "whatsapp_onboarding_log",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Evento del flujo: launch | finish | exchange | verify | subscribe | sync | error. */
+    event: text("event").notNull(),
+    /** ok | failed | skipped | declined. */
+    result: text("result").notNull(),
+    /** Código de error de Meta (numérico), sin mensaje crudo. */
+    errorCode: integer("error_code"),
+    /** Últimos 4 dígitos del WABA ID / phone number ID (nunca el id completo). */
+    wabaMasked: text("waba_masked"),
+    phoneMasked: text("phone_masked"),
+    /** En alta estándar se registra el número; en coexistencia se omite. */
+    registered: boolean("registered"),
+    /** smb_app_state_sync | history (solo en eventos de sync). */
+    syncType: text("sync_type"),
+    /** request_id que devuelve Meta al pedir el sync. */
+    requestId: text("request_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("wa_onboarding_log_org_idx").on(t.organizationId, t.createdAt)]
 );
 
 /**
