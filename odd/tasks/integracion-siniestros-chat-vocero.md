@@ -1,6 +1,6 @@
 # Integración del flujo de siniestros con el chat interno de Vocero — plan v2
 
-Estado: implementación cerrada en el CRM al 23/11 23:15 (build, tipos, lint y suite verdes). Falta el deploy, el ensayo con TEST IA y la evidencia.
+Estado: desplegado en producción (commit `3371589`) y verificado el 23/11 23:30 con un registro TEST. Evidencia completa en `odd/evidencia/integracion-siniestros.md`.
 Cambio de enfoque respecto de v1: **no se toca n8n**. La integración se endurece del lado del CRM; el nodo espejo sigue como está hasta que Rafael conecte WhatsApp y cambie la topología de despacho.
 
 ## 1. Estado actual verificado
@@ -126,3 +126,6 @@ El camino de aprobación con despacho real queda para cuando Rafael conecte What
 - B2 del goldfish ronda 2 revertido: la suite 033c exige que decida cualquiera que participe de ALGUNA sala que recibió la tarjeta (decisión compartida multi-destino). Se mantiene ese contrato: las copias de Reglas también habilitan la decisión y actualizan todas las tarjetas. El 403 queda sólo para quien no está en ninguna.
 - Sin lectura de Airtable (PAT caído/red): la decisión se registra como aprobada con detalle «no se pudo verificar el estado»; no se afirma «trabado» sin dato. Con lectura disponible, si el flujo no avanzó, la tarjeta muestra «trabado».
 - Verificación real contra Postgres de desarrollo (`INTEGRATION_DATABASE_URL`): 10/10 tests de revisión y 7/7 de bandeja/estadísticas, con cero residuo (0 filas `e2e033`). Suite completa 677 OK / 74 skipped, `tsc` limpio, build verde.
+- Deploy por Coolify: deployment `twd6lmuw7tryefh6cdyyjjxi` `finished`; `/api/health` devuelve `commit=3371589`. El contenedor anterior queda arriba para rollback.
+- Ensayo aislado en producción con el registro TEST `recnJxnBdwmZ0MIS1` (TEST IA, OFICINA TEST, EMPLEADO TEST, estado inicial PENDIENTE APROBACION): la tarjeta se publicó una sola vez en «Alerta de Siniestro»; aprobar fuera de revisión devolvió 409 `not_in_review` sin disparar el webhook; detener devolvió 200 y n8n marcó el registro `DETENIDO PARA REVISION`; el segundo click devolvió 409 `already_decided`; la tarjeta quedó en 🛑 con el detalle y «Diego Lopez» como decisor.
+- Único criterio no ejercitado con datos sintéticos: audio y análisis IA en la tarjeta. El registro TEST no tiene AGENTE 2 ni audio; las rutas responden bien (404 «no tiene audio/análisis asociado») y esa parte ya estaba cubierta por 033 con casos reales.
