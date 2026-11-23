@@ -254,3 +254,87 @@ Campos extractores: `EXTRACTOR_CODIGO_AUDIO = AUDIO 1A`, `EXTRACTOR_CODIGO_TALLE
 - Solo configuración de campos AI Text en Airtable y la demo en la tabla de denuncias. No hubo cambio de código, deploy ni migración.
 - Fuentes: `prompt_culpabilidad_v5.0.txt` y `prompt_gestor_v7.3.txt` en `/home/diegol/hermes-ssd/data/cache/scratch/`.
 - Queda pendiente decidir si el registro demo y su tarjeta se conservan como evidencia o se borran después de la revisión.
+
+## 14) Aviso de aprobación: nombre real y enlaces a Airtable — 23/11/2026 02:08
+
+### 14.1 Telegram (mensaje real)
+
+Ejecución n8n `393592` del workflow `FpqeoQN1JFg7F2tk` (cron 05:02:15Z), nodo `[TG] Enviar Revisión`: mensaje `264` en el chat `-4995954667` («SGSA Monitoreo»).
+
+El encabezado real quedó:
+
+```
+SGSA | Pendiente de aprobación
+
+Cliente: TEST IA (🆔 678TES)
+Registro: reccTkhM7pzVrWNun
+```
+
+Botones del mensaje (`telegram_reply_markup`):
+
+- `✅ Aprobar envío` y `🛑 Detener / revisar` (flujo de aprobación existente).
+- `🏢 Abrir ficha del cliente` → `https://airtable.com/appuhslj3GFf60Tea/pagloDiKehe3EMnT4/rechYRnw7FzaGjfpA` (link nativo del botón `IR A CLIENTE`).
+- `📄 Abrir denuncia` → `https://airtable.com/appuhslj3GFf60Tea/tbl4570W1T0qGdj8w/reccTkhM7pzVrWNun`.
+
+### 14.2 Tarjeta en el chat interno de Vocero
+
+Deploy de Coolify, app `h5tyzu5np5i8g4efn06n0yxo`, deployment `drpizqb5rpt87gw26pl80drh`, estado `finished`, commit `c74e72250ad7cb9ffcc7d90c44196c0fa9806f34`.
+
+`GET https://vocero.sistemasagenticos.cloud/api/health`:
+
+```json
+{"ok":true,"version":"1.3.0","commit":"c74e722","uptime":91,"node":"v22.23.5"}
+```
+
+La tarjeta `chms_ca0b6f0kpjnmjcxg9kqz` de la sala «Alerta de Siniestro» (`chtr_tx1fwkcpr0ovurdp7c0o`) renderiza en la UI:
+
+```
+Cliente: TEST IA — Código: 🆔 678TES
+
+Registro: reccTkhM7pzVrWNun
+```
+
+Y dos links verificados en el DOM:
+
+- `Abrir ficha del cliente en Airtable` → `https://airtable.com/appuhslj3GFf60Tea/pagloDiKehe3EMnT4?DSjXA=rechYRnw7FzaGjfpA`
+- `Abrir denuncia en Airtable` → `https://airtable.com/appuhslj3GFf60Tea/tbl4570W1T0qGdj8w/reccTkhM7pzVrWNun`
+
+La tarjeta sigue en estado `pendiente`; no se aprobó ni se envió nada al cliente.
+
+### 14.3 Cambios de código
+
+n8n (workflow `FpqeoQN1JFg7F2tk`, activo):
+
+- `Filtrar y Normalizar`: lee el nombre del cliente desde `CLIENTE` (`cellFormat=string`), extrae el record del botón `IR A CLIENTE` (regex `rec[a-zA-Z0-9]{14,}`), consulta `CLIENTES` y agrega `client_name`, `client_code`, `client_record_id`, `client_url` e `incident_url` al ítem y a `notify`.
+- `Preparar Aprobación Telegram`: agrega `Cliente: <nombre> (<código>)` y los botones de ficha/denuncia.
+- `[CRM] Aviso Revisión`: envía `cliente`, `clienteNombre` y `clienteRecordId` al CRM.
+
+Verificación del código de `Filtrar y Normalizar` con el ítem real de la ejecución `393592` y `httpRequest` mockeado a `CLIENTES/rechYRnw7FzaGjfpA`:
+
+```json
+{
+  "fetchUrl": "https://api.airtable.com/v0/appuhslj3GFf60Tea/CLIENTES/rechYRnw7FzaGjfpA",
+  "client_name": "TEST IA",
+  "client_code": "🆔 678TES",
+  "client_record_id": "rechYRnw7FzaGjfpA",
+  "client_url": "https://airtable.com/appuhslj3GFf60Tea/pagloDiKehe3EMnT4/rechYRnw7FzaGjfpA",
+  "incident_url": "https://airtable.com/appuhslj3GFf60Tea/tbl4570W1T0qGdj8w/reccTkhM7pzVrWNun"
+}
+```
+
+CRM (commit `c74e722`, `main`, pusheado):
+
+- `src/lib/types.ts`: `ChatReviewShareDto` con `clienteNombre` y `clienteRecordId`.
+- `src/server/internal/chat.ts`: sanitización de ambos campos (record validado).
+- `src/app/api/reviews/incoming/route.ts`: zod acepta los campos.
+- `src/lib/sgsa-links.ts`: `SGSA_DENUNCIA_TABLE_ID` y `sgsaAccidentRecordUrl()`.
+- `src/components/internal-chat.tsx`: línea de cliente/código y links a ficha y denuncia.
+- `tests/unit/reviews-033.test.ts`: 2 tests nuevos (nombre/record y rechazo de record inválido).
+
+Verificación: `npm run typecheck` OK; `npm run build` OK (Next.js compilado y páginas generadas); `npx vitest run tests/unit/reviews-033.test.ts` 11/11; suite completa **679 passed / 74 skipped** (100 archivos).
+
+### 14.4 Airtable
+
+- No se tocaron denuncias, clientes, pólizas ni registros reales. La prueba usó `reccTkhM7pzVrWNun` / TEST IA / OFICINA TEST / EMPLEADO TEST.
+- El registro TEST se restauró a `ESTADO_ENVIO_CLIENTE = EN REVISION TELEGRAM` al terminar la prueba; la tarjeta queda pendiente y el cliente no recibió nada.
+- `cellFormat=string` devuelve el **nombre** del cliente en el campo `CLIENTE` (no el record id). El record id se obtiene del botón `IR A CLIENTE`; el workflow quedó corregido y activo para las próximas ejecuciones.
