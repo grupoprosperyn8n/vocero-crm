@@ -91,6 +91,34 @@ analisis http=404 {"error":{"code":"not_found","message":"El registro no tiene a
 
 El registro TEST se creó sin AGENTE 2 ni audio del flujo, así que la tarjeta muestra el mensaje demo pero no reproductor ni análisis. Es la única parte del criterio 2 que no se pudo ejercitar con datos sintéticos sin copiar adjuntos de un caso real.
 
+## 6) Aviso de detención en Telegram: bug corregido
+
+El aviso que llegó al grupo decía «Registro: undefined». La causa: el nodo `[TG] Avisar Detenido` leía `$json.record_id` después del PATCH a Airtable, y la respuesta del PATCH no trae ese campo. Se cambió a `$('Validar Aprobación Telegram').first().json.record_id`, se guardó y se reactivó el workflow `FpqeoQN1JFg7F2tk` (activo, actualizado 23/11 02:37Z).
+
+Verificación con una ejecución real (393374, `success`):
+
+```
+🛑 SGSA | Envío detenido para revisión
+Registro: recnJxnBdwmZ0MIS1
+No se enviaron WhatsApp ni email.
+Cuando el caso esté corregido, cambiá ESTADO_ENVIO_CLIENTE a REINTENTO AUTORIZADO para relanzarlo.
+```
+
+## 7) Origen de los datos de la tarjeta (paridad con Telegram)
+
+La tarjeta no inventa contenido: pide a Airtable lo mismo que usa el flujo para el mensaje de Telegram.
+
+- Texto principal: campo que el flujo manda como `client_summary_text`.
+- Documento (.txt): campo `CULPABILIDAD IA` (el mismo `analysis_full_text` que viaja a Telegram).
+- Audio: `EXTRACTOR_CODIGO_AUDIO` → `BIBLIOTECA_AUDIOS` (`CODIGO_ID` → `ARCHIVO_AUDIO`), exactamente el mismo `audio_code` que usa el nodo `[AT API] Buscar Audio` del flujo.
+
+Por eso la tarjeta TEST no muestra audio ni documento: el registro sintético no tiene `CULPABILIDAD IA` (es un campo aiText que depende de los datos del caso) ni código de audio. Un caso real que llega a revisión sí los tiene, y la tarjeta los sirve frescos.
+
+## 8) Estado de la tarjeta TEST
+
+La tarjeta quedó en `detenido` porque el ensayo probó la detención. Los botones «Aprobar envío» y «Detener / revisar» solo se muestran mientras la revisión está `pendiente`; al decidir, la tarjeta pasa a mostrar el resultado y el decisor. No es un faltante de la UI.
+
+
 ## Qué queda
 
 - 1 registro TEST en Airtable (`recnJxnBdwmZ0MIS1`, DETENIDO PARA REVISION). No se borra: queda como evidencia y no altera las estadísticas de OFICINA TEST.
