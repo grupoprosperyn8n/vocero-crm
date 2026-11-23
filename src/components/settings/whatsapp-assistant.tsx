@@ -173,6 +173,27 @@ export function WhatsappAssistant({
               ? "Tu número ya está conectado. Puedes repasar los pasos o pasarle el resumen a quien te ayuda."
               : "Te llevamos paso a paso para conectar el WhatsApp del negocio. Son 7 pasos y no hace falta saber nada técnico."}
           </CardDescription>
+          <p className="text-xs text-muted-foreground">
+            Alta manual sin Tech Provider: app y cuenta de Meta propias del negocio.
+            Este recorrido no conserva por sí solo el WhatsApp del celular.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href="/guias/whatsapp-sin-tech-provider.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              Guía visual paso a paso
+            </a>
+            <a
+              href="/guias/whatsapp-sin-tech-provider.pdf"
+              download
+              className={buttonVariants({ variant: "ghost", size: "sm" })}
+            >
+              Descargar guía PDF
+            </a>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-1 overflow-x-auto pb-1">
