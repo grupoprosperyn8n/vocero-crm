@@ -656,16 +656,10 @@ function ReviewCard({
       <p className="mt-1 text-[13.5px] font-semibold leading-tight">
         {payload.titulo}
       </p>
-      <p className="mt-0.5 text-[11.5px] text-text-2">
-        {[
-          `Registro: ${payload.recordId}`,
-          payload.canales ? `Canales: ${payload.canales}` : null,
-          payload.reintento ? "Modo: REINTENTO AUTORIZADO" : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      </p>
-      <div className="mt-1 space-y-0.5 text-[11.5px] text-text-2">
+      <div className="mt-0.5 space-y-0.5 text-[11.5px] text-text-2">
+        <p>Registro: {payload.recordId}</p>
+        {payload.canales && <p>Canales objetivo: {payload.canales}</p>}
+        {payload.reintento && <p>Modo: REINTENTO AUTORIZADO</p>}
         {payload.asuntoEmail && <p>Asunto email: {payload.asuntoEmail}</p>}
         {payload.emailTo && <p>Email destino: {payload.emailTo}</p>}
         {payload.whatsappTo && <p>WhatsApp destino: {payload.whatsappTo}</p>}
