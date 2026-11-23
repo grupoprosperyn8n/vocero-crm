@@ -150,3 +150,41 @@ Con el registro TEST completo, el flujo real (cron) lo tomó de `PENDIENTE APROB
 - 1 registro TEST en Airtable (`recnJxnBdwmZ0MIS1`, EN REVISION TELEGRAM, con clasificación IA real y audio `AUDIO 1A`). No se borra: queda como evidencia y no altera las estadísticas de OFICINA TEST.
 - 1 tarjeta pendiente en el chat interno (`chms_dy42secirbaqlich6m0k`, sala «Alerta de Siniestro») y 1 fila en `review_request` (aparece como TEST IA en las estadísticas del CRM de los últimos 30 días). Se puede aprobar o detener desde ahí; aprobar dispara el mismo webhook que Telegram.
 - El contenedor anterior sigue arriba: rollback inmediato disponible desde Coolify si hiciera falta.
+
+## 12) Corrección jurídica de los prompts de Airtable (v4.9 / v7.2)
+
+Fecha: 2026-11-23. Los dos prompts se publicaron por la UI de Airtable (la API REST no permite editar `options.prompt` de un campo AI Text) conservando todos los tokens de campo existentes. La tarjeta de la sección 11 se generó con los prompts v4.7: no refleja el comportamiento nuevo.
+
+### 12.1 Clasificador `CULPABILIDAD IA` (`fldZ9duQSIRrQ5tM3`) — v4.9
+
+- El relato se trata como **versión unilateral de A**, no como hecho probado. El dictamen pasa a `RESPONSABILIDAD PROBABLE (SEGÚN RELATO DE A)` con escenario principal y alternativo.
+- `CERTEZA: ALTA` sólo con versión de B transcripta como declaración de B + acta/croquis/fotos/testigos/cámaras/pericia + datos del tercero. `MEDIA` con evidencia externa pero sin versión de B. `BAJA` sólo con relato y campos del formulario (los campos estructurados no son prueba).
+- La frase "el tercero reconoció" dentro del relato de A no es versión de B.
+- Alcance trasero: art. 48 inc. g (distancia prudente) y art. 50 (velocidad precautoria) de la Ley 24.449; presunción del embistente. No se cita art. 48 inc. d para la distracción del tercero (es frenada brusca).
+- Cierre legal: reserva de verosimilitud, denuncia al asegurador (Ley 17.418, arts. 46 y 47), SSN 0800-666-8400 / WhatsApp 54-11-3910-1010 / TAD, y aclaración de que el informe es para el asegurado y puede ser leído por terceros.
+- Normativa indicada: Ley 24.449 (texto actualizado), Ley 27.714 (alcohol cero), CCyC 1757/1758, Ley 17.418 y normativa SSN.
+
+### 12.2 Gestor `AGENTE 2: GESTOR DE PROTOCOLO` (`fldv2ubYj9b8NA7Gx`) — v7.2
+
+- **Sin versión de B no se envía audio automático**: `ESTADO: COMPLEJO`, `CODIGO_FINAL: DERIVAR A HUMANO`, `ADVERTENCIAS: "Sin versión de B; revisión humana antes de enviar"`, `NOTA_ACCION: "Solicitar la versión de B antes de enviar."`. Aplica aunque la certeza sea MEDIA.
+- Con versión de B y evidencia: puede proponer `AUDIO 1`/`AUDIO 1A`; la tarjeta de revisión sigue siendo el gate humano.
+- `CERTEZA: BAJA` siempre deriva a humano.
+- Taller: localidad sólo "Rosario", sin OESTE/SUR/CENTRO/NORTE/FISHERTON/MAGNASCO → `CODIGO_TALLER: N/A`, `INFO_TALLER: "Consultar zona; no asignar taller"`. No se asigna T4/T5/T8/T9 por la palabra Rosario.
+- Catálogos sin `AUDIO A2` (no existe en la biblioteca) y sin `AUDIO T8` (sin archivo); `AUDIO 3` marcado como duplicado de `AUDIO A3`; `AUDIO 6` creado como preliminar, no visible y sin archivo.
+- Compañías separadas en LISTA A (serias) y LISTA B (conflictivas); coberturas `TR, C, C1, C2, C2FULL, TODO RIESGO, TERCEROS COMPLETO PREMIUM, D, D1, TR CON FRANQUICIA`.
+
+### 12.3 Prueba de aceptación
+
+Registros TEST IA / OFICINA TEST / EMPLEADO TEST, todos borrados después de leer el resultado. No se tocaron registros reales.
+
+- **Caso G — con versión de B, no culpable, TR**: `CERTEZA: ALTA`; `NO CULPABLE A(ASEGURADO)`; 0/100; `AUDIO 1A`; `CODIGO_TALLER: N/A`; `INFO_TALLER: "Consultar zona; no asignar taller"`; `ADVERTENCIAS: Ninguna`. Cita art. 48 inc. g y art. 50.
+- **Caso H — sin versión de B, culpable, TR**: `CERTEZA: MEDIA`; `CULPABLE A(ASEGURADO)`; 100/0; `DERIVAR A HUMANO`; `CODIGO_TALLER: N/A`; `ADVERTENCIAS: "Sin versión de B; revisión humana antes de enviar"`; `NOTA_ACCION: "Solicitar la versión de B antes de enviar."`. Cita art. 48 inc. g y art. 50.
+- **Caso I — sólo relato, sin prueba externa**: `CERTEZA: BAJA`; `NO CULPABLE A(ASEGURADO)` provisional 0/100; `DERIVAR A HUMANO`; `CODIGO_TALLER: N/A`; `INFO_TALLER: "Consultar zona; no asignar taller"`; advertencia de revisión humana. Cita art. 48 inc. g y art. 50.
+
+Corrección de la sección 9: el art. 43 (giros y rotondas) no aplica al alcance trasero; el fundamento es art. 48 inc. g y art. 50, con presunción del embistente. El 75/25 era un default del prompt v4.7, no la regla legal.
+
+### 12.4 Pendientes
+
+- Cargar el archivo real de `AUDIO 6` (hoy preliminar, no visible).
+- La versión de B se busca en el relato/acta; no es un campo separado. Si se quiere determinismo total, crear un campo largo `VERSIÓN DE B` y referenciarlo en ambos prompts.
+- Regenerar la tarjeta de demostración si se quiere mostrar el comportamiento v4.9/v7.2; la tarjeta actual `chms_dy42secirbaqlich6m0k` conserva el análisis v4.7.
