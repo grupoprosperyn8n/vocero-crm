@@ -119,8 +119,34 @@ Por eso la tarjeta TEST no muestra audio ni documento: el registro sintético no
 La tarjeta quedó en `detenido` porque el ensayo probó la detención. Los botones «Aprobar envío» y «Detener / revisar» solo se muestran mientras la revisión está `pendiente`; al decidir, la tarjeta pasa a mostrar el resultado y el decisor. No es un faltante de la UI.
 
 
+## 9) Clasificación IA verificada en los dos sentidos
+
+Se completó el registro TEST con todos los campos que leen los dos agentes de Airtable y se corrieron dos casos:
+
+- **Caso A — alcance trasero recibido** (`recnJxnBdwmZ0MIS1`): asegurado detenido en verde, embestido desde atrás. Resultado en ~10 s: `CLASIFICACIÓN: SIN LESIONES`, `CULPABILIDAD: NO CULPABLE A(ASEGURADO)`, 0% / 100% (Rama A, Ley 24.449 art. 43). `AGENTE 2`: `CODIGO_FINAL: AUDIO 1A`, `CODIGO_TALLER: AUDIO T8`, taller Centro ROSARIO.
+- **Caso B — impacto frontal propio** (registro TEST temporal, ya borrado): asegurado que no frena y embiste al vehículo detenido en rojo. Resultado: `CULPABILIDAD: CULPABLE A(ASEGURADO)`, 75% / 25% (Rama C). `AGENTE 2`: `CODIGO_FINAL: AUDIO 1`, `CODIGO_TALLER: AUDIO T8`.
+
+Los dos dictámenes siguen la lógica determinística del prompt v4.7: Rama A (parte trasera) da 0/100; Rama C (parte delantera) da 75/25 por defecto, y sólo da 7/93 si el campo de semáforos trae verde para A y rojo para B.
+
+Observación de entrada: `HABIA SEMAFOROS` es un multi-select sin atribución por conductor. Si se carga sólo "ROJO", Rama C no puede aplicar el caso verde/rojo y cae en el default 75/25. Para que el dictamen fino funcione, el semáforo tiene que cargarse con el color que tenía cada parte (o explicitarse en el relato).
+
+## 10) Campos que necesitan los agentes
+
+Clasificador (`CULPABILIDAD IA`), 20 campos: CLASIFICACIÓN, RELATOS DEL HECHO, LESION MORTAL, DESCRIPCIÓN DE LESIONES, TRASLADO POR MEDIOS PROPIOS, MEDIO DE TRASLADO, ESTA INTERNADO, ESTADO DEL TIEMPO, ESTADO DE CALZADA, TIPO DE CALLE, HUBO IMPACTO, PARTES AFECTADAS, SENTIDO DE CIRCULACION, SENTIDO CIRCULACIÓN DEL OTRO VEHICULO, SEÑALES DE TRANSITO, HABIA SEMAFOROS, LOCALIDAD / PROV. / PAIS, CLASIFICACIÓN DEL TERCERO (TER 1), CLASIFICACIÓN DEL TERCERO (TER 2), ALCOHOLEMIA DEL CONDUCTOR.
+
+Gestor (`AGENTE 2: GESTOR DE PROTOCOLO`): CULPABILIDAD (se carga con el dictamen), CULPABILIDAD IA, COBERTURA (sale de la póliza linkeada), COMPAÑIA DE SEGURO (TER 1/2), CLASIFICACIÓN DEL TERCERO (TER 1/2) y LOCALIDAD. Sin póliza linkeada, COBERTURA queda vacía y el gestor no corre (`emptyDependency`).
+
+## 11) La tarjeta completa, en producción
+
+Con el registro TEST completo, el flujo real (cron) lo tomó de `PENDIENTE APROBACION`, lo pasó a `EN REVISION TELEGRAM` y publicó la tarjeta `chms_dy42secirbaqlich6m0k` en «Alerta de Siniestro»:
+
+- estado `pendiente` (botones Aprobar / Detener activos),
+- mensaje real compuesto por el flujo (1927 caracteres, misma estructura que el Telegram de referencia: saludo, parecer, 0/100, resumen, evidencia, próximos pasos),
+- `GET /api/reviews/recnJxnBdwmZ0MIS1/analisis` → 200, 1705 bytes de texto,
+- `GET /api/reviews/recnJxnBdwmZ0MIS1/audio` → 200, 559298 bytes, audio/mpeg (`Audio1Acoberturastodoriesgo.mp3`).
+
 ## Qué queda
 
-- 1 registro TEST en Airtable (`recnJxnBdwmZ0MIS1`, DETENIDO PARA REVISION). No se borra: queda como evidencia y no altera las estadísticas de OFICINA TEST.
-- 1 tarjeta en el chat interno, en la sala «Alerta de Siniestro», y 1 fila en `review_request` (aparece como detenido TEST IA en las estadísticas del CRM de los últimos 30 días).
+- 1 registro TEST en Airtable (`recnJxnBdwmZ0MIS1`, EN REVISION TELEGRAM, con clasificación IA real y audio `AUDIO 1A`). No se borra: queda como evidencia y no altera las estadísticas de OFICINA TEST.
+- 1 tarjeta pendiente en el chat interno (`chms_dy42secirbaqlich6m0k`, sala «Alerta de Siniestro») y 1 fila en `review_request` (aparece como TEST IA en las estadísticas del CRM de los últimos 30 días). Se puede aprobar o detener desde ahí; aprobar dispara el mismo webhook que Telegram.
 - El contenedor anterior sigue arriba: rollback inmediato disponible desde Coolify si hiciera falta.
