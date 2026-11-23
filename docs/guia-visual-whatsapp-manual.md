@@ -1,6 +1,6 @@
 # Guía visual de conexión manual de WhatsApp
 
-Estado: artefactos terminados y enlace integrado en código; NO publicado en producción.
+Estado: PUBLICADO en producción y verificado por HTTP y navegador. Commit desplegado: `5b18d6a`.
 Pedido: «haceme la guia visual paso a paso y agregala el flujo de concecion sin tech provider que esta ahora rafael si usas campura de mi cuenta pone borroso mis datos».
 
 ## Entrega
@@ -38,10 +38,22 @@ Fuentes: UI real `/settings/whatsapp`, `whatsapp-steps.ts`, `whatsapp-assistant.
 - Render WeasyPrint: 11 páginas. Ignora media query responsive (advertencia del motor PDF); CSS print aplicado y comprobado. La versión HTML sigue teniendo CSS responsive para navegador.
 - `git diff --check`: exit 0.
 
-## Pendiente de publicación
+## Publicación verificada
 
-La pregunta de autorización para publicar la guía y los dos enlaces en el Vocero de Rafael terminó sin respuesta (`clarify: timed_out`). No se hizo push ni deploy. No tomar el silencio como consentimiento.
+La confirmación inicial terminó sin respuesta y no se publicó entonces. Después el titular autorizó explícitamente: «hacxelo publica asi lo veo».
 
-La previsualización HTML local por browser_exec fue bloqueada por la política de direcciones privadas. No se buscó otra vía para eludirla. Falta comprobar en navegador servido la navegación, descarga y anchos 1280/390/320 cuando haya una URL permitida o el deploy autorizado. El servidor temporal de preview se detuvo.
+- Push no forzado `HEAD:main`, leído nuevamente desde GitHub: `5b18d6a650dfa76b9bc6663a8592fac9ecfbaefd`.
+- Un solo deploy por API para `h5tyzu5np5i8g4efn06n0yxo`: UUID `8ai6pg9vutdodvncvacrycpk`, estado `finished`, finalizado `2026-11-23 21:07:07` UTC. Contenedor nuevo `healthy` con imagen del SHA exacto.
+- Health público: HTTP 200, `ok:true`, `commit:5b18d6a`. Durante el recambio hubo un 502 transitorio; se releyó hasta confirmar recuperación.
+- HTML, PDF y cuatro imágenes: HTTP 200, tipo de contenido correcto y SHA-256 idéntico al artefacto local en los seis archivos.
+- En la sesión real de Rafael, `/settings/whatsapp` muestra visibles «Guía visual paso a paso» y «Descargar guía PDF». Se confirmaron destinos, atributo `download` y aviso de alcance manual sin enviar ni guardar formularios.
+- Navegador público: 11 secciones, cuatro imágenes del documento cargadas, cero anclas inexistentes. Anchos CSS reales 1280/390/320 sin desborde horizontal ni elementos fuera del viewport. El zoom del navegador exigió corregir la emulación antes de medir.
+- Índice probado con pestaña activa: clic en `#paso2`, hash correcto, `scrollY:3670`, sección a 19.87 px del borde superior. El primer intento en pestaña de fondo no desplazó la ventana; se repitió con `Page.bringToFront`.
+- El bloqueo del preview local quedó resuelto comprobando la URL pública permitida; no se eludió la restricción de direcciones privadas.
+- No se modificaron Meta, Airtable, credenciales ni canales. Esta publicación agrega ayuda, no conecta por sí misma el número.
 
-Para publicar con autorización: push del commit en la rama de despliegue, un único deploy de Coolify para la app de Rafael, read-back del deployment y descarga exacta de PDF/HTML/imágenes; abrir sesión real de Rafael/Vocero, comprobar los dos enlaces y que el flujo no perdió campos. No modificar la app proveedora, los tokens ni Airtable para publicar documentación.
+Guía: https://vocero.sistemasagenticos.cloud/guias/whatsapp-sin-tech-provider.html
+
+PDF: https://vocero.sistemasagenticos.cloud/guias/whatsapp-sin-tech-provider.pdf
+
+Acceso dentro del CRM: https://vocero.sistemasagenticos.cloud/settings/whatsapp
