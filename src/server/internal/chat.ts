@@ -719,6 +719,11 @@ export async function postChatMessage(input: {
    * validación de membresía y de pausa — el sistema publica donde la regla diga.
    */
   system?: boolean;
+  /**
+   * 033d — ejecutor alternativo (una transacción abierta por el llamador):
+   * permite publicar la tarjeta y guardar la revisión en la MISMA transacción.
+   */
+  db?: ReturnType<typeof getDb>;
 }): Promise<ChatMessageView> {
   let kind: ChatMessageView["kind"] = "text";
   let payload: ChatMessagePayloadDto | null = null;
@@ -771,7 +776,7 @@ export async function postChatMessage(input: {
   if (!body) {
     throw new ChatError(422, "empty", "El mensaje está vacío");
   }
-  const db = getDb();
+  const db = input.db ?? getDb();
   if (!input.system) {
     await assertRoomMember(input.organizationId, input.roomId, input.senderId);
     // 022c — un integrante pausado no escribe hasta que lo reactiven.

@@ -6,6 +6,22 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ recordId: string }> };
 
+/** 033d — la decisión sólo se acepta desde la propia app (anti-CSRF). */
+function sameOrigin(req: Request): boolean {
+  const site = req.headers.get("sec-fetch-site");
+  if (site && site !== "same-origin") return false;
+  const origin = req.headers.get("origin");
+  if (!origin) return site === "same-origin";
+  const host = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "")
+    .split(",")[0]!
+    .trim();
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 033 — Decisión de una revisión desde el chat interno (✅ aprobar / 🛑
  * detener). Dispara el MISMO webhook del flujo que los botones de Telegram:
@@ -18,6 +34,9 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
   const id = decodeURIComponent(recordId);
   if (!/^rec[A-Za-z0-9]{14}$/.test(id)) {
     return apiError(400, "invalid_record", "Registro inválido");
+  }
+  if (!sameOrigin(req)) {
+    return apiError(403, "bad_origin", "Origen no permitido");
   }
   let body: { decision?: unknown };
   try {

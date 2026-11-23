@@ -46,3 +46,6 @@ artifacts/
 .agents/
 .atl/
 .codex/
+
+# --- Evidencia ODD con secretos (snapshot n8n: PAT Airtable y token Telegram) ---
+odd/evidencia/workflow-*.json

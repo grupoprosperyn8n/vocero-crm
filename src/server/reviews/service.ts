@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import {
@@ -10,10 +10,10 @@ import {
 import type { ChatReviewShareDto, ReviewDelivery } from "@/lib/types";
 import {
   ChatError,
-  assertRoomMember,
   postChatMessage,
   updateReviewMessage,
 } from "@/server/internal/chat";
+import { getReviewEnvioEstado } from "@/server/reviews/assets";
 
 /**
  * 033 — Revisión de envío SGSA ↔ chat interno (DUAL con Telegram).
@@ -417,81 +417,122 @@ export async function ingestReviewRequest(input: {
     decididoEl: null,
     via: null,
   };
-  const pending = await db
-    .select({
-      id: schema.reviewRequest.id,
-      roomId: schema.reviewRequest.roomId,
-      messageId: schema.reviewRequest.messageId,
-      deliveries: schema.reviewRequest.deliveries,
-    })
-    .from(schema.reviewRequest)
-    .where(
-      and(
-        eq(schema.reviewRequest.organizationId, organizationId),
-        eq(schema.reviewRequest.recordId, review.recordId),
-        eq(schema.reviewRequest.status, "pendiente")
-      )
-    )
-    .limit(1);
-  if (pending[0]) {
-    const copies = rowDeliveries(pending[0]);
-    for (const copy of copies) {
-      await updateReviewMessage({
-        organizationId,
-        messageId: copy.messageId,
-        payload: fresh,
-        body: `SGSA | Pendiente de aprobación — Registro ${review.recordId}`,
-      });
-    }
-    await db
-      .update(schema.reviewRequest)
-      .set({
-        cliente: review.cliente,
-        payload: fresh,
-        updatedAt: new Date(),
+  // 033d — serializa la ingesta por (organización, registro): dos llamadas
+  // concurrentes no publican dos tarjetas ni chocan contra el índice parcial.
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`${organizationId}:${review.recordId}`}))`
+    );
+    const pending = await tx
+      .select({
+        id: schema.reviewRequest.id,
+        roomId: schema.reviewRequest.roomId,
+        messageId: schema.reviewRequest.messageId,
+        deliveries: schema.reviewRequest.deliveries,
       })
-      .where(eq(schema.reviewRequest.id, pending[0].id));
-    return {
-      roomId: copies[0]!.roomId,
-      messageId: copies[0]!.messageId,
-      duplicate: true,
-    };
-  }
-  const { rooms, systemUserId } = await resolveReviewRooms(organizationId);
-  const deliveries: ReviewDelivery[] = [];
-  for (const room of rooms) {
-    const message = await postChatMessage({
-      organizationId,
-      roomId: room.roomId,
-      senderId: systemUserId,
-      body: `SGSA | Pendiente de aprobación — Registro ${review.recordId}`,
-      review: fresh,
-      system: true,
-    });
-    deliveries.push({
-      roomId: room.roomId,
-      messageId: message.id,
-      kind: "group",
-      targetId: room.roomId,
-      name: room.name,
-    });
-  }
-  await db.insert(schema.reviewRequest).values({
-    id: newId("reviewRequest"),
-    organizationId,
-    recordId: review.recordId,
-    cliente: review.cliente,
-    roomId: deliveries[0]!.roomId,
-    messageId: deliveries[0]!.messageId,
-    deliveries,
-    status: "pendiente",
-    payload: fresh,
+      .from(schema.reviewRequest)
+      .where(
+        and(
+          eq(schema.reviewRequest.organizationId, organizationId),
+          eq(schema.reviewRequest.recordId, review.recordId),
+          eq(schema.reviewRequest.status, "pendiente")
+        )
+      )
+      .limit(1);
+    if (pending[0]) {
+      const copies = rowDeliveries(pending[0]);
+      for (const copy of copies) {
+        await updateReviewMessage({
+          organizationId,
+          messageId: copy.messageId,
+          payload: fresh,
+          body: `SGSA | Pendiente de aprobación — Registro ${review.recordId}`,
+        });
+      }
+      await tx
+        .update(schema.reviewRequest)
+        .set({
+          cliente: review.cliente,
+          payload: fresh,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.reviewRequest.id, pending[0].id));
+      return {
+        roomId: copies[0]!.roomId,
+        messageId: copies[0]!.messageId,
+        duplicate: true,
+      };
+    }
+    const { rooms, systemUserId } = await resolveReviewRooms(organizationId);
+    try {
+      // 033d — las tarjetas y la fila viven en la MISMA transacción (savepoint):
+      // si otra llamada ganó el índice parcial, se deshace todo junto y no
+      // quedan mensajes huérfanos con botones que después responden 409.
+      const created = await tx.transaction(async (sp) => {
+        const deliveries: ReviewDelivery[] = [];
+        for (const room of rooms) {
+          const message = await postChatMessage({
+            organizationId,
+            roomId: room.roomId,
+            senderId: systemUserId,
+            body: `SGSA | Pendiente de aprobación — Registro ${review.recordId}`,
+            review: fresh,
+            system: true,
+            db: sp as unknown as ReturnType<typeof getDb>,
+          });
+          deliveries.push({
+            roomId: room.roomId,
+            messageId: message.id,
+            kind: "group",
+            targetId: room.roomId,
+            name: room.name,
+          });
+        }
+        await sp.insert(schema.reviewRequest).values({
+          id: newId("reviewRequest"),
+          organizationId,
+          recordId: review.recordId,
+          cliente: review.cliente,
+          roomId: deliveries[0]!.roomId,
+          messageId: deliveries[0]!.messageId,
+          deliveries,
+          status: "pendiente",
+          payload: fresh,
+        });
+        return deliveries;
+      });
+      return {
+        roomId: created[0]!.roomId,
+        messageId: created[0]!.messageId,
+        duplicate: false,
+      };
+    } catch (err) {
+      // Defensa extra al advisory lock: si otra transacción insertó primero la
+      // revisión pendiente, el savepoint ya deshizo las tarjetas y se devuelve
+      // la fila existente en vez de un 500.
+      const code =
+        (err as { code?: string }).code ??
+        (err as { cause?: { code?: string } }).cause?.code;
+      if (code === "23505") {
+        const again = await tx
+          .select({
+            roomId: schema.reviewRequest.roomId,
+            messageId: schema.reviewRequest.messageId,
+          })
+          .from(schema.reviewRequest)
+          .where(
+            and(
+              eq(schema.reviewRequest.organizationId, organizationId),
+              eq(schema.reviewRequest.recordId, review.recordId),
+              eq(schema.reviewRequest.status, "pendiente")
+            )
+          )
+          .limit(1);
+        if (again[0]) return { ...again[0], duplicate: true };
+      }
+      throw err;
+    }
   });
-  return {
-    roomId: deliveries[0]!.roomId,
-    messageId: deliveries[0]!.messageId,
-    duplicate: false,
-  };
 }
 
 /**
@@ -552,23 +593,25 @@ export async function decideReview(input: {
       "Esta revisión ya no está pendiente"
     );
   }
-  // 033b — la revisión puede tener VARIAS copias (multi-destino): puede
-  // decidir quien participe de CUALQUIERA de las salas que la recibieron.
-  let isMember = false;
-  for (const copy of rowDeliveries(row)) {
-    try {
-      await assertRoomMember(organizationId, copy.roomId, userId);
-      isMember = true;
-      break;
-    } catch {
-      // no es miembro de esta copia: se prueba con la próxima
-    }
-  }
-  if (!isMember) {
+  // 033c — decide cualquiera que participe de ALGUNA sala que recibió la
+  // tarjeta (la principal o una copia de Reglas): la decisión actualiza todas.
+  const deliveryRooms = rowDeliveries(row).map((delivery) => delivery.roomId);
+  const memberRows = await db
+    .select({ id: schema.chatRoomMember.id })
+    .from(schema.chatRoomMember)
+    .where(
+      and(
+        eq(schema.chatRoomMember.organizationId, organizationId),
+        eq(schema.chatRoomMember.userId, userId),
+        inArray(schema.chatRoomMember.roomId, deliveryRooms)
+      )
+    )
+    .limit(1);
+  if (!memberRows[0]) {
     throw new ChatError(
       403,
       "not_member",
-      "No participás de ninguna conversación que recibió esta revisión"
+      "No participás de ninguna sala que recibió esta revisión"
     );
   }
   const hook = approvalWebhook();
@@ -578,6 +621,46 @@ export async function decideReview(input: {
       "not_configured",
       "El envío automático no está configurado en este CRM"
     );
+  }
+  // 033d — guard de estado: aprobar exige que el caso esté realmente en
+  // revisión y no haya sido enviado. Detener no despacha: siempre se permite.
+  if (input.decision === "approve") {
+    let estado: string | null = null;
+    let guardUnknown = false;
+    try {
+      estado = await getReviewEnvioEstado(input.recordId);
+    } catch (err) {
+      if (err instanceof ChatError && err.status === 503) throw err;
+      guardUnknown = true;
+    }
+    if (estado) {
+      if (
+        [
+          "EN PROCESO DE ENVIO",
+          "ENVIADO CON EXITO",
+          "YA ENVIADO / NO REENCOLAR",
+        ].includes(estado)
+      ) {
+        throw new ChatError(
+          409,
+          "already_sent",
+          "Este caso ya figura enviado en el sistema"
+        );
+      }
+      if (estado !== "EN REVISION TELEGRAM") {
+        throw new ChatError(
+          409,
+          "not_in_review",
+          "Todavía no figura en revisión en el sistema; esperá unos segundos"
+        );
+      }
+    } else if (!guardUnknown) {
+      throw new ChatError(
+        409,
+        "not_in_review",
+        "El caso no figura en revisión en el sistema"
+      );
+    }
   }
   // Lock optimista: el primero que decide gana (evita doble disparo).
   const locked = await db
@@ -599,13 +682,59 @@ export async function decideReview(input: {
   }
   const decisionParam = input.decision === "approve" ? "approve" : "hold";
   const url = `${hook.url}?k=${encodeURIComponent(hook.key)}&decision=${decisionParam}&record_id=${encodeURIComponent(input.recordId)}&via=chat`;
+  let res: Response;
   try {
-    const res = await fetch(url, {
+    res = await fetch(url, {
       cache: "no-store",
       signal: AbortSignal.timeout(15000),
     });
-    if (!res.ok) throw new Error(`webhook ${res.status}`);
-  } catch {
+  } catch (err) {
+    // Timeout: el flujo PUDO haber ejecutado la decisión. No se reabre la
+    // revisión (un segundo click duplicaría el envío): queda registrada como
+    // decisión sin confirmación y se verifica contra el estado real.
+    const timedOut =
+      err instanceof Error &&
+      (err.name === "TimeoutError" || err.name === "AbortError");
+    if (timedOut) {
+      const base = (row.payload ?? null) as ChatReviewShareDto | null;
+      const unconfirmed = base
+        ? ({
+            ...base,
+            estado: "trabado",
+            detalle:
+              "El flujo no confirmó la decisión a tiempo; verificar antes de reintentar.",
+            via: "chat",
+          } satisfies ChatReviewShareDto)
+        : null;
+      await db
+        .update(schema.reviewRequest)
+        .set({
+          status: input.decision === "approve" ? "aprobado" : "detenido",
+          decidedBy: userId,
+          decidedVia: "chat",
+          decidedAt: new Date(),
+          updatedAt: new Date(),
+          ...(unconfirmed ? { payload: unconfirmed } : {}),
+        })
+        .where(eq(schema.reviewRequest.id, row.id));
+      // La tarjeta también refleja el resultado: si queda en «pendiente» los
+      // botones siguen activos y todo click posterior responde 409 sin explicar.
+      if (unconfirmed) {
+        for (const copy of rowDeliveries(row)) {
+          await updateReviewMessage({
+            organizationId,
+            messageId: copy.messageId,
+            payload: unconfirmed,
+            body: `⚠️ SGSA | Decisión registrada, envío sin confirmar — Registro ${input.recordId}`,
+          });
+        }
+      }
+      throw new ChatError(
+        504,
+        "flow_unconfirmed",
+        "La decisión se envió pero el flujo no confirmó a tiempo. Verificá el estado antes de reintentar."
+      );
+    }
     await db
       .update(schema.reviewRequest)
       .set({ status: "pendiente", updatedAt: new Date() })
@@ -616,7 +745,42 @@ export async function decideReview(input: {
       "No se pudo avisar al flujo de envío: probá de nuevo en un momento"
     );
   }
+  if (!res.ok) {
+    await db
+      .update(schema.reviewRequest)
+      .set({ status: "pendiente", updatedAt: new Date() })
+      .where(eq(schema.reviewRequest.id, row.id));
+    throw new ChatError(
+      502,
+      "flow_error",
+      `El flujo respondió ${res.status}: la decisión no se aplicó`
+    );
+  }
   const status = input.decision === "approve" ? "aprobado" : "detenido";
+  // 033d — el webhook responde al RECIBIR, no al despachar. Se relee el estado
+  // real del sistema hasta 5 veces; si no avanzó, la decisión queda registrada
+  // pero la tarjeta muestra «trabado» en vez de un ✅ falso.
+  let estadoReal: string | null = null;
+  let readable = true;
+  for (let i = 0; i < 5; i++) {
+    if (i > 0) await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      estadoReal = await getReviewEnvioEstado(input.recordId);
+    } catch {
+      // Sin lectura de Airtable no hay confirmación posible: no se bloquea la
+      // respuesta 7,5 s. La decisión queda registrada y se avisa que no se pudo
+      // verificar el estado (no se afirma «trabado» sin dato).
+      readable = false;
+      break;
+    }
+    if (estadoReal && estadoReal !== "EN REVISION TELEGRAM") break;
+  }
+  const confirmado = readable
+    ? input.decision === "approve"
+      ? estadoReal === "EN PROCESO DE ENVIO" ||
+        estadoReal === "ENVIADO CON EXITO"
+      : estadoReal === "DETENIDO PARA REVISION"
+    : true;
   const now = new Date();
   const byRows = await db
     .select({ name: schema.user.name })
@@ -630,8 +794,12 @@ export async function decideReview(input: {
   const nextPayload = base
     ? {
         ...base,
-        estado: status,
-        detalle: null,
+        estado: confirmado ? status : "trabado",
+        detalle: confirmado
+          ? readable
+            ? null
+            : "No se pudo verificar el estado en el sistema; la decisión quedó registrada."
+          : "El flujo no confirmó el envío todavía.",
         decididoPor: decidedPor,
         decididoEl: now.toISOString(),
         via: "chat",
@@ -761,4 +929,89 @@ export async function markReviewStatus(input: {
     });
   }
   return { updated: true };
+}
+
+let lastDecisionSweep = 0;
+
+/**
+ * 033d — Red de seguridad del lock: una fila `decidiendo` que quedó colgada
+ * (proceso muerto entre el lock y la respuesta del flujo) se resuelve releyendo
+ * el estado real. NUNCA vuelve a `pendiente`: eso habilitaría un segundo envío.
+ */
+export async function sweepStaleReviewDecisions(
+  organizationId: string
+): Promise<void> {
+  const now = Date.now();
+  if (now - lastDecisionSweep < 60_000) return;
+  lastDecisionSweep = now;
+  const db = getDb();
+  const cutoff = new Date(now - 2 * 60_000);
+  const rows = await db
+    .select()
+    .from(schema.reviewRequest)
+    .where(
+      and(
+        eq(schema.reviewRequest.organizationId, organizationId),
+        eq(schema.reviewRequest.status, "decidiendo"),
+        lt(schema.reviewRequest.updatedAt, cutoff)
+      )
+    )
+    .limit(20);
+  for (const row of rows) {
+    let estado: string | null = null;
+    try {
+      estado = await getReviewEnvioEstado(row.recordId);
+    } catch {
+      continue;
+    }
+    const despachado = estado === "ENVIADO CON EXITO";
+    const enProceso = estado === "EN PROCESO DE ENVIO";
+    const aprobado = despachado || enProceso;
+    const detenido = estado === "DETENIDO PARA REVISION";
+    const base = (row.payload ?? null) as ChatReviewShareDto | null;
+    const payload = base
+      ? {
+          ...base,
+          estado: despachado
+            ? "enviado"
+            : aprobado
+              ? "aprobado"
+              : detenido
+                ? "detenido"
+                : "trabado",
+          detalle:
+            aprobado || detenido
+              ? null
+              : "Decisión sin confirmación: el flujo no avanzó. Verificar antes de reintentar.",
+        }
+      : base;
+    await db
+      .update(schema.reviewRequest)
+      .set({
+        status: aprobado ? "aprobado" : detenido ? "detenido" : "trabado",
+        updatedAt: new Date(),
+        ...(payload ? { payload } : {}),
+      })
+      .where(
+        and(
+          eq(schema.reviewRequest.id, row.id),
+          eq(schema.reviewRequest.status, "decidiendo")
+        )
+      );
+    if (!payload) continue;
+    for (const copy of rowDeliveries(row)) {
+      await updateReviewMessage({
+        organizationId,
+        messageId: copy.messageId,
+        payload,
+        body: despachado
+          ? `✅ SGSA | Envío despachado — Registro ${row.recordId}`
+          : aprobado
+            ? `✅ SGSA | Aprobado, esperando envío — Registro ${row.recordId}`
+            : detenido
+              ? `🛑 SGSA | Detenido — Registro ${row.recordId}`
+              : `⚠️ SGSA | Envío trabado — Registro ${row.recordId}`,
+      });
+    }
+  }
 }

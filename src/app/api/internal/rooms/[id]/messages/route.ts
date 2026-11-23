@@ -1,6 +1,7 @@
 import { apiError, withAuth } from "@/lib/api";
 import { AlertsBackendError, getAlertSharePayload } from "@/server/alerts/service";
 import { ChatError, listChatMessages, postChatMessage } from "@/server/internal/chat";
+import { sweepStaleReviewDecisions } from "@/server/reviews/service";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,9 @@ type Params = { params: Promise<{ id: string }> };
 /** 022 — Historial de una sala (solo miembros). */
 export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
   const { id } = await ctx.params;
+  // 033d — red de seguridad del lock de decisión: si una revisión quedó en
+  // «decidiendo» (proceso muerto), se resuelve releyendo el estado real.
+  void sweepStaleReviewDecisions(session.organizationId).catch(() => {});
   try {
     const data = await listChatMessages({
       organizationId: session.organizationId,

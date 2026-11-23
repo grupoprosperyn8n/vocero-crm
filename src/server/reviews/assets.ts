@@ -78,6 +78,21 @@ export async function getReviewAnalisis(
 }
 
 /**
+ * 033d — Estado REAL del envío en el sistema (campo `ESTADO_ENVIO_CLIENTE`).
+ * Es el guard de la decisión: aprobar sólo tiene sentido si el caso está en
+ * `EN REVISION TELEGRAM` y no fue enviado. Devuelve null si el registro no
+ * existe o el campo está vacío; lanza ChatError 503 si faltan credenciales y
+ * 502 si Airtable no responde.
+ */
+export async function getReviewEnvioEstado(
+  recordId: string
+): Promise<string | null> {
+  const fields = await denunciaFields(recordId);
+  if (!fields) return null;
+  return toText(fields["ESTADO_ENVIO_CLIENTE"]) || null;
+}
+
+/**
  * El audio REAL del flujo (el mismo que recibiría el cliente):
  * EXTRACTOR_CODIGO_AUDIO → BIBLIOTECA_AUDIOS (CODIGO_ID) → ARCHIVO_AUDIO.
  */

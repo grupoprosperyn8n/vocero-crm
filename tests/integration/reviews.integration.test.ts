@@ -287,8 +287,13 @@ suite("033 — revisión de envío SGSA (tarjeta y decisión en el chat interno)
       decision: "approve",
     });
     expect(res).toEqual({ status: "aprobado", via: "chat" });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const url = String(fetchMock.mock.calls[0]![0]);
+    // El guard relee Airtable antes de disparar: se cuentan sólo los llamados
+    // al webhook del flujo (el doble disparo es lo que no puede pasar).
+    const hookCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).includes("/webhook/sgsa-aprobacion-envio")
+    );
+    expect(hookCalls).toHaveLength(1);
+    const url = String(hookCalls[0]![0]);
     expect(url).toContain("https://flow.stub/webhook/sgsa-aprobacion-envio");
     expect(url).toContain("decision=approve");
     expect(url).toContain(`record_id=${recReview(2)}`);

@@ -101,3 +101,17 @@ Nunca comprometas secretos al repo (gitignored: `.env`, `.credenciales/`). Los
 valores de entorno de producción viven en la plataforma de deploy (Coolify), no
 en archivos. Para probar integraciones reales usá tus propias credenciales y
 respetá los guardarraíles del Principio X.
+
+<!-- odd-reminder -->
+## Recordatorio permanente — al programar, SIEMPRE ODD
+
+(Recordatorio de Diego, 03-10-2026; es para el agente, no para el usuario.) Todo trabajo de programación/desarrollo usa SIEMPRE la metodología **ODD (Organic Driven Development)**: no es opcional.
+
+1. **Resultado, no proceso**: la ruta más chica que sirva; explorá antes de decidir; nada de sobre-ingeniería.
+2. **Clasificá por el test de reanudación** (¿se retoma con el pedido + git diff?): chico → directo, sin documentos; sustancial → UN feature doc (`odd/tasks/<feature>.md` con specs, tareas y log) ANTES del primer write.
+3. **Evidencia real**: cada tarea se cierra SOLO con prueba ejecutada/observada — nunca «debería andar».
+4. **Cierre**: resultado verificado + pendientes/fallos + próximo paso.
+
+Método completo: si el repo tiene `odd/README.md`, ese manda; si no, este resumen + (en esta máquina) `~/.hermes/skills/gentle-ai-stack/references/odd-metodologia.md`.
+<!-- /odd-reminder -->
+
