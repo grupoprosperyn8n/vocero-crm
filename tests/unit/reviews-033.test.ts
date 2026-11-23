@@ -74,6 +74,29 @@ describe("sanitizeReviewShare — el snapshot de la tarjeta de revisión", () =>
     expect(snap!.detalle).toBeNull();
   });
 
+  it("conserva el nombre real y el record del cliente para la ficha en Airtable", () => {
+    const snap = sanitizeReviewShare({
+      recordId: "recE2E033Test0001",
+      cliente: "🆔 678TES",
+      clienteNombre: "LÓPEZ, DIEGO",
+      clienteRecordId: "rechYRnw7FzaGjfpA",
+      mensaje: MENSAJE_REAL,
+    });
+    expect(snap).not.toBeNull();
+    expect(snap!.cliente).toBe("🆔 678TES");
+    expect(snap!.clienteNombre).toBe("LÓPEZ, DIEGO");
+    expect(snap!.clienteRecordId).toBe("rechYRnw7FzaGjfpA");
+  });
+
+  it("rechaza un clienteRecordId que no tiene forma de record", () => {
+    const snap = sanitizeReviewShare({
+      recordId: "recE2E033Test0001",
+      clienteRecordId: "no-es-record",
+      mensaje: "Hola",
+    });
+    expect(snap!.clienteRecordId).toBeNull();
+  });
+
   it("rechaza lo que no tiene forma de revisión (sin mensaje, record inválido)", () => {
     expect(sanitizeReviewShare(null)).toBeNull();
     expect(sanitizeReviewShare("texto")).toBeNull();

@@ -27,6 +27,8 @@ export const dynamic = "force-dynamic";
 const reviewSchema = z.object({
   recordId: z.string().min(1),
   cliente: z.string().nullish(),
+  clienteNombre: z.string().nullish(),
+  clienteRecordId: z.string().nullish(),
   titulo: z.string().nullish(),
   canales: z.string().nullish(),
   asuntoEmail: z.string().nullish(),

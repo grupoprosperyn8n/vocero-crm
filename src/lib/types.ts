@@ -483,7 +483,12 @@ export type ChatAlertShareDto = {
 export type ChatReviewShareDto = {
   /** Registro en revisión (Airtable DENUNCIA DE ACCIDENTE). */
   recordId: string;
+  /** Código del cliente en SGSA (ID_UNICO_CLIENTE). */
   cliente: string | null;
+  /** Nombre y apellido reales del cliente (no el código). */
+  clienteNombre?: string | null;
+  /** Record del cliente (CLIENTES) para abrir su ficha en la interface. */
+  clienteRecordId?: string | null;
   titulo: string;
   canales: string | null;
   asuntoEmail: string | null;

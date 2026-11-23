@@ -37,7 +37,11 @@ import {
 } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
 import { CHANNEL_LABEL, isChannel } from "@/lib/channels";
-import { alertRecordInterfaceUrl, sgsaClientInterfaceUrl } from "@/lib/sgsa-links";
+import {
+  alertRecordInterfaceUrl,
+  sgsaAccidentRecordUrl,
+  sgsaClientInterfaceUrl,
+} from "@/lib/sgsa-links";
 import { ShareContactDialog } from "@/components/contacts/share-contact-dialog";
 import { AddToPipelineButton } from "@/components/pipeline/add-to-pipeline";
 import type {
@@ -601,6 +605,8 @@ function ReviewCard({
   const [err, setErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const pending = payload.estado === "pendiente";
+  const clienteCodigo =
+    payload.cliente && payload.cliente !== "cliente" ? payload.cliente : null;
   const tone = REVIEW_TONE_CLASS[reviewEstadoTone(payload.estado)];
   const decidedLine = payload.decididoEl
     ? [
@@ -657,6 +663,14 @@ function ReviewCard({
         {payload.titulo}
       </p>
       <div className="mt-0.5 space-y-0.5 text-[11.5px] text-text-2">
+        {(payload.clienteNombre || clienteCodigo) && (
+          <p>
+            Cliente: {payload.clienteNombre ?? clienteCodigo}
+            {payload.clienteNombre && clienteCodigo
+              ? ` — Código: ${clienteCodigo}`
+              : ""}
+          </p>
+        )}
         <p>Registro: {payload.recordId}</p>
         {payload.canales && <p>Canales objetivo: {payload.canales}</p>}
         {payload.reintento && <p>Modo: REINTENTO AUTORIZADO</p>}
@@ -705,6 +719,28 @@ function ReviewCard({
         <FileText className="h-3.5 w-3.5" strokeWidth={1.8} />
         Ver análisis IA completo (.txt)
       </a>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {payload.clienteRecordId && (
+          <a
+            href={sgsaClientInterfaceUrl(payload.clienteRecordId)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-current/20 bg-background px-2 text-[12px] font-medium text-foreground hover:bg-subtle"
+          >
+            <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
+            Abrir ficha del cliente en Airtable
+          </a>
+        )}
+        <a
+          href={sgsaAccidentRecordUrl(payload.recordId)}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-7 items-center gap-1 rounded-md border border-current/20 bg-background px-2 text-[12px] font-medium text-foreground hover:bg-subtle"
+        >
+          <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
+          Abrir denuncia en Airtable
+        </a>
+      </div>
 
       {pending ? (
         <div className="mt-2 flex flex-wrap items-center gap-2">

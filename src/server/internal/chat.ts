@@ -197,6 +197,8 @@ export function sanitizeReviewShare(raw: unknown): ChatReviewShareDto | null {
   return {
     recordId,
     cliente: cleanStr(o.cliente, CHAT_REVIEW_TEXT_MAX),
+    clienteNombre: cleanStr(o.clienteNombre, CHAT_REVIEW_TEXT_MAX),
+    clienteRecordId: cleanRecId(o.clienteRecordId),
     titulo:
       cleanStr(o.titulo, CHAT_REVIEW_TEXT_MAX) ?? "SGSA | Pendiente de aprobación",
     canales: cleanStr(o.canales, CHAT_REVIEW_TEXT_MAX),

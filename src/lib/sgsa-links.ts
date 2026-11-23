@@ -19,6 +19,14 @@ export function sgsaClientInterfaceUrl(clientRecordId: string): string {
   return `https://airtable.com/${SGSA_BASE_ID}/${SGSA_INTERFACE_ID}?${SGSA_CLIENT_PARAM}=${encodeURIComponent(clientRecordId)}`;
 }
 
+/** Tabla DENUNCIA DE ACCIDENTE (registro concreto del siniestro). */
+export const SGSA_DENUNCIA_TABLE_ID = "tbl4570W1T0qGdj8w";
+
+/** Abre la denuncia de accidente concreta en Airtable (para revisar desde ahí). */
+export function sgsaAccidentRecordUrl(recordId: string): string {
+  return `https://airtable.com/${SGSA_BASE_ID}/${SGSA_DENUNCIA_TABLE_ID}/${encodeURIComponent(recordId)}`;
+}
+
 /**
  * 028c — Agrega el cliente (`DSjXA`) a un link de registro de la interface:
  * «que se abra el registro con el cliente por debajo — registro y cliente en
