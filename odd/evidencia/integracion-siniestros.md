@@ -188,3 +188,69 @@ Corrección de la sección 9: el art. 43 (giros y rotondas) no aplica al alcance
 - `AUDIO 6` no existe: el placeholder preliminar se borró. Si se quiere un audio 6, crearlo con el archivo. `AUDIO 3` y `AUDIO T8` quedaron con descripción de advertencia; si se prefiere, se revierten.
 - La versión de B se busca en el relato/acta; no es un campo separado. Si se quiere determinismo total, crear un campo largo `VERSIÓN DE B` y referenciarlo en ambos prompts.
 - Regenerar la tarjeta de demostración si se quiere mostrar el comportamiento v4.9/v7.2; la tarjeta actual `chms_dy42secirbaqlich6m0k` conserva el análisis v4.7.
+
+## 13) Corrección: la versión A es el único relato (v5.0 / v7.3) y demo de audio + taller
+
+Fecha: 2026-11-23. El usuario aclaró: «SOLO VERSION A SIEMPRE ES SOLO EL RELATO DEL CLIENTE». Se reemplazó el criterio de §12: ya no se exige ni se busca una versión de B independiente. El clasificador y el gestor se republicaron por la UI de Airtable conservando todos los tokens.
+
+### 13.1 Clasificador `CULPABILIDAD IA` — v5.0
+
+- El único insumo es el relato de A (el cliente) más la evidencia externa que A aporta. No hay versión de B ni se requiere.
+- `CERTEZA: ALTA` = relato de A + acta policial, croquis, fotos, testigos, cámaras o pericia + datos del tercero. `MEDIA` = denuncia o fotos sin acta/croquis/testigos/cámaras/pericia, o datos incompletos. `BAJA` = sólo relato y campos, sin evidencia externa.
+- El dictamen sigue siendo `RESPONSABILIDAD PROBABLE (SEGÚN RELATO DE A)`, con escenario principal y alternativo; el cierre legal mantiene la reserva de verosimilitud, la denuncia Ley 17.418 arts. 46 y 47 y el canal SSN.
+- Alcance trasero: art. 48 inc. g (distancia de seguridad) y art. 50 (velocidad precautoria) de la Ley 24.449; no se cita art. 48 inc. d para la distracción del tercero.
+- Texto publicado: 27.713 caracteres, 26 ops, 24 tokens de campo. Verificado por `/meta`: `DEFINITIVO v5.0`, `El único relato disponible es el de A`, `CERTEZA ALTA: relato de A`; ya no aparece `ALTA sólo si hay versión de B`.
+
+### 13.2 Gestor `AGENTE 2: GESTOR DE PROTOCOLO` — v7.3
+
+- No deriva por falta de versión de B. `CERTEZA: BAJA` (sólo relato, sin evidencia) deriva a humano; `MEDIA` y `ALTA` siguen el camino normal de audio y taller.
+- `ADVERTENCIAS: "Análisis basado en el relato de A; a reserva de verosimilitud"` para los casos que se envían.
+- Taller: `ROSARIO OESTE / FISHERTON / MAGNASCO -> AUDIO T4; INFO_TALLER = "Taller SAN PABLO OESTE (Fisherton)"`. Rosario sin zona explícita sigue en `N/A` + «Consultar zona; no asignar taller».
+- Texto publicado: 10.936 caracteres, 12 ops, 10 tokens. Verificado por `/meta`: `DEFINITIVO v7.3`, `El único relato es el de A`, `Taller SAN PABLO OESTE (Fisherton)`.
+
+### 13.3 Demo real (TEST IA / OFICINA TEST / EMPLEADO TEST)
+
+Registro `reccTkhM7pzVrWNun` (tabla `tbl4570W1T0qGdj8w`), política `TEST-POL-001` (FIAT CRONOS 2020, TR), localidad «Rosario Oeste, Santa Fe, Argentina», parte trasera, semáforo A verde / B rojo, tercero AUTO SANCOR. Relato exclusivamente de A, con acta policial, croquis y fotos; sin versión independiente de la contraparte.
+
+Salida real del clasificador:
+
+```
+CERTEZA: ALTA
+CULPABILIDAD: NO CULPABLE A(ASEGURADO)
+RESPONSABILIDAD PROBABLE (SEGÚN RELATO DE A): A fue embestido por detrás mientras estaba detenido en semáforo en verde
+ESCENARIO PRINCIPAL (SI SE CONFIRMA EL RELATO DE A): A 0% / B 100%
+ESCENARIO ALTERNATIVO (SI B ACREDITA OTRA COSA): A 50% / B 50%
+Art. 48 inc. g y art. 50 Ley 24.449
+```
+
+Salida real del gestor:
+
+```
+ESTADO: VIABLE
+CERTEZA: ALTA
+CODIGO_FINAL: AUDIO 1A
+CODIGO_TALLER: AUDIO T4
+INFO_TALLER: Taller SAN PABLO OESTE (Fisherton)
+NOTA_ACCION: Ninguna
+ADVERTENCIAS: Análisis basado en el relato de A; a reserva de verosimilitud
+```
+
+Campos extractores: `EXTRACTOR_CODIGO_AUDIO = AUDIO 1A`, `EXTRACTOR_CODIGO_TALLER = AUDIO T4`, `EXTRACTOR_RESOLUCION = Asegurado no culpable, tercero en otra compañía de seguros`.
+
+### 13.4 Tarjeta en el chat interno
+
+- Registro en `EN REVISION TELEGRAM`; tarjeta `chms_ca0b6f0kpjnmjcxg9kqz` en la sala «Alerta de Siniestro»; `review_request` en estado `pendiente`; no se aprobó ni se envió al cliente.
+- El mensaje de la tarjeta (1.617 caracteres) incluye el taller completo: `Taller SAN PABLO OESTE`, Av. Eva Perón 6790, Rosario, teléfono 341 6289393, `https://maps.app.goo.gl/qZooQyfkaVX6hvTWA`, y el aviso de evaluación preliminar.
+- Audio del cliente: `AUDIO 1A` (`recdHZm7Ij5x8EDpk`, `Audio1Acoberturastodoriesgo.mp3`, «No Culpable con Cobertura TR»). Audio del taller: `AUDIO T4` (`receXNJECbr0kyhwT`, `Audio T4- Taller San pablo.fisherton .magna.m4a`, «Taller SAN PABLO OESTE (Fisherton)»). Ambos están en `BIBLIOTECA_AUDIOS`.
+- La tarjeta reproduce el audio real con `GET /api/reviews/reccTkhM7pzVrWNun/audio`; el análisis completo con `/analisis`.
+
+### 13.5 Estado de los registros TEST
+
+- `recnJxnBdwmZ0MIS1` (demo anterior, prompts v4.7) quedó en `DETENIDO PARA REVISION` para liberar la cola de contacto; su tarjeta `chms_dy42secirbaqlich6m0k` sigue en el chat.
+- `reccTkhM7pzVrWNun` es la demo nueva y queda para que el usuario la vea; no se borra todavía. Los casos C/D/E/G/H/I se borraron. No se tocaron denuncias, clientes ni pólizas reales.
+
+### 13.6 Alcance técnico
+
+- Solo configuración de campos AI Text en Airtable y la demo en la tabla de denuncias. No hubo cambio de código, deploy ni migración.
+- Fuentes: `prompt_culpabilidad_v5.0.txt` y `prompt_gestor_v7.3.txt` en `/home/diegol/hermes-ssd/data/cache/scratch/`.
+- Queda pendiente decidir si el registro demo y su tarjeta se conservan como evidencia o se borran después de la revisión.
