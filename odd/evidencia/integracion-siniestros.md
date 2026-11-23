@@ -170,7 +170,7 @@ Fecha: 2026-11-23. Los dos prompts se publicaron por la UI de Airtable (la API R
 - Con versión de B y evidencia: puede proponer `AUDIO 1`/`AUDIO 1A`; la tarjeta de revisión sigue siendo el gate humano.
 - `CERTEZA: BAJA` siempre deriva a humano.
 - Taller: localidad sólo "Rosario", sin OESTE/SUR/CENTRO/NORTE/FISHERTON/MAGNASCO → `CODIGO_TALLER: N/A`, `INFO_TALLER: "Consultar zona; no asignar taller"`. No se asigna T4/T5/T8/T9 por la palabra Rosario.
-- Catálogos sin `AUDIO A2` (no existe en la biblioteca) y sin `AUDIO T8` (sin archivo); `AUDIO 3` marcado como duplicado de `AUDIO A3`; `AUDIO 6` creado como preliminar, no visible y sin archivo.
+- Catálogos sin `AUDIO A2` (no existe en la biblioteca) y sin `AUDIO T8` (sin archivo); `AUDIO 3` marcado como duplicado de `AUDIO A3`; `AUDIO 6` se creó como preliminar y se borró: no existe en la biblioteca y el catálogo no lo usa.
 - Compañías separadas en LISTA A (serias) y LISTA B (conflictivas); coberturas `TR, C, C1, C2, C2FULL, TODO RIESGO, TERCEROS COMPLETO PREMIUM, D, D1, TR CON FRANQUICIA`.
 
 ### 12.3 Prueba de aceptación
@@ -185,6 +185,6 @@ Corrección de la sección 9: el art. 43 (giros y rotondas) no aplica al alcance
 
 ### 12.4 Pendientes
 
-- Cargar el archivo real de `AUDIO 6` (hoy preliminar, no visible).
+- `AUDIO 6` no existe: el placeholder preliminar se borró. Si se quiere un audio 6, crearlo con el archivo. `AUDIO 3` y `AUDIO T8` quedaron con descripción de advertencia; si se prefiere, se revierten.
 - La versión de B se busca en el relato/acta; no es un campo separado. Si se quiere determinismo total, crear un campo largo `VERSIÓN DE B` y referenciarlo en ambos prompts.
 - Regenerar la tarjeta de demostración si se quiere mostrar el comportamiento v4.9/v7.2; la tarjeta actual `chms_dy42secirbaqlich6m0k` conserva el análisis v4.7.
