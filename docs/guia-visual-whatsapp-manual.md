@@ -1,13 +1,13 @@
 # Guía visual de conexión manual de WhatsApp
 
-Estado: PUBLICADO en producción y verificado por HTTP y navegador. Commit desplegado: `5b18d6a`.
+Publicación original: `5b18d6a`, verificada por HTTP y navegador. La corrección de «Asignar activos» se describe al final.
 Pedido: «haceme la guia visual paso a paso y agregala el flujo de concecion sin tech provider que esta ahora rafael si usas campura de mi cuenta pone borroso mis datos».
 
 ## Entrega
 
 - `public/guias/whatsapp-sin-tech-provider.html`: guía web sin JavaScript, índice y enlaces a los siete pasos.
 - `public/guias/whatsapp-sin-tech-provider.pdf`: 11 páginas, enlaces absolutos a Meta y al CRM; índice interno.
-- `public/guias/whatsapp-manual/`: sólo cuatro recortes sanitizados. Ningún original ni dato de cuenta en el repositorio.
+- `public/guias/whatsapp-manual/`: tres recortes sanitizados. La antigua captura de activos asignados se reemplazó por un esquema con texto legible; ningún original ni dato de cuenta en el repositorio.
 - `src/components/settings/whatsapp-assistant.tsx`: dos enlaces en el encabezado del asistente existente: «Guía visual paso a paso» y «Descargar guía PDF», más advertencia de alcance del alta manual. Sin cambios de API, permisos, DB, credenciales ni lógica de conexión.
 - Copias autónomas para Diego: `/home/diegol/Documentos/Guias/WhatsApp-Rafael/Guia-WhatsApp-sin-Tech-Provider.{pdf,html}`. El HTML local tiene imágenes incrustadas.
 
@@ -57,3 +57,7 @@ Guía: https://vocero.sistemasagenticos.cloud/guias/whatsapp-sin-tech-provider.h
 PDF: https://vocero.sistemasagenticos.cloud/guias/whatsapp-sin-tech-provider.pdf
 
 Acceso dentro del CRM: https://vocero.sistemasagenticos.cloud/settings/whatsapp
+
+## Corrección del paso 5: Asignar activos
+
+El anterior recorte sanitizado dejaba los rótulos rodeados de tachones. Se reemplazó por dos tarjetas de texto (app y cuenta de WhatsApp), el permiso de cada activo y la comprobación en «Activos asignados». El esquema no contiene píxeles de una captura ni simula que se hayan dado permisos. En el PDF, el cambio queda en la página 7 de 11.
