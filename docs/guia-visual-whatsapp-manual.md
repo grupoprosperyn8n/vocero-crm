@@ -61,3 +61,14 @@ Acceso dentro del CRM: https://vocero.sistemasagenticos.cloud/settings/whatsapp
 ## Corrección del paso 5: Asignar activos
 
 El anterior recorte sanitizado dejaba los rótulos rodeados de tachones. Se reemplazó por dos tarjetas de texto (app y cuenta de WhatsApp), el permiso de cada activo y la comprobación en «Activos asignados». El esquema no contiene píxeles de una captura ni simula que se hayan dado permisos. En el PDF, el cambio queda en la página 7 de 11.
+
+Commit `64962d2`; deploy `t0jhk3danyvf2kc3mbx9uyxo` → `finished` con ese commit a las 2026-11-24 13:14:46 UTC.
+
+Evidencia ejecutada:
+
+- PDF regenerado con WeasyPrint: 11 páginas A4, `pdftotext` confirma que la única página distinta a la anterior es la 7, con «Asignar activos: qué seleccionar», «Acceso total a esa app» y «Acceso total a esa cuenta»; esa página ya no lleva imágenes (`pdfimages -list` vacío). Inspección visual de la página 7: dos tarjetas legibles, sin solapamientos ni recortes.
+- HTML: 11 secciones, 2 elementos en el esquema, 3 imágenes restantes y todas las anclas del índice resuelven. `git diff --check` sin errores.
+- `pnpm typecheck`: exit 0. `pnpm lint`: exit 0 con un warning preexistente en `src/components/app-nav.tsx:180`. `pnpm test`: 679 passed / 74 skipped, 86 archivos pasados.
+- Producción: `/api/health` HTTP 200 con `commit:64962d2`; HTML servido con el esquema (1 ocurrencia) y 0 referencias a la captura retirada; PDF servido byte a byte igual al local (SHA-256); `meta-usuario-sistema.png` responde 404; las tres imágenes restantes responden 200.
+- Navegador sobre la URL pública: a 1280 px el esquema usa 2 columnas de 391 px; a 390 y 320 px pasa a 1 columna, sin desborde horizontal, sin elementos fuera del viewport, sin texto recortado y con las 4 imágenes cargadas. El zoom del perfil altera `innerWidth`, así que cada ancho se calibró antes de medir y se assertó el valor real.
+- Copias de Diego regeneradas: el HTML local lleva las 3 imágenes incrustadas, sin referencias externas, y apunta al PDF homónimo; el PDF local es idéntico al publicado.
