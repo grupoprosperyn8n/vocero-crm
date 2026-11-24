@@ -34,6 +34,8 @@ import {
   type WebhookInfo,
 } from "./whatsapp-connect";
 import {
+  ASSET_CARDS,
+  ASSET_NOTE,
   ASSISTANT_STEPS,
   EMPTY_BUSINESS_PROFILE,
   PREREQUISITES,
@@ -278,6 +280,55 @@ export function WhatsappAssistant({
               ))}
             </ol>
           )}
+
+          {current.n === 5 && (
+            <figure className="rounded-md border p-3">
+              <figcaption className="text-xs font-medium text-muted-foreground">
+                Asignar activos: qué seleccionar (esquema, no una captura)
+              </figcaption>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {ASSET_CARDS.map((c) => (
+                  <div key={c.title} className="rounded-md border bg-muted/20 p-3">
+                    <p className="text-sm font-semibold">{c.title}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{c.text}</p>
+                    <p className="mt-2 text-xs font-medium">{c.permission}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">{ASSET_NOTE}</p>
+            </figure>
+          )}
+
+          <details
+            open
+            className="rounded-md border bg-muted/20 p-3"
+            aria-label={`Cómo se hace el paso ${current.n} en Meta`}
+          >
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+              Cómo se hace en Meta, pantalla por pantalla
+            </summary>
+            <p className="mt-2 text-sm font-medium">{current.help.where}</p>
+            <ol className="mt-1 list-decimal space-y-1.5 pl-5 text-sm">
+              {current.help.items.map((l, i) => (
+                <li key={i}>{l}</li>
+              ))}
+            </ol>
+            {current.help.copy && (
+              <p className="mt-2 flex items-start gap-2 rounded border bg-background p-2 text-xs">
+                <Copy className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                <span>
+                  <span className="font-medium">Qué se copia:</span>{" "}
+                  <span className="text-muted-foreground">{current.help.copy}</span>
+                </span>
+              </p>
+            )}
+            {current.help.dont && (
+              <p className="mt-2 flex items-start gap-2 text-xs text-muted-foreground">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                <span>{current.help.dont}</span>
+              </p>
+            )}
+          </details>
 
           {current.link && (
             <a

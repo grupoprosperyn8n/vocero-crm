@@ -5,7 +5,11 @@ import { AlertTriangle, CheckCircle2, Power } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { WhatsappAssistant } from "./whatsapp-assistant";
-import { WhatsappEmbeddedSignup } from "./whatsapp-embedded-signup";
+import {
+  ConnectMethods,
+  type EmbeddedSignupInfo,
+  type TechProviderInfo,
+} from "./whatsapp-method-choice";
 import {
   ConnectForm,
   WebhookCard,
@@ -21,11 +25,11 @@ export function WhatsappWizard() {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [webhook, setWebhook] = useState<WebhookInfo | null>(null);
   /** 050 — alta automática disponible en esta instancia (app id + config id). */
-  const [embedded, setEmbedded] = useState<{
-    enabled: boolean;
-    appId: string | null;
-    configId: string | null;
-  } | null>(null);
+  const [embedded, setEmbedded] = useState<EmbeddedSignupInfo | null>(null);
+  /** 051 — estado real del Tech Provider: habilita o no la conexión por QR. */
+  const [techProvider, setTechProvider] = useState<TechProviderInfo | null>(
+    null
+  );
   const [loaded, setLoaded] = useState(false);
   /**
    * auto: sin conexión → guía; con conexión → estado.
@@ -42,6 +46,7 @@ export function WhatsappWizard() {
     if (c) {
       setConnection(c.connection);
       if (c.embeddedSignup) setEmbedded(c.embeddedSignup);
+      if (c.techProvider) setTechProvider(c.techProvider);
     }
     if (w) setWebhook(w);
     setLoaded(true);
@@ -103,17 +108,12 @@ export function WhatsappWizard() {
         </div>
       )}
 
-      {!connection && embedded?.enabled && embedded.appId && embedded.configId && (
-        <WhatsappEmbeddedSignup
-          appId={embedded.appId}
-          configId={embedded.configId}
+      {!connection && mostrarGuia && (
+        <ConnectMethods
+          techProvider={techProvider}
+          embedded={embedded}
           onConnected={() => void refetch()}
         />
-      )}
-      {!connection && embedded && !embedded.enabled && (
-        <p className="text-xs text-muted-foreground">
-          Esta instancia no tiene el alta automática habilitada: conectá con la guía manual de abajo.
-        </p>
       )}
 
       {mostrarGuia && (

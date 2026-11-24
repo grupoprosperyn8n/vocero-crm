@@ -43,6 +43,48 @@ export function isEmbeddedSignupConfigured(): boolean {
   return Boolean(env.META_APP_ID && env.META_APP_SECRET && env.META_ES_CONFIG_ID);
 }
 
+/**
+ * 051 — ¿Meta aprobó la app como Tech Provider?
+ *
+ * La coexistencia por QR no se activa a mano: Meta solo la ofrece dentro de
+ * Embedded Signup y solo a apps aprobadas (spec 050, prerequisitos). El estado
+ * no se puede consultar por API, así que se declara con
+ * `META_TECH_PROVIDER_APPROVED=on` recién cuando la aprobación es real. Sin esa
+ * bandera la UI muestra el motivo verdadero en vez de un botón que falla.
+ */
+export type TechProviderStatus = {
+  approved: boolean;
+  /** Alta por QR disponible: aprobado Y con las credenciales cargadas. */
+  embeddedSignupAvailable: boolean;
+  reason: string | null;
+};
+
+const TRUTHY = new Set(["on", "true", "1", "yes"]);
+
+export function getTechProviderStatus(): TechProviderStatus {
+  const env = getEnv();
+  const approved = TRUTHY.has(
+    (env.META_TECH_PROVIDER_APPROVED ?? "").trim().toLowerCase()
+  );
+  if (!approved) {
+    return {
+      approved: false,
+      embeddedSignupAvailable: false,
+      reason:
+        "Meta todavía no aprobó la app como proveedor de tecnología: la conexión por QR con coexistencia no está disponible. Mientras tanto, conectá con el camino manual.",
+    };
+  }
+  if (!isEmbeddedSignupConfigured()) {
+    return {
+      approved: true,
+      embeddedSignupAvailable: false,
+      reason:
+        "Falta configurar la app de Meta en esta instancia (META_APP_ID, META_APP_SECRET y META_ES_CONFIG_ID).",
+    };
+  }
+  return { approved: true, embeddedSignupAvailable: true, reason: null };
+}
+
 function fail(
   code: OnboardingFailureCode,
   message: string,

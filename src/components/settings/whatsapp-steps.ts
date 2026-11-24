@@ -8,6 +8,18 @@
 
 export type AssistantCaptureField = "businessId" | "wabaId" | "phoneNumberId";
 
+/**
+ * 051 — Ayuda fina dentro del paso: la pantalla exacta de Meta, qué tocar, qué
+ * copiar y la confusión típica. Se muestra desplegable en el asistente, sin
+ * mandar a nadie a otra página.
+ */
+export type StepHelp = {
+  where: string;
+  items: string[];
+  copy: string | null;
+  dont: string | null;
+};
+
 export type AssistantStep = {
   n: number;
   title: string;
@@ -23,6 +35,7 @@ export type AssistantStep = {
   } | null;
   warning: string | null;
   tip: string | null;
+  help: StepHelp;
 };
 
 export const TOTAL_ASSISTANT_STEPS = 7;
@@ -80,6 +93,17 @@ export const ASSISTANT_STEPS: AssistantStep[] = [
     warning:
       "Usa la cuenta de Facebook que va a administrar el WhatsApp del negocio (la del dueño, o la que usa el celular del local).",
     tip: null,
+    help: {
+      where:
+        "business.facebook.com → Configuración del negocio → Información del negocio",
+      items: [
+        "Entrá con la cuenta de Facebook del dueño; si el negocio ya existe en Meta, la vas a ver listada.",
+        "Si no existe, Meta te ofrece crearla: poné el nombre real del negocio (es el que va a figurar).",
+        "En «Información del negocio» está el ID: un número de 15 o 16 dígitos.",
+      ],
+      copy: "ID del negocio (15–16 dígitos). Es opcional para conectar, pero sirve para el traspaso.",
+      dont: "No es el ID de tu página de Facebook ni el de tu app: son tres números distintos.",
+    },
   },
   {
     n: 2,
@@ -98,6 +122,17 @@ export const ASSISTANT_STEPS: AssistantStep[] = [
     capture: null,
     warning: null,
     tip: "El nombre de la app es interno: nadie más lo ve. Elige el negocio (portfolio) del paso 1 cuando te lo pida.",
+    help: {
+      where: "developers.facebook.com/apps → «Crear app»",
+      items: [
+        "Entrá con la MISMA cuenta de Facebook del paso 1 (si no, el portfolio no coincide).",
+        "Nombre: cualquiera, por ejemplo «CRM de mi negocio». Nadie más lo ve.",
+        "Caso de uso: «Conectar con clientes a través de WhatsApp».",
+        "Al crearla se abre el panel: quedate ahí, los pasos 3 y 4 se hacen adentro.",
+      ],
+      copy: "En Panel → Configuración de la app → Básica está el «ID de la app» (15–16 dígitos): anotalo, el paso 5 lo necesita.",
+      dont: "No elijas Facebook Login ni «Otro» como caso de uso: después no aparece WhatsApp en el menú.",
+    },
   },
   {
     n: 3,
@@ -120,6 +155,16 @@ export const ASSISTANT_STEPS: AssistantStep[] = [
     },
     warning: null,
     tip: "Si tu negocio ya usa WhatsApp Business en un celular, la cuenta que aparece suele ser esa. Igual eliges qué número conectar en el paso 4.",
+    help: {
+      where: "Panel de tu app → WhatsApp → «API Setup»",
+      items: [
+        "En «Conectar una cuenta de WhatsApp Business» elegí la cuenta del negocio o creá una nueva (es gratis).",
+        "Arriba de todo de esa pantalla aparece el «WhatsApp Business Account ID».",
+        "Si el negocio ya usa WhatsApp Business en el celular, la cuenta que aparece es esa misma.",
+      ],
+      copy: "WhatsApp Business Account ID: número de 15–16 dígitos que empieza con 1.",
+      dont: "No confundas los tres números: ID del negocio (paso 1), ID de la app (paso 2) y WABA ID (paso 3).",
+    },
   },
   {
     n: 4,
@@ -145,6 +190,17 @@ export const ASSISTANT_STEPS: AssistantStep[] = [
     warning:
       "El número conectado sale de la app de WhatsApp del celular: deja de verse ahí y los mensajes se atienden desde el CRM. El chip sigue funcionando para llamadas y SMS comunes. Si quieres seguir usando WhatsApp en el celular, usa OTRO número para el CRM.",
     tip: "Si el número ya está en uso en la app de WhatsApp, Meta te pide borrar esa cuenta de la app antes de continuar. El historial de la app no se migra.",
+    help: {
+      where: "API Setup → «Agregar número de teléfono»",
+      items: [
+        "Elegí el país y escribí el número del negocio sin 0 ni 15, con código de área.",
+        "Verificá con el código que llega por SMS o llamada a ESE número.",
+        "Definí el PIN de 6 dígitos y anotalo: es la clave del número para la API.",
+        "Al lado de tu número aparece el «Phone Number ID»: ese es el dato que se pega acá, no el número.",
+      ],
+      copy: "Phone Number ID (15–16 dígitos) y el PIN de 6 dígitos por separado.",
+      dont: "No pegues el número de teléfono en el campo del Phone Number ID: son dos datos distintos.",
+    },
   },
   {
     n: 5,
@@ -164,6 +220,19 @@ export const ASSISTANT_STEPS: AssistantStep[] = [
     warning:
       "Trata el token como una contraseña: no lo mandes por chat. Si algún día se revoca, se genera otro y se pega de nuevo acá.",
     tip: "El token del usuario del sistema no vence: se genera una vez. Ojo: el token temporal que muestra «API Setup» dura 24 horas — no sirve para el CRM.",
+    help: {
+      where:
+        "Configuración del negocio → Usuarios → «Usuarios del sistema»",
+      items: [
+        "Tocá «Agregar»: nombre «crm», rol Administrador (si el rol limitado no deja generar el token, usá Administrador).",
+        "Abrí «Asignar activos» y elegí sólo dos activos: tu app del paso 2 y tu cuenta de WhatsApp del paso 3, ambos con acceso total.",
+        "Revisá que los dos figuren en «Activos asignados» antes de seguir.",
+        "Tocá «Generar token» y marcá tres permisos: business_management, whatsapp_business_messaging y whatsapp_business_management.",
+        "Copiá el token en el momento: Meta no lo vuelve a mostrar entero.",
+      ],
+      copy: "Token que empieza con EAA… (se pega en el paso 6, sin espacios).",
+      dont: "El token de «API Setup» dura 24 h y no sirve; el del usuario del sistema no vence. Y no des acceso a todo el negocio: sólo a esos dos activos.",
+    },
   },
   {
     n: 6,
@@ -174,6 +243,17 @@ export const ASSISTANT_STEPS: AssistantStep[] = [
     capture: null,
     warning: null,
     tip: null,
+    help: {
+      where: "Acá mismo, en el formulario de este paso",
+      items: [
+        "Pegá el WhatsApp Business Account ID (paso 3) y el Phone Number ID (paso 4).",
+        "Pegá el token del usuario del sistema (paso 5) completo, sin espacios.",
+        "Tocá «Probar conexión»: si Meta responde con el nombre del número, los tres datos están bien.",
+        "Guardá: el token queda cifrado y la app se suscribe a la cuenta para recibir mensajes.",
+      ],
+      copy: null,
+      dont: "Si dice «token inválido», revisá que el usuario del sistema siga asignado a los dos activos y que hayas copiado el token entero.",
+    },
   },
   {
     n: 7,
@@ -192,7 +272,91 @@ export const ASSISTANT_STEPS: AssistantStep[] = [
     capture: null,
     warning: null,
     tip: "La firma de los eventos (App Secret) la configura quien administra el servidor, con la variable META_APP_SECRET. Si falta, el asistente te lo avisa acá abajo.",
+    help: {
+      where: "Panel de tu app → WhatsApp → «Configuration» → Webhooks",
+      items: [
+        "Pegá la «Callback URL» y el «Verify token» que aparecen abajo y tocá «Verificar y guardar».",
+        "En «Webhook fields» suscribí el campo «messages»: es el que trae los mensajes entrantes.",
+        "Prueba real: desde OTRO celular escribile a tu número; el mensaje tiene que aparecer en la Bandeja.",
+        "Contestá desde el CRM y comprobá que al cliente le llega como cualquier WhatsApp.",
+      ],
+      copy: "URL y verify token: se copian desde las tarjetas de acá abajo, con el botón de copiar.",
+      dont: "Si no suscribís «messages», el webhook queda verificado pero los mensajes no llegan nunca.",
+    },
   },
+];
+
+/**
+ * 051 — «Asignar activos» del usuario del sistema, en tarjetas de texto: qué
+ * dos activos elegir y con qué permiso. Reemplaza la captura tachada que no se
+ * entendía (la misma corrección que en la guía visual publicada).
+ */
+export type AssetCard = { title: string; text: string; permission: string };
+
+export const ASSET_CARDS: AssetCard[] = [
+  {
+    title: "1. Apps",
+    text: "Elegí la app de tu negocio: la que creaste en el paso 2.",
+    permission: "Permiso: acceso total a esa app.",
+  },
+  {
+    title: "2. Cuentas de WhatsApp",
+    text: "Elegí la cuenta del paso 3, la que tiene tu WABA ID. En Meta puede aparecer como «WhatsApp accounts».",
+    permission: "Permiso: acceso total a esa cuenta.",
+  },
+];
+
+export const ASSET_NOTE =
+  "Confirmá la asignación y revisá que los dos figuren en «Activos asignados». El acceso es a esos dos activos, no a todo el negocio.";
+
+/**
+ * 051 — Los dos caminos de conexión, para que el cliente elija con la
+ * información a la vista y no por lo que le contaron.
+ */
+export type ConnectMethod = {
+  id: "coexistence" | "manual";
+  title: string;
+  lead: string;
+  keeps: string[];
+  loses: string[];
+  needs: string;
+};
+
+export const CONNECT_METHODS: ConnectMethod[] = [
+  {
+    id: "coexistence",
+    title: "Coexistencia por QR (seguís usando el celular)",
+    lead: "Autorizás desde tu cuenta de Meta y el número queda a la vez en el teléfono y en el CRM.",
+    keeps: [
+      "La app de WhatsApp Business del celular y sus chats",
+      "Lo que contestes a mano desde el teléfono",
+    ],
+    loses: [
+      "Listas de difusión (quedan de solo lectura)",
+      "Mensajes temporales y de «ver una vez»",
+    ],
+    needs:
+      "Requiere que Meta haya aprobado la app como proveedor de tecnología. Sin esa aprobación, esta opción no está disponible.",
+  },
+  {
+    id: "manual",
+    title: "Manual (tu propio portfolio, sin coexistencia)",
+    lead: "Creás tu app y tu cuenta en Meta y pegás los datos acá: el CRM queda conectado y el control queda en tu negocio.",
+    keeps: [
+      "El número y sus credenciales quedan en tu portfolio de Meta",
+      "Podés revocar el token cuando quieras",
+    ],
+    loses: ["El número deja de usarse en la app de WhatsApp del celular"],
+    needs: "No depende de aprobaciones de Meta: funciona hoy, con los 7 pasos del asistente.",
+  },
+];
+
+/** Lo que Meta exige para habilitar la coexistencia (spec 050). */
+export const COEXISTENCE_REQUIREMENTS: string[] = [
+  "App aprobada como proveedor de tecnología (Tech Provider) con acceso avanzado a whatsapp_business_messaging y whatsapp_business_management.",
+  "WhatsApp Business actualizado en el celular (2.24.17 o posterior).",
+  "La cuenta de Meta que administra el negocio y el número a conectar, a mano.",
+  "El código de verificación llega dentro de la app de WhatsApp, no por SMS.",
 ];
 
 /** 045-B — Datos del negocio para el alta (perfil de WhatsApp), opcionales. */

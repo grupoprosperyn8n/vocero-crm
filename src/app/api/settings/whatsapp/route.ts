@@ -2,7 +2,7 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getEnv } from "@/lib/env";
 import { connectionsGate } from "@/server/settings/access";
-import { isEmbeddedSignupConfigured } from "@/server/whatsapp/embedded-signup";
+import { isEmbeddedSignupConfigured, getTechProviderStatus } from "@/server/whatsapp/embedded-signup";
 import {
   clearCredentials,
   getCredentialsByOrg,
@@ -26,8 +26,13 @@ export const GET = withAuth(async (session) => {
   const embeddedSignup = isEmbeddedSignupConfigured()
     ? { enabled: true, appId: env.META_APP_ID ?? null, configId: env.META_ES_CONFIG_ID ?? null }
     : { enabled: false, appId: null, configId: null };
+  /**
+   * 051 — Estado del Tech Provider: decide si la pantalla ofrece la conexión
+   * por QR (coexistencia) o solo el camino manual, y con qué motivo.
+   */
+  const techProvider = getTechProviderStatus();
 
-  if (!creds) return Response.json({ connection: null, embeddedSignup });
+  if (!creds) return Response.json({ connection: null, embeddedSignup, techProvider });
   return Response.json({
     connection: {
       wabaId: creds.wabaId,
@@ -42,6 +47,7 @@ export const GET = withAuth(async (session) => {
       tokenLast4: tokenLast4(creds.token),
     },
     embeddedSignup,
+    techProvider,
   });
 });
 

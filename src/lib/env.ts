@@ -24,6 +24,13 @@ const envSchema = z.object({
   // esconde esa puerta y el asistente manual (043) sigue siendo el único camino.
   META_APP_ID: z.string().optional(),
   META_ES_CONFIG_ID: z.string().optional(),
+  /**
+   * 051 — Tech Provider: Meta todavía no aprobó la app (Revisión de la app sin
+   * enviar el 24-11-2026). Solo cuando el dueño confirma la aprobación se pone
+   * `on`; recién ahí la UI habilita la conexión por coexistencia (QR). Por
+   * defecto apagado: el camino manual (043) sigue siendo el único que funciona.
+   */
+  META_TECH_PROVIDER_APPROVED: z.string().optional(),
   /** 050: PIN de 6 dígitos para registrar un número nuevo (alta estándar). */
   META_REGISTER_PIN: z
     .string()
